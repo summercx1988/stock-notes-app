@@ -1,0 +1,80 @@
+{
+  "name": "stock-notes-app",
+  "version": "1.0.0",
+  "description": "股票投资语音笔记系统 - 基于AI的智能投资笔记管理工具",
+  "main": "dist/main/main/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:electron": "tsc -p tsconfig.main.json && electron-builder",
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron --no-sandbox .\"",
+    "electron:build": "vite build && tsc -p tsconfig.main.json && electron-builder",
+    "update-stocks": "python3 scripts/fetch-stocks.py",
+    "lint": "eslint src --ext ts,tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "stock",
+    "notes",
+    "voice",
+    "ai",
+    "investment"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@types/ws": "^8.18.1",
+    "@uiw/react-md-editor": "^4.0.4",
+    "antd": "^5.21.0",
+    "chokidar": "^3.6.0",
+    "electron-store": "^10.0.0",
+    "fastest-levenshtein": "^1.0.16",
+    "js-yaml": "^4.1.0",
+    "ollama": "^0.5.9",
+    "openai": "^4.67.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sherpa-onnx": "^1.12.31",
+    "uuid": "^10.0.0",
+    "whisper-node": "^1.1.1",
+    "ws": "^8.19.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.7.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.5.0",
+    "@typescript-eslint/parser": "^8.5.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.0.1",
+    "electron": "^32.1.0",
+    "electron-builder": "^25.0.5",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "postcss": "^8.4.45",
+    "tailwindcss": "^3.4.11",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.5",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.stocknotes.app",
+    "productName": "股票投资笔记",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": "dmg"
+    }
+  }
+}

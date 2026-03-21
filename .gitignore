@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+release/
+out/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Data (用户数据不提交)
+data/
+*.db
+*.sqlite
+
+# Models
+models/
+*.bin
+*.gguf
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Test
+coverage/
+
+# Electron
+*.dmg
+*.app
