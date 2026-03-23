@@ -1,6 +1,13 @@
+export type ViewpointDirection = '看多' | '看空' | '未知' | '中性' | '观望'
+export type TimeHorizon = '短线' | '中线' | '长线'
+export type NoteInputType = 'voice' | 'manual'
+
 export interface TimeEntry {
   id: string
   timestamp: Date
+  eventTime: Date
+  createdAt: Date
+  inputType?: NoteInputType
   title: string
   content: string
   
@@ -16,9 +23,9 @@ export interface TimeEntry {
 }
 
 export interface Viewpoint {
-  direction: '看多' | '看空' | '中性' | '观望'
+  direction: ViewpointDirection
   confidence: number
-  timeHorizon: '短线' | '中线' | '长线'
+  timeHorizon: TimeHorizon
 }
 
 export interface ViewpointResult extends Viewpoint {

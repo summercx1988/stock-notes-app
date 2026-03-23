@@ -26,9 +26,9 @@ export class LocalAIAdapter implements IAIService {
   
   async extractViewpoint(_text: string): Promise<ViewpointResult> {
     return {
-      direction: '中性',
-      confidence: 0.5,
-      timeHorizon: '中线',
+      direction: '未知',
+      confidence: 0,
+      timeHorizon: '短线',
       reasoning: '本地模型暂未实现',
       keyFactors: []
     }

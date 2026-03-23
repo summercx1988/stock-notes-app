@@ -86,7 +86,7 @@ ${text}
 
 请以JSON格式返回：
 {
-  "direction": "看多/看空/中性",
+  "direction": "看多/看空/未知",
   "confidence": 0.0-1.0,
   "timeHorizon": "短线/中线/长线",
   "reasoning": "判断理由",
@@ -98,9 +98,9 @@ ${text}
       return JSON.parse(response)
     } catch {
       return {
-        direction: '中性',
-        confidence: 0.5,
-        timeHorizon: '中线',
+        direction: '未知',
+        confidence: 0,
+        timeHorizon: '短线',
         reasoning: response,
         keyFactors: []
       }

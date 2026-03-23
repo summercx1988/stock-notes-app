@@ -1,13 +1,15 @@
 import { ipcMain } from 'electron'
 import { NotesService } from '../services/notes'
-import type { TimeEntry, StockNote, TimelineItem, Viewpoint, Action } from '../../shared/types'
+import type { TimeEntry, StockNote, TimelineItem, Viewpoint, Action, NoteInputType } from '../../shared/types'
 
 const notesService = new NotesService()
 
 ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   content: string
+  eventTime?: Date | string
   viewpoint?: Viewpoint
   action?: Action
+  inputType?: NoteInputType
   audioFile?: string
   audioDuration?: number
 }): Promise<TimeEntry> => {

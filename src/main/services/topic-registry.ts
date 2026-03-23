@@ -1,4 +1,4 @@
-export type ViewpointDirection = '看多' | '看空' | '中性' | '观望'
+export type ViewpointDirection = '看多' | '看空' | '未知' | '中性' | '观望'
 export type TimeHorizon = '短线' | '中线' | '长线'
 export type ActionType = '买入' | '卖出' | '持有' | '观望'
 
@@ -79,7 +79,7 @@ export interface TopicDetectionResult {
   suggestions?: string[]
 }
 
-const STOCK_VIEWPOINT_OPTIONS: ViewpointDirection[] = ['看多', '看空', '中性', '观望']
+const STOCK_VIEWPOINT_OPTIONS: ViewpointDirection[] = ['看多', '看空', '未知', '中性', '观望']
 const STOCK_ACTION_OPTIONS: ActionType[] = ['买入', '卖出', '持有', '观望']
 
 const stockCategories: TopicCategory[] = [
@@ -114,7 +114,7 @@ const stockAiPrompts: AIPrompts = {
 
 请以JSON格式返回：
 {
-  "direction": "看多/看空/中性/观望",
+  "direction": "看多/看空/未知/中性/观望",
   "confidence": 0.0-1.0,
   "timeHorizon": "短线/中线/长线"
 }`,
@@ -191,7 +191,7 @@ export class TopicCalibrator {
       }
 
       if (extractedTopic.direction) {
-        const validDirections = ['看多', '看空', '中性', '观望']
+        const validDirections = ['看多', '看空', '未知', '中性', '观望']
         if (!validDirections.includes(extractedTopic.direction)) {
           suggestions.push(`观点方向"${extractedTopic.direction}"不在标准选项中`)
           matchedFields.push({

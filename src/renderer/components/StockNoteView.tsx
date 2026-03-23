@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Button, Empty, Tag, Spin, Modal, Select, Space, message } from 'antd'
+import { Button, Empty, Tag, Spin, Modal, Select, Space, DatePicker, message } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import MDEditor from '@uiw/react-md-editor'
+import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
 import type { TimeEntry, Viewpoint } from '../../shared/types'
 
@@ -19,8 +20,11 @@ const StockNoteView: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
   const [editViewpoint, setEditViewpoint] = useState<Viewpoint | null>(null)
+  const [editEventTime, setEditEventTime] = useState<Dayjs | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [newContent, setNewContent] = useState('')
+  const [newViewpoint, setNewViewpoint] = useState<Viewpoint | null>(null)
+  const [newEventTime, setNewEventTime] = useState<Dayjs | null>(null)
 
   useEffect(() => {
     if (currentStockCode) {
@@ -32,6 +36,18 @@ const StockNoteView: React.FC = () => {
     setEditingId(null)
     setIsAdding(false)
   }, [currentStockCode, stockNotes])
+
+  const createViewpoint = (direction: Viewpoint['direction'], timeHorizon: Viewpoint['timeHorizon']): Viewpoint => ({
+    direction,
+    timeHorizon,
+    confidence: direction === '未知' ? 0 : 0.7
+  })
+
+  const toDayjs = (value?: Date | string) => {
+    if (!value) return null
+    const parsed = dayjs(value)
+    return parsed.isValid() ? parsed : null
+  }
 
   const loadNote = async () => {
     if (!currentStockCode) return
@@ -54,13 +70,16 @@ const StockNoteView: React.FC = () => {
       if (editingId) {
         await window.api.notes.updateEntry(currentStockCode, editingId, {
           content: editContent,
-          viewpoint: editViewpoint || undefined
+          viewpoint: editViewpoint || createViewpoint('未知', '短线'),
+          eventTime: (editEventTime || dayjs()).toISOString()
         })
         message.success('笔记已更新')
       } else {
         await window.api.notes.addEntry(currentStockCode, {
           content: editContent,
-          viewpoint: editViewpoint || undefined
+          viewpoint: editViewpoint || createViewpoint('未知', '短线'),
+          eventTime: (editEventTime || dayjs()).toISOString(),
+          inputType: 'manual'
         })
         message.success('笔记已保存')
       }
@@ -68,6 +87,7 @@ const StockNoteView: React.FC = () => {
       setEditingId(null)
       setEditContent('')
       setEditViewpoint(null)
+      setEditEventTime(null)
     } catch (error: any) {
       message.error('保存失败: ' + error.message)
     } finally {
@@ -94,7 +114,8 @@ const StockNoteView: React.FC = () => {
   const handleAddNote = () => {
     setIsAdding(true)
     setNewContent('')
-    setEditViewpoint(null)
+    setNewViewpoint(createViewpoint('未知', '短线'))
+    setNewEventTime(dayjs())
   }
 
   const handleSaveNewNote = async () => {
@@ -104,13 +125,16 @@ const StockNoteView: React.FC = () => {
     try {
       await window.api.notes.addEntry(currentStockCode, {
         content: newContent,
-        viewpoint: editViewpoint || undefined
+        viewpoint: newViewpoint || createViewpoint('未知', '短线'),
+        eventTime: (newEventTime || dayjs()).toISOString(),
+        inputType: 'manual'
       })
       message.success('笔记已保存')
       await loadNote()
       setIsAdding(false)
       setNewContent('')
-      setEditViewpoint(null)
+      setNewViewpoint(null)
+      setNewEventTime(null)
     } catch (error: any) {
       message.error('保存失败: ' + error.message)
     } finally {
@@ -121,7 +145,8 @@ const StockNoteView: React.FC = () => {
   const startEdit = (entry: TimeEntry) => {
     setEditingId(entry.id)
     setEditContent(entry.content)
-    setEditViewpoint(entry.viewpoint || null)
+    setEditViewpoint(entry.viewpoint || createViewpoint('未知', '短线'))
+    setEditEventTime(toDayjs(entry.eventTime || entry.timestamp) || dayjs())
     setIsAdding(false)
   }
 
@@ -129,30 +154,33 @@ const StockNoteView: React.FC = () => {
     setEditingId(null)
     setEditContent('')
     setEditViewpoint(null)
+    setEditEventTime(null)
   }
 
   const cancelAdd = () => {
     setIsAdding(false)
     setNewContent('')
-    setEditViewpoint(null)
+    setNewViewpoint(null)
+    setNewEventTime(null)
   }
 
   const getViewpointTag = (viewpoint?: Viewpoint) => {
     if (!viewpoint) return null
-    const color = viewpoint.direction === '看多' ? 'red' : viewpoint.direction === '看空' ? 'green' : 'default'
-    return <Tag color={color}>{viewpoint.direction}</Tag>
+    const colorMap: Record<Viewpoint['direction'], string> = {
+      看多: 'red',
+      看空: 'green',
+      未知: 'default',
+      中性: 'blue',
+      观望: 'default'
+    }
+    return <Tag color={colorMap[viewpoint.direction]}>{viewpoint.direction}</Tag>
   }
 
-  const formatTime = (timestamp: Date | string) => {
+  const formatTime = (timestamp: Date | string, eventTime?: Date | string) => {
     const date = new Date(timestamp)
-    return `${date.getMonth() + 1}-${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
+    const sourceDate = eventTime ? new Date(eventTime) : date
+    return `${sourceDate.getMonth() + 1}-${sourceDate.getDate()} ${sourceDate.getHours()}:${String(sourceDate.getMinutes()).padStart(2, '0')}`
   }
-
-  const createViewpoint = (direction: Viewpoint['direction'], timeHorizon: Viewpoint['timeHorizon']): Viewpoint => ({
-    direction,
-    timeHorizon,
-    confidence: 0.7
-  })
 
   if (!currentStockCode) {
     return (
@@ -192,18 +220,18 @@ const StockNoteView: React.FC = () => {
             <div className="mb-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
               <div className="mb-3 flex items-center gap-4">
                 <Select
-                  value={editViewpoint?.direction || '中性'}
-                  onChange={(v) => setEditViewpoint(createViewpoint(v as any, editViewpoint?.timeHorizon || '中线'))}
+                  value={newViewpoint?.direction || '未知'}
+                  onChange={(v) => setNewViewpoint(createViewpoint(v as Viewpoint['direction'], newViewpoint?.timeHorizon || '短线'))}
                   style={{ width: 100 }}
                   size="small"
                 >
                   <Select.Option value="看多">看多</Select.Option>
                   <Select.Option value="看空">看空</Select.Option>
-                  <Select.Option value="中性">中性</Select.Option>
+                  <Select.Option value="未知">未知</Select.Option>
                 </Select>
                 <Select
-                  value={editViewpoint?.timeHorizon || '中线'}
-                  onChange={(v) => setEditViewpoint(createViewpoint(editViewpoint?.direction || '中性', v as any))}
+                  value={newViewpoint?.timeHorizon || '短线'}
+                  onChange={(v) => setNewViewpoint(createViewpoint(newViewpoint?.direction || '未知', v as Viewpoint['timeHorizon']))}
                   style={{ width: 100 }}
                   size="small"
                 >
@@ -211,6 +239,14 @@ const StockNoteView: React.FC = () => {
                   <Select.Option value="中线">中线</Select.Option>
                   <Select.Option value="长线">长线</Select.Option>
                 </Select>
+                <DatePicker
+                  value={newEventTime}
+                  onChange={(value) => setNewEventTime(value)}
+                  showTime={{ format: 'HH:mm' }}
+                  format="YYYY-MM-DD HH:mm"
+                  placeholder="事件时间（分钟）"
+                  size="small"
+                />
               </div>
               <MDEditor
                 value={newContent}
@@ -236,18 +272,18 @@ const StockNoteView: React.FC = () => {
                     <div className="p-4 bg-gray-50">
                       <div className="mb-3 flex items-center gap-4">
                         <Select
-                          value={editViewpoint?.direction || '中性'}
-                          onChange={(v) => setEditViewpoint(createViewpoint(v as any, editViewpoint?.timeHorizon || '中线'))}
+                          value={editViewpoint?.direction || '未知'}
+                          onChange={(v) => setEditViewpoint(createViewpoint(v as Viewpoint['direction'], editViewpoint?.timeHorizon || '短线'))}
                           style={{ width: 100 }}
                           size="small"
                         >
                           <Select.Option value="看多">看多</Select.Option>
                           <Select.Option value="看空">看空</Select.Option>
-                          <Select.Option value="中性">中性</Select.Option>
+                          <Select.Option value="未知">未知</Select.Option>
                         </Select>
                         <Select
-                          value={editViewpoint?.timeHorizon || '中线'}
-                          onChange={(v) => setEditViewpoint(createViewpoint(editViewpoint?.direction || '中性', v as any))}
+                          value={editViewpoint?.timeHorizon || '短线'}
+                          onChange={(v) => setEditViewpoint(createViewpoint(editViewpoint?.direction || '未知', v as Viewpoint['timeHorizon']))}
                           style={{ width: 100 }}
                           size="small"
                         >
@@ -255,6 +291,14 @@ const StockNoteView: React.FC = () => {
                           <Select.Option value="中线">中线</Select.Option>
                           <Select.Option value="长线">长线</Select.Option>
                         </Select>
+                        <DatePicker
+                          value={editEventTime}
+                          onChange={(value) => setEditEventTime(value)}
+                          showTime={{ format: 'HH:mm' }}
+                          format="YYYY-MM-DD HH:mm"
+                          placeholder="事件时间（分钟）"
+                          size="small"
+                        />
                       </div>
                       <MDEditor
                         value={editContent}
@@ -272,7 +316,7 @@ const StockNoteView: React.FC = () => {
                     <div className="p-4">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-500">{formatTime(entry.timestamp)}</span>
+                          <span className="text-sm text-gray-500">{formatTime(entry.timestamp, entry.eventTime)}</span>
                           {getViewpointTag(entry.viewpoint)}
                         </div>
                         <Space size="small">

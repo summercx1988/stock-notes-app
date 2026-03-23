@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Button, message, Modal, Input, Steps, Divider, Upload, Card, Tag, Progress } from 'antd'
+import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, DatePicker, Select } from 'antd'
 import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
+import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
+import type { Viewpoint } from '../../shared/types'
 
-const { TextArea } = Input
 const { Step } = Steps
 
 interface AIExtractResult {
@@ -42,6 +43,8 @@ const RecordingControl: React.FC = () => {
   const [extractResult, setExtractResult] = useState<AIExtractResult | null>(null)
   const [selectedStockCode, setSelectedStockCode] = useState<string>('')
   const [transcribeProgress, setTranscribeProgress] = useState(0)
+  const [noteEventTime, setNoteEventTime] = useState<Dayjs | null>(dayjs())
+  const [noteDirection, setNoteDirection] = useState<Viewpoint['direction']>('未知')
 
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -60,6 +63,8 @@ const RecordingControl: React.FC = () => {
     setExtractResult(null)
     setSelectedStockCode('')
     setTranscribeProgress(0)
+    setNoteEventTime(dayjs())
+    setNoteDirection('未知')
 
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current)
@@ -90,6 +95,11 @@ const RecordingControl: React.FC = () => {
       } else {
         message.warning('未识别到股票，请手动选择')
       }
+
+      const extractedTime = result.timestamp?.type === 'absolute' && result.timestamp?.value
+        ? dayjs(result.timestamp.value)
+        : null
+      setNoteEventTime(extractedTime && extractedTime.isValid() ? extractedTime : dayjs())
 
     } catch (error: any) {
       console.error('[RecordingControl] Analysis failed:', error)
@@ -263,8 +273,16 @@ const RecordingControl: React.FC = () => {
     setLoading(true)
 
     try {
+      const viewpoint: Viewpoint = {
+        direction: noteDirection,
+        confidence: noteDirection === '未知' ? 0 : 0.7,
+        timeHorizon: '短线'
+      }
       await window.api.notes.addEntry(stockCode, {
         content: extractResult.optimizedText || extractResult.originalText,
+        eventTime: (noteEventTime || dayjs()).toISOString(),
+        viewpoint,
+        inputType: 'voice',
         audioFile: audioPath,
         audioDuration: recordingDuration
       })
@@ -473,6 +491,31 @@ const RecordingControl: React.FC = () => {
                   </h4>
                 </div>
               )}
+
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <h4 className="font-medium mb-3">记录配置</h4>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Select
+                    value={noteDirection}
+                    onChange={(value) => setNoteDirection(value)}
+                    style={{ width: 120 }}
+                    size="small"
+                    options={[
+                      { label: '未知', value: '未知' },
+                      { label: '看多', value: '看多' },
+                      { label: '看空', value: '看空' }
+                    ]}
+                  />
+                  <DatePicker
+                    value={noteEventTime}
+                    onChange={(value) => setNoteEventTime(value)}
+                    showTime={{ format: 'HH:mm' }}
+                    format="YYYY-MM-DD HH:mm"
+                    placeholder="事件时间（分钟）"
+                    size="small"
+                  />
+                </div>
+              </div>
 
               <div className="flex justify-end gap-2">
                 <Button onClick={() => { setCurrentStep(0); resetState(); }}>
