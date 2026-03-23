@@ -160,16 +160,20 @@ data/
 
 ---
 
-## 八、当前文档基线
+## 八、文档地图
 
-当前实现以以下文档为准：
+当前实现基线：
 
 - `docs/TECHNICAL_SPEC.md`
 - `docs/README.md`
 - `docs/RECORDING_TRANSCRIBE_SPEC.md`
 
-以下文档保留历史规划内容，仅供参考：
+下一阶段规划：
 
-- `docs/PRD.md`
+- `docs/PRD.md`（面向对象笔记系统 v2.0 需求）
+- `docs/UI_UX_TECH_PLAN.md`（UI/UX 与技术实施方案）
+
+历史资料（参考）：
+
 - `docs/DATA_MODEL.md`
 - `docs/TEST_GUIDE.md`
