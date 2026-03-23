@@ -19,7 +19,7 @@
 
 说明：
 
-- 录音能力由同级目录的 Swift 服务提供
+- 录音能力由仓库内子模块 `voice-transcriber-service` 提供
 - 转写优先使用本地 `whisper.cpp`
 - AI 不再做观点提炼和长文本分析
 - 云端能力主要用于纠错和股票名修正
@@ -49,14 +49,17 @@ npm run electron:dev
 ### 3.2 Swift 语音服务
 
 ```bash
-cd ../voice-transcriber-service
+git submodule update --init --recursive
+cd voice-transcriber-service
+./scripts/setup-whisper.sh
 swift build
+cp .build/debug/voice-transcriber-service ./voice-transcriber-service
 ```
 
 默认开发环境会从以下相对路径启动语音服务：
 
 ```text
-../voice-transcriber-service/voice-transcriber-service
+voice-transcriber-service/voice-transcriber-service
 ```
 
 ### 3.3 Whisper 模型
@@ -64,8 +67,8 @@ swift build
 确认以下文件存在：
 
 ```text
-../voice-transcriber-service/whisper.cpp/main
-../voice-transcriber-service/whisper.cpp/models/ggml-medium.bin
+voice-transcriber-service/whisper.cpp/main
+voice-transcriber-service/whisper.cpp/models/ggml-medium.bin
 ```
 
 ---

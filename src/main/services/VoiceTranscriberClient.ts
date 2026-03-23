@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'child_process'
 import WebSocket from 'ws'
 import EventEmitter from 'events'
 import path from 'path'
+import fs from 'fs'
 import { app, BrowserWindow } from 'electron'
 
 interface ServerMessage {
@@ -38,10 +39,7 @@ export class VoiceTranscriberClient extends EventEmitter {
     
     const isDev = !app.isPackaged
     if (isDev) {
-      this.servicePath = path.join(
-        process.cwd(),
-        '../voice-transcriber-service/voice-transcriber-service'
-      )
+      this.servicePath = this.resolveDevServicePath()
     } else {
       this.servicePath = path.join(
         path.dirname(app.getAppPath()),
@@ -49,6 +47,20 @@ export class VoiceTranscriberClient extends EventEmitter {
       )
     }
     console.log('[VoiceClient] Service path:', this.servicePath)
+  }
+
+  private resolveDevServicePath(): string {
+    const candidates = [
+      path.join(process.cwd(), 'voice-transcriber-service/voice-transcriber-service'),
+      path.join(process.cwd(), 'voice-transcriber-service/.build/debug/voice-transcriber-service'),
+      path.join(process.cwd(), 'voice-transcriber-service/.build/release/voice-transcriber-service'),
+      path.join(process.cwd(), '../voice-transcriber-service/voice-transcriber-service'),
+      path.join(process.cwd(), '../voice-transcriber-service/.build/debug/voice-transcriber-service'),
+      path.join(process.cwd(), '../voice-transcriber-service/.build/release/voice-transcriber-service')
+    ]
+
+    const matched = candidates.find((candidate) => fs.existsSync(candidate))
+    return matched || candidates[0]
   }
 
   setMainWindow(window: BrowserWindow) {

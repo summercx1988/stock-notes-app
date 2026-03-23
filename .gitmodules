@@ -1,0 +1,3 @@
+[submodule "voice-transcriber-service"]
+	path = voice-transcriber-service
+	url = https://github.com/summercx1988/voice-transcriber-service.git

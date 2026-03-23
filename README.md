@@ -13,7 +13,7 @@
 
 - 前端：Electron 32 + React 18 + TypeScript + Ant Design
 - 主进程：Electron IPC、笔记存储、股票数据库、轻量 AI 处理
-- 语音服务：外部 Swift 服务 `../voice-transcriber-service`
+- 语音服务：Git 子模块 `voice-transcriber-service`
 - 语音转写：`whisper.cpp` + `ggml-medium.bin`
 - 数据存储：`data/stocks/*.md` + `data/stocks-database.json`
 
@@ -29,6 +29,7 @@ stock-notes-app/
 │   ├── stocks/               # 股票 Markdown 笔记
 │   ├── audio/                # 临时/导入音频
 │   └── stocks-database.json  # 股票数据库
+├── voice-transcriber-service/ # Swift 语音服务（子模块）
 └── docs/
     ├── TECHNICAL_SPEC.md
     ├── README.md
@@ -37,13 +38,17 @@ stock-notes-app/
 
 ## 依赖说明
 
-本仓库默认依赖同级目录下的 Swift 语音服务：
+本仓库通过 Git 子模块管理 Swift 语音服务：
 
 ```text
-../voice-transcriber-service
+voice-transcriber-service
 ```
 
-该服务不在当前 git 仓库内，但开发环境下会被 Electron 主进程按相对路径启动。
+首次克隆后请初始化子模块：
+
+```bash
+git submodule update --init --recursive
+```
 
 ## 快速开始
 
@@ -53,18 +58,21 @@ stock-notes-app/
 npm install
 ```
 
-### 2. 准备 Swift 语音服务
+### 2. 初始化并准备 Swift 语音服务
 
 ```bash
-cd ../voice-transcriber-service
+git submodule update --init --recursive
+cd voice-transcriber-service
+./scripts/setup-whisper.sh
 swift build
+cp .build/debug/voice-transcriber-service ./voice-transcriber-service
 ```
 
 确保以下文件可用：
 
-- `../voice-transcriber-service/voice-transcriber-service` 或 `.build` 中的可执行产物
-- `../voice-transcriber-service/whisper.cpp/main`
-- `../voice-transcriber-service/whisper.cpp/models/ggml-medium.bin`
+- `voice-transcriber-service/voice-transcriber-service` 或 `.build` 中的可执行产物
+- `voice-transcriber-service/whisper.cpp/main`
+- `voice-transcriber-service/whisper.cpp/models/ggml-medium.bin`
 
 ### 3. 可选配置云端纠错
 
