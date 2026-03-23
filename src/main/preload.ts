@@ -1,5 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+interface VoiceCommandResult {
+  success: boolean
+  error?: string
+}
+
+interface VoiceStatus {
+  isConnected: boolean
+  isRunning: boolean
+}
+
+interface VoiceTranscribeResult extends VoiceCommandResult {
+  text?: string | null
+}
+
 const api = {
   notes: {
     addEntry: (stockCode: string, data: any) => 
@@ -24,15 +38,15 @@ const api = {
   },
   
   voice: {
-    start: () => ipcRenderer.invoke('voice:start'),
-    stop: () => ipcRenderer.invoke('voice:stop'),
-    status: () => ipcRenderer.invoke('voice:status'),
-    startRecording: () => ipcRenderer.invoke('voice:startRecording'),
-    stopRecording: () => ipcRenderer.invoke('voice:stopRecording'),
+    start: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:start'),
+    stop: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:stop'),
+    status: (): Promise<VoiceStatus> => ipcRenderer.invoke('voice:status'),
+    startRecording: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:startRecording'),
+    stopRecording: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:stopRecording'),
     transcribeFile: (audioPath: string) => 
-      ipcRenderer.invoke('voice:transcribeFile', audioPath),
+      ipcRenderer.invoke('voice:transcribeFile', audioPath) as Promise<VoiceTranscribeResult>,
     transcribeWithCloud: (audioPath: string) =>
-      ipcRenderer.invoke('voice:transcribeWithCloud', audioPath),
+      ipcRenderer.invoke('voice:transcribeWithCloud', audioPath) as Promise<VoiceTranscribeResult>,
     onTranscript: (callback: (text: string, isFinal: boolean) => void) => {
       const handler = (_: any, text: string, isFinal: boolean) => callback(text, isFinal)
       ipcRenderer.on('voice:transcript', handler)

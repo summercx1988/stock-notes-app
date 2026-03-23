@@ -1,164 +1,105 @@
 # 股票投资语音笔记系统
 
-基于 Electron + React + TypeScript 的智能投资笔记管理工具，支持语音录入和AI文本处理。
+当前实现以 `v3.1` 技术方案为准：面向 macOS 的股票语音笔记工具，核心流程是录音或上传音频、使用本地 `whisper.cpp` 转写、做轻量纠错和股票匹配、最后保存为 Markdown 笔记。
 
-## 功能特性
+## 当前目标
 
-- 🎤 **语音录入**：实时录音，自动转文字
-- 🤖 **AI处理**：本地/云端双模式，智能文本优化
-- 📊 **时间轴视图**：按时间维度组织笔记
-- 📝 **Markdown编辑**：结构化笔记，YAML元数据
-- 💾 **本地存储**：数据安全，隐私保护
+- 让用户在看盘时快速记录口述想法
+- 尽量使用本地语音转写，减少网络依赖
+- AI 仅做辅助纠错和股票名称匹配，不做重分析
+- 以股票为单位保存本地 Markdown 笔记，便于复盘
 
-## 技术栈
+## 当前架构
 
-- **前端**：React 18 + TypeScript + Ant Design + TailwindCSS
-- **桌面**：Electron 32
-- **AI**：
-  - 本地：Ollama + Qwen2.5-7B + whisper.cpp
-  - 云端：DeepSeek / OpenAI / 通义千问 API
-- **存储**：SQLite + YAML + Markdown
+- 前端：Electron 32 + React 18 + TypeScript + Ant Design
+- 主进程：Electron IPC、笔记存储、股票数据库、轻量 AI 处理
+- 语音服务：外部 Swift 服务 `../voice-transcriber-service`
+- 语音转写：`whisper.cpp` + `ggml-medium.bin`
+- 数据存储：`data/stocks/*.md` + `data/stocks-database.json`
 
-## 项目结构
+## 目录说明
 
-```
+```text
 stock-notes-app/
 ├── src/
-│   ├── main/           # Electron主进程
-│   │   ├── main.ts     # 入口文件
-│   │   ├── preload.ts  # 预加载脚本
-│   │   ├── ipc/        # IPC通信
-│   │   └── services/   # 后端服务
-│   │       ├── ai/     # AI服务（本地/云端）
-│   │       ├── notes.ts # 笔记服务
-│   │       └── audio.ts # 音频服务
-│   ├── renderer/       # React渲染进程
-│   │   ├── components/ # UI组件
-│   │   ├── layouts/    # 布局组件
-│   │   └── stores/     # 状态管理
-│   └── shared/         # 共享类型定义
-├── data/               # 数据存储目录
-│   ├── stocks/         # 股票笔记文件
-│   ├── audio/          # 音频文件
-│   └── index.db        # SQLite索引
-└── resources/          # 资源文件
-    ├── models/         # AI模型
-    └── bin/            # 二进制工具
+│   ├── main/                 # Electron 主进程、IPC、服务适配
+│   ├── renderer/             # React 界面
+│   └── shared/               # 共享类型
+├── data/
+│   ├── stocks/               # 股票 Markdown 笔记
+│   ├── audio/                # 临时/导入音频
+│   └── stocks-database.json  # 股票数据库
+└── docs/
+    ├── TECHNICAL_SPEC.md
+    ├── README.md
+    └── RECORDING_TRANSCRIBE_SPEC.md
 ```
+
+## 依赖说明
+
+本仓库默认依赖同级目录下的 Swift 语音服务：
+
+```text
+../voice-transcriber-service
+```
+
+该服务不在当前 git 仓库内，但开发环境下会被 Electron 主进程按相对路径启动。
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 安装前端依赖
 
 ```bash
 npm install
 ```
 
-### 2. 安装Ollama（本地AI模式）
+### 2. 准备 Swift 语音服务
 
 ```bash
-# macOS
-brew install ollama
-
-# 启动Ollama服务
-ollama serve
-
-# 下载Qwen2.5模型
-ollama pull qwen2.5:7b
+cd ../voice-transcriber-service
+swift build
 ```
 
-### 3. 下载whisper.cpp
+确保以下文件可用：
+
+- `../voice-transcriber-service/voice-transcriber-service` 或 `.build` 中的可执行产物
+- `../voice-transcriber-service/whisper.cpp/main`
+- `../voice-transcriber-service/whisper.cpp/models/ggml-medium.bin`
+
+### 3. 可选配置云端纠错
+
+如果希望启用纠错和股票名修正，可设置：
 
 ```bash
-# 从GitHub下载预编译版本
-# https://github.com/ggerganov/whisper.cpp/releases
-
-# 下载模型
-# https://huggingface.co/ggerganov/whisper.cpp
+export MINIMAX_API_KEY=your-api-key
+export OPENAI_BASE_URL=https://api.minimaxi.com/v1
+export MINIMAX_MODEL=MiniMax-M2.7-highspeed
 ```
 
-### 4. 启动开发服务器
+未配置时，应用仍可完成本地转写和本地股票匹配，只是不会调用云端纠错。
+
+### 4. 启动开发环境
 
 ```bash
 npm run electron:dev
 ```
 
-## 配置
+## 当前录音流程
 
-### AI模式配置
+1. 打开录音弹窗。
+2. 按需启动 Swift 语音服务。
+3. 开始录音或上传音频文件。
+4. 录音结束后，由 `whisper.cpp` 返回最终转写文本。
+5. 主进程执行纠错和股票候选匹配。
+6. 结果保存到对应股票的 Markdown 笔记。
 
-在 `data/config/settings.yaml` 中配置：
+## 主要文档
 
-```yaml
-ai:
-  mode: auto  # local / cloud / auto
-  
-  local:
-    asrEngine: whisper-cpp
-    llmEngine: ollama
-    model: qwen2.5:7b
-    
-  cloud:
-    defaultProvider: deepseek
-    providers:
-      deepseek:
-        enabled: true
-        model: deepseek-chat
-```
+- 最新技术实现：[docs/TECHNICAL_SPEC.md](./docs/TECHNICAL_SPEC.md)
+- 用户与开发说明：[docs/README.md](./docs/README.md)
+- 录音转写专项说明：[docs/RECORDING_TRANSCRIBE_SPEC.md](./docs/RECORDING_TRANSCRIBE_SPEC.md)
+- 外部 Swift 服务同步说明：[docs/VOICE_SERVICE_EXTERNAL_PATCH.md](./docs/VOICE_SERVICE_EXTERNAL_PATCH.md)
 
-### API Key配置
+## 文档状态说明
 
-在应用设置中配置云端API Key，或设置环境变量：
-
-```bash
-export DEEPSEEK_API_KEY=your-api-key
-export OPENAI_API_KEY=your-api-key
-```
-
-## 数据格式
-
-### 笔记文件格式
-
-```markdown
----
-stock_code: "600519"
-stock_name: "贵州茅台"
-timestamp: "2024-01-15T09:30:45+08:00"
-title: "开盘突破前高"
-summary: "观察开盘突破情况"
-keywords:
-  - "突破"
-  - "放量"
-viewpoint:
-  direction: "看多"
-  confidence: 0.75
-  timeHorizon: "短线"
----
-
-# 开盘突破前高
-
-今日开盘后，贵州茅台快速突破前期高点...
-```
-
-## 开发命令
-
-```bash
-# 开发模式
-npm run dev
-
-# 类型检查
-npm run typecheck
-
-# 代码检查
-npm run lint
-
-# 构建渲染进程
-npm run build
-
-# 构建Electron应用
-npm run electron:build
-```
-
-## 许可证
-
-MIT
+`docs/PRD.md`、`docs/DATA_MODEL.md`、`docs/TEST_GUIDE.md` 中仍保留早期规划内容，当前实现请以 `docs/TECHNICAL_SPEC.md` 为准。

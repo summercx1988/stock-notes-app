@@ -5,6 +5,8 @@
 **创建日期：** 2024年  
 **最后更新：** 2024年
 
+> 状态说明：本文件保留的是早期产品规划。当前实现请优先以 `docs/TECHNICAL_SPEC.md`、`docs/README.md` 和 `docs/RECORDING_TRANSCRIBE_SPEC.md` 为准。
+
 ---
 
 ## 一、产品概述

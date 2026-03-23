@@ -37,14 +37,6 @@ function createWindow() {
 app.whenReady().then(async () => {
   createWindow()
 
-  try {
-    console.log('[Main] Auto-connecting to voice service...')
-    await voiceTranscriberClient.start()
-    console.log('[Main] Voice service connected')
-  } catch (error) {
-    console.error('[Main] Failed to connect to voice service:', error)
-  }
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()

@@ -40,14 +40,12 @@ ipcMain.handle('voice:start', async () => {
     const status = voiceTranscriberClient.getStatus()
     console.log('[IPC] Current status:', status)
     
-    if (!status.isRunning) {
-      console.log('[IPC] Starting voice service...')
+    if (!status.isRunning || !status.isConnected) {
+      console.log('[IPC] Starting or reconnecting voice service...')
       await voiceTranscriberClient.start()
       console.log('[IPC] Voice service started, status:', voiceTranscriberClient.getStatus())
     }
-    
-    voiceTranscriberClient.startRecording()
-    console.log('[IPC] Recording started')
+
     return { success: true }
   } catch (error: any) {
     console.error('[IPC] voice:start error:', error)
@@ -57,20 +55,43 @@ ipcMain.handle('voice:start', async () => {
 
 ipcMain.handle('voice:stop', async () => {
   console.log('[IPC] voice:stop')
-  voiceTranscriberClient.stopRecording()
-  return { success: true }
+
+  try {
+    await voiceTranscriberClient.stop()
+    return { success: true }
+  } catch (error: any) {
+    console.error('[IPC] voice:stop error:', error)
+    return { success: false, error: error.message }
+  }
 })
 
 ipcMain.handle('voice:startRecording', async () => {
   console.log('[IPC] voice:startRecording')
-  voiceTranscriberClient.startRecording()
-  return { success: true }
+
+  try {
+    const status = voiceTranscriberClient.getStatus()
+    if (!status.isRunning || !status.isConnected) {
+      await voiceTranscriberClient.start()
+    }
+
+    voiceTranscriberClient.startRecording()
+    return { success: true }
+  } catch (error: any) {
+    console.error('[IPC] voice:startRecording error:', error)
+    return { success: false, error: error.message }
+  }
 })
 
 ipcMain.handle('voice:stopRecording', async () => {
   console.log('[IPC] voice:stopRecording')
-  voiceTranscriberClient.stopRecording()
-  return { success: true }
+
+  try {
+    voiceTranscriberClient.stopRecording()
+    return { success: true }
+  } catch (error: any) {
+    console.error('[IPC] voice:stopRecording error:', error)
+    return { success: false, error: error.message }
+  }
 })
 
 ipcMain.handle('voice:status', async () => {
@@ -81,8 +102,19 @@ ipcMain.handle('voice:status', async () => {
 
 ipcMain.handle('voice:transcribeFile', async (_, audioPath: string) => {
   console.log('[IPC] voice:transcribeFile:', audioPath)
-  voiceTranscriberClient.transcribeFile(audioPath)
-  return { success: true }
+
+  try {
+    const status = voiceTranscriberClient.getStatus()
+    if (!status.isRunning || !status.isConnected) {
+      await voiceTranscriberClient.start()
+    }
+
+    const text = await voiceTranscriberClient.transcribeFile(audioPath)
+    return { success: true, text }
+  } catch (error: any) {
+    console.error('[IPC] voice:transcribeFile error:', error)
+    return { success: false, error: error.message }
+  }
 })
 
 ipcMain.handle('voice:transcribeWithCloud', async (_, audioPath: string) => {

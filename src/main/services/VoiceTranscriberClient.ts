@@ -56,8 +56,17 @@ export class VoiceTranscriberClient extends EventEmitter {
   }
 
   async start(): Promise<void> {
-    await this.startService()
-    await this.connectWebSocket()
+    if (this.isConnected && this.ws?.readyState === WebSocket.OPEN) {
+      return
+    }
+
+    if (!this.process) {
+      await this.startService()
+    }
+
+    if (!this.isConnected) {
+      await this.connectWebSocket()
+    }
   }
 
   private async startService(): Promise<void> {
@@ -171,7 +180,7 @@ export class VoiceTranscriberClient extends EventEmitter {
     if (this.ws && this.isConnected) {
       this.ws.send(JSON.stringify(message))
     } else {
-      console.error('[VoiceClient] Not connected')
+      throw new Error('语音服务未连接')
     }
   }
 
@@ -185,9 +194,45 @@ export class VoiceTranscriberClient extends EventEmitter {
     this.send({ type: 'stop' })
   }
 
-  transcribeFile(audioPath: string): void {
+  async transcribeFile(audioPath: string): Promise<string> {
     console.log('[VoiceClient] Transcribing file:', audioPath)
-    this.send({ type: 'transcribe_file', audioPath })
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup()
+        reject(new Error('语音转写超时'))
+      }, 120000)
+
+      const cleanup = () => {
+        clearTimeout(timeout)
+        this.off('transcript', handleTranscript)
+        this.off('error', handleError)
+      }
+
+      const handleTranscript = (text?: string, isFinal?: boolean) => {
+        if (!isFinal) {
+          return
+        }
+
+        cleanup()
+        resolve(text || '')
+      }
+
+      const handleError = (error?: string) => {
+        cleanup()
+        reject(new Error(error || '语音转写失败'))
+      }
+
+      this.on('transcript', handleTranscript)
+      this.on('error', handleError)
+
+      try {
+        this.send({ type: 'transcribe_file', audioPath })
+      } catch (error) {
+        cleanup()
+        reject(error)
+      }
+    })
   }
 
   ping(): void {

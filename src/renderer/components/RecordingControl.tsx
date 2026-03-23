@@ -69,13 +69,13 @@ const RecordingControl: React.FC = () => {
 
   const handleAnalyze = useCallback(async (textToAnalyze: string) => {
     if (!textToAnalyze.trim()) {
-      message.warning('没有转写内容可供分析')
+      message.warning('没有转写内容可供处理')
       return
     }
 
     setRecordingState('analyzing')
     setCurrentStep(3)
-    message.info('正在分析内容...')
+    message.info('正在纠错并匹配股票...')
 
     try {
       const result = await window.api.ai.extract(textToAnalyze)
@@ -85,7 +85,7 @@ const RecordingControl: React.FC = () => {
       setCurrentStep(4)
 
       if (result.stock) {
-        message.success(`分析完成: ${result.stock.name} (${result.stock.code})`)
+        message.success(`处理完成: ${result.stock.name} (${result.stock.code})`)
         setSelectedStockCode(result.stock.code)
       } else {
         message.warning('未识别到股票，请手动选择')
@@ -93,7 +93,7 @@ const RecordingControl: React.FC = () => {
 
     } catch (error: any) {
       console.error('[RecordingControl] Analysis failed:', error)
-      message.error('分析失败: ' + error.message)
+      message.error('处理失败: ' + error.message)
       setRecordingState('transcribing')
       setCurrentStep(2)
     }
@@ -133,20 +133,21 @@ const RecordingControl: React.FC = () => {
       }, 500)
 
       try {
-        await window.api.voice.transcribeFile(path)
+        const result = await window.api.voice.transcribeFile(path)
 
         clearInterval(progressInterval)
         setTranscribeProgress(100)
 
-        setTimeout(() => {
-          if (transcribedText && transcribedText.trim()) {
-            handleAnalyze(transcribedText)
-          } else {
-            message.warning('转写结果为空，请重新录音')
-            setRecordingState('idle')
-            setCurrentStep(1)
-          }
-        }, 500)
+        const finalText = result?.success ? result.text?.trim() ?? '' : ''
+
+        if (finalText) {
+          setTranscribedText(finalText)
+          handleAnalyze(finalText)
+        } else {
+          message.warning(result?.error || '转写结果为空，请重新录音')
+          setRecordingState('idle')
+          setCurrentStep(1)
+        }
       } catch (error: any) {
         clearInterval(progressInterval)
         console.error('[RecordingControl] Transcribe failed:', error)
@@ -167,7 +168,7 @@ const RecordingControl: React.FC = () => {
       unsubscribeAudioSaved()
       unsubscribeError()
     }
-  }, [isModalOpen, handleAnalyze, recordingDuration, transcribedText])
+  }, [isModalOpen, handleAnalyze, recordingDuration])
 
   const checkVoiceServiceStatus = async () => {
     try {
@@ -185,9 +186,12 @@ const RecordingControl: React.FC = () => {
 
     try {
       const status = await checkVoiceServiceStatus()
-      if (!status?.isRunning) {
+      if (!status?.isRunning || !status?.isConnected) {
         message.info('正在启动语音服务...')
-        await window.api.voice.start()
+        const result = await window.api.voice.start()
+        if (!result?.success) {
+          throw new Error(result?.error || '语音服务启动失败')
+        }
         message.success('语音服务已启动')
       }
     } catch (error: any) {
@@ -207,7 +211,11 @@ const RecordingControl: React.FC = () => {
   const startRecording = async () => {
     try {
       setRecordingState('connecting')
-      await window.api.voice.startRecording()
+      const result = await window.api.voice.startRecording()
+      if (!result?.success) {
+        throw new Error(result?.error || '启动录音失败')
+      }
+
       setRecordingState('recording')
       setCurrentStep(1)
 
@@ -230,7 +238,11 @@ const RecordingControl: React.FC = () => {
         recordingTimerRef.current = null
       }
 
-      await window.api.voice.stopRecording()
+      const result = await window.api.voice.stopRecording()
+      if (!result?.success) {
+        throw new Error(result?.error || '停止录音失败')
+      }
+
       message.info('录音已停止，正在保存...')
     } catch (error: any) {
       console.error('[RecordingControl] Stop recording failed:', error)
@@ -252,11 +264,9 @@ const RecordingControl: React.FC = () => {
 
     try {
       await window.api.notes.addEntry(stockCode, {
-        timestamp: new Date().toISOString(),
-        originalText: extractResult.originalText,
-        optimizedText: extractResult.optimizedText,
-        note: extractResult.note,
-        audioPath: audioPath
+        content: extractResult.optimizedText || extractResult.originalText,
+        audioFile: audioPath,
+        audioDuration: recordingDuration
       })
 
       const updatedNote = await window.api.notes.getStockNote(stockCode)
@@ -291,9 +301,11 @@ const RecordingControl: React.FC = () => {
 
     try {
       const result = await window.api.voice.transcribeFile(file.path)
-      if (result.text) {
+      if (result.success && result.text) {
         setTranscribedText(result.text)
         handleAnalyze(result.text)
+      } else {
+        throw new Error(result.error || '转写结果为空')
       }
     } catch (error: any) {
       message.error('转写失败: ' + error.message)
@@ -313,7 +325,7 @@ const RecordingControl: React.FC = () => {
       case 'transcribing':
         return <Tag color="purple" icon={<LoadingOutlined />}>转写中</Tag>
       case 'analyzing':
-        return <Tag color="cyan" icon={<LoadingOutlined />}>分析中</Tag>
+        return <Tag color="cyan" icon={<LoadingOutlined />}>处理中</Tag>
       case 'completed':
         return <Tag color="green" icon={<CheckCircleOutlined />}>完成</Tag>
       default:
@@ -343,7 +355,7 @@ const RecordingControl: React.FC = () => {
           <Steps current={currentStep} size="small" className="mb-6">
             <Step title="录音" description="录制音频" />
             <Step title="转写" description="Whisper" />
-            <Step title="分析" description="AI分析" />
+            <Step title="处理" description="纠错和匹配" />
             <Step title="保存" description="笔记" />
           </Steps>
 
@@ -442,7 +454,7 @@ const RecordingControl: React.FC = () => {
           {currentStep === 3 && recordingState === 'analyzing' && (
             <div className="text-center py-8">
               <LoadingOutlined className="text-5xl text-cyan-500 mb-4" />
-              <div className="text-lg">正在分析内容...</div>
+              <div className="text-lg">正在纠错并匹配股票...</div>
             </div>
           )}
 

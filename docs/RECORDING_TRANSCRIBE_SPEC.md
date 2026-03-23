@@ -1,317 +1,191 @@
-# 股票投资语音笔记系统 - 录音转写功能规格
+# 股票投资语音笔记系统 - 录音转写功能规格 v3.1
 
-**版本：** v2.0
-**更新日期：** 2025-03-19
-
----
-
-## 一、功能概述
-
-录音转写是股票投资笔记系统的核心功能，用户通过语音快速记录投资想法，系统自动完成转写、实体识别、观点提炼，最终生成结构化笔记。
-
-### 1.1 核心流程
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        录音转写完整流程 v2.0                      │
-└─────────────────────────────────────────────────────────────────┘
-
-用户操作                    系统处理                      AI 处理
-────────────────────────────────────────────────────────────────────
-1. 点击"录音"     →      请求麦克风权限（首次确认）
-2. 说话           →      实时录音
-3. 点击"停止"    →      保存音频文件
-                          ↓
-                   ┌──────────────────────────────┐
-                   │     Whisper 本地模型转写      │
-                   │     (语音 → 文字)            │
-                   │     模型: ggml-small.bin     │
-                   └──────────────────────────────┘
-                          ↓
-                   ┌──────────────────────────────┐
-                   │     智谱 GLM-4-Flash 分析     │
-                   │     - 识别股票名称/代码       │
-                   │     - 提取投资观点            │
-                   │     - 提取时间戳              │
-                   │     - 优化文本                │
-                   └──────────────────────────────┘
-                          ↓
-4. 展示结果       ←    AI 提炼结果
-   - 转写文本
-   - 识别股票
-   - 提取观点
-   - 提取时间
-                          ↓
-5. 用户确认/修改   →    追加到股票 MD 文件
-```
+**版本：** v3.1
+**更新日期：** 2026-03-23
 
 ---
 
-## 二、技术方案
+## 一、目标
 
-### 2.1 语音转文字
+录音转写链路的目标是稳定地完成以下事情：
 
-| 项目 | 方案 |
-|------|------|
-| **模型** | Whisper Small (ggml-small.bin) |
-| **大小** | 465 MB |
-| **运行方式** | 本地 CPU/GPU (whisper.cpp) |
-| **支持语言** | 中文 |
-| **实时性** | 录音结束后转写 |
+1. 获取语音输入
+2. 产出可用的中文转写文本
+3. 做轻量纠错和股票名称匹配
+4. 把结果保存为可复盘的股票笔记
 
-### 2.2 AI 分析
-
-| 项目 | 方案 |
-|------|------|
-| **服务** | 智谱 GLM-4-Flash |
-| **API** | https://open.bigmodel.cn/api/paas/v4 |
-| **功能** | 股票识别、观点提取、时间戳提取、文本优化 |
-
-### 2.3 股票数据库
-
-| 项目 | 方案 |
-|------|------|
-| **数据源** | AKShare |
-| **数据量** | 5490 只 A 股 |
-| **存储** | 本地 JSON 文件 |
-| **更新** | 手动触发 |
+当前版本不再承担复杂观点提炼、摘要生成或结构化分析。
 
 ---
 
-## 三、输入方式
+## 二、当前链路
 
-### 3.1 语音录入（核心亮点）
+### 2.1 录音模式
 
-```
-┌────────────────────────────────────────────────────────────┐
-│  📝 新增投资笔记                                           │
-├────────────────────────────────────────────────────────────┤
-│  [🎤 语音录入]  [✏️ 手动输入]                              │
-│────────────────────────────────────────────────────────────│
-│                                                            │
-│                    ⏱️ 00:45                                │
-│                                                            │
-│         🔴 录音中...                                      │
-│                                                            │
-│              [ 停止录音 ]                                 │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
+```text
+用户点击“开始录音”
+  -> Electron 主进程检查 / 启动 Swift 语音服务
+  -> Swift 服务启动 AVAudioEngine
+  -> 用户点击“停止录音”
+  -> Swift 服务保存完整音频文件
+  -> Swift 服务调用 whisper.cpp 做最终转写
+  -> 主进程接收最终 transcript
+  -> 主进程执行纠错和股票匹配
+  -> 前端展示结果
+  -> 保存 Markdown 笔记
 ```
 
-### 3.2 手动输入（备选）
+### 2.2 上传音频模式
 
-```
-┌────────────────────────────────────────────────────────────┐
-│  📝 新增投资笔记                                           │
-├────────────────────────────────────────────────────────────┤
-│  [🎤 语音录入]  [✏️ 手动输入]                              │
-│────────────────────────────────────────────────────────────│
-│                                                            │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ 今天看好贵州茅台，认为白酒板块有反弹机会...          │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                            │
-│              [ AI 分析 ]                                  │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
+```text
+用户上传音频文件
+  -> 前端调用 voice:transcribeFile
+  -> Swift 服务调用 whisper.cpp 转写完整文件
+  -> 主进程返回最终 transcript
+  -> 主进程执行纠错和股票匹配
+  -> 前端展示结果
+  -> 保存 Markdown 笔记
 ```
 
 ---
 
-## 四、AI 提取内容
+## 三、组件职责
 
-### 4.1 数据结构
+### 3.1 Renderer
 
-```typescript
-interface AIExtractResult {
-  // 股票信息
-  stock?: {
-    code: string       // 股票代码，如 "600519"
-    name: string       // 股票名称，如 "贵州茅台"
-    confidence: number // 置信度 0-1
-  }
+- 打开录音弹窗
+- 控制录音状态和步骤条
+- 接收 `transcript`、`audio_saved`、`error` 事件
+- 触发保存笔记
 
-  // 投资观点
-  viewpoint: {
-    direction: '看多' | '看空' | '中性'
-    confidence: number
-    timeHorizon: '短线' | '中线' | '长线'
-    reasoning?: string
-    keyFactors?: string[]
-  }
+### 3.2 Electron Main
 
-  // 时间戳（新增）
-  timestamp: {
-    type: 'absolute' | 'relative' | 'none'
-    value?: Date
-    originalText?: string  // 如 "昨天"、"3月15日"
-  }
+- 管理 IPC
+- 管理 `VoiceTranscriberClient`
+- 转发转写结果到前端
+- 执行纠错和股票名称匹配
+- 保存笔记文件
 
-  // 文本
-  optimizedText: string
-  originalText: string
+### 3.3 Swift 语音服务
+
+- 录制音频
+- 保存 WAV 音频
+- 调用 `whisper.cpp`
+- 通过 WebSocket 返回 `transcript`、`audio_saved`、`error`
+
+---
+
+## 四、协议约定
+
+### 4.1 从主进程到 Swift 服务
+
+```json
+{ "type": "start" }
+{ "type": "stop" }
+{ "type": "ping" }
+{ "type": "transcribe_file", "audioPath": "/abs/path/to/file.wav" }
+```
+
+### 4.2 从 Swift 服务到主进程
+
+```json
+{ "type": "transcript", "text": "中原海能今天尾盘拉升", "isFinal": true }
+{ "type": "audio_saved", "audioPath": "/abs/path/to/file.wav" }
+{ "type": "error", "errorMessage": "Transcription failed" }
+{ "type": "status", "status": { "isRecording": false, "duration": 8.2, "memoryUsage": 123456 } }
+```
+
+---
+
+## 五、当前行为约束
+
+### 5.1 语音服务启动
+
+- 应用启动时不再强制自动连接语音服务
+- 录音弹窗打开或开始录音时按需启动
+
+### 5.2 `voice:transcribeFile` 语义
+
+当前实现必须满足：
+
+- 不是“只发命令立即返回”
+- 而是等待最终 `transcript` 或 `error`
+- 返回结构为 `success/text/error`
+
+### 5.3 前端处理逻辑
+
+前端不能依赖旧的 React 状态去判断转写是否完成，必须以本次 IPC 返回的最终文本为准。
+
+---
+
+## 六、当前数据输出
+
+保存笔记时当前使用的字段：
+
+```ts
+{
+  content: extractResult.optimizedText || extractResult.originalText,
+  audioFile: audioPath,
+  audioDuration: recordingDuration
 }
 ```
 
-### 4.2 时间戳处理
+说明：
 
-| 用户输入 | 识别结果 | 时间值 |
-|----------|----------|--------|
-| "今天看好..." | relative | 当前日期 |
-| "昨天观察到..." | relative | 当前日期 - 1 |
-| "上周三分析..." | relative | 当前日期 - 7 |
-| "3月15日买入..." | absolute | 2025-03-15 |
-| 无时间词 | none | 当前日期 |
+- `content` 是实际写入 Markdown 的正文
+- `audioFile` 指向原始音频
+- `audioDuration` 用于统计和展示
 
 ---
 
-## 五、笔记存储
+## 七、已修复的关键问题
 
-### 5.1 文件结构
+### 7.1 转写调用语义不一致
 
-```
-data/
-├── stocks/
-│   ├── 600519.md          # 贵州茅台笔记
-│   ├── 000858.md          # 五粮液笔记
-│   └── ...
-├── audio/
-│   ├── 600519/
-│   │   ├── 20250319-0930.webm
-│   │   └── 20250319-1430.webm
-│   └── ...
-└── stocks-database.json   # 股票数据库
-```
+历史问题：
 
-### 5.2 Markdown 格式
+- `voice:transcribeFile` 在主进程里只是把消息发给 Swift 服务
+- 前端却把它当成“已经拿到了转写结果”
 
-```markdown
----
-stock_code: "600519"
-stock_name: "贵州茅台"
-created_at: "2025-03-19T09:30:00+08:00"
-updated_at: "2025-03-19T14:30:00+08:00"
-total_entries: 5
----
+修复后：
 
-# 贵州茅台投资笔记
+- 主进程会等待最终 `transcript`
+- 前端直接使用这次调用返回的文本
 
-## 📅 2025-03-19
+### 7.2 保存笔记字段不匹配
 
-### 🕐 09:30 盘前观察
+历史问题：
 
-> **观点**: 看多 (信心: 0.8) | **周期**: 中线
->
-> **理由**: 午后继续走强，成交量持续放大
->
-> **因素**: ["量价配合良好", "北向资金流入"]
+- 录音弹窗保存时传给 `notes:addEntry` 的字段名与 `NotesService` 不一致
 
-今日观察贵州茅台，午后继续走强，成交量持续放大，建议持仓待涨。
+修复后：
 
-*💾 自动生成 | 🎤 45秒*
+- 改为传 `content/audioFile/audioDuration`
+
+### 7.3 Swift 服务整文件转写解析不稳
+
+历史问题：
+
+- `WhisperEngine` 的输出解析策略不够稳
+- 实时转写支路还存在绝对路径依赖
+
+修复后：
+
+- 补充了更明确的输出解析和错误处理
+- 去掉了写死的工作目录路径
 
 ---
 
-### 🕐 14:30 盘后总结
+## 八、后续建议
 
-> **观点**: 中性 (信心: 0.6) | **周期**: 短线
+### 8.1 短期
 
-尾盘有所回落，但整体趋势仍保持向上。
+- 把 Swift 服务源码纳入主仓库或独立仓库管理
+- 增加一条可自动化的端到端转写测试
+- 明确 `NotesService` 的录音入口数据模型
 
-*💾 自动生成 | 🎤 30秒*
-```
+### 8.2 中期
 
----
-
-## 六、安装配置
-
-### 6.1 系统要求
-
-- Node.js 18+
-- ffmpeg（音频格式转换）
-- macOS / Windows / Linux
-
-### 6.2 安装步骤
-
-```bash
-# 1. 安装依赖
-npm install
-
-# 2. 安装 ffmpeg（macOS）
-brew install ffmpeg
-
-# 3. 下载 Whisper 模型（国内镜像）
-curl -L -o node_modules/whisper-node/lib/whisper.cpp/models/ggml-small.bin \
-  "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
-
-# 4. 更新股票数据库
-npm run update-stocks
-
-# 5. 启动应用
-GLM_API_KEY=your_api_key npm run electron:dev
-```
-
-### 6.3 环境变量
-
-| 变量 | 说明 |
-|------|------|
-| `GLM_API_KEY` | 智谱 API Key（必需） |
-
----
-
-## 七、API 接口
-
-### 7.1 Whisper API
-
-```typescript
-// 检查模型是否可用
-window.api.whisper.isAvailable(): Promise<boolean>
-
-// 转写音频文件
-window.api.whisper.transcribe(audioPath: string): Promise<TranscribeResult>
-
-// 转写音频 Buffer
-window.api.whisper.transcribeBuffer(buffer: ArrayBuffer): Promise<TranscribeResult>
-```
-
-### 7.2 AI API
-
-```typescript
-// 提取股票和观点
-window.api.ai.extract(text: string): Promise<AIExtractResult>
-
-// 优化文本
-window.api.ai.optimizeText(text: string): Promise<string>
-```
-
-### 7.3 笔记 API
-
-```typescript
-// 添加笔记条目
-window.api.notes.addEntry(stockCode: string, data: {
-  content: string
-  viewpoint?: Viewpoint
-  timestamp?: string
-  audioFile?: string
-  audioDuration?: number
-}): Promise<void>
-
-// 获取股票笔记
-window.api.notes.getStockNote(stockCode: string): Promise<StockNote>
-```
-
----
-
-## 八、后续扩展
-
-### 8.1 v2.1 计划
-
-- [ ] 实时转写显示（边说边显示）
-- [ ] 批量导入音频
-- [ ] 多语言支持
-
-### 8.2 v2.2 计划
-
-- [ ] 语音命令控制
-- [ ] 自动股票代码朗读
-- [ ] 语音提醒功能
+- 优化股票名称匹配准确率
+- 为无语音内容和超短音频增加更清晰的提示
+- 统一录音模式和上传模式的错误提示

@@ -1,5 +1,7 @@
 # 测试建议与验证方案
 
+> 状态说明：本文件保留了早期测试方案，其中 GLM、SQLite、Ollama 等检查项并不完全适用于当前实现。当前录音转写链路请优先参考 `docs/RECORDING_TRANSCRIBE_SPEC.md` 与 `docs/TECHNICAL_SPEC.md`。
+
 ## 一、测试环境准备
 
 ### 1.1 基础环境
@@ -453,4 +455,3 @@ Day 3: 语音功能测试
 Day 4: 综合测试 + 问题修复
 Day 5: 性能测试 + 优化
 ```
-

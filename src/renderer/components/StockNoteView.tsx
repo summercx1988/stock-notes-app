@@ -161,7 +161,7 @@ const StockNoteView: React.FC = () => {
           description={
             <div className="text-center">
               <p className="text-lg mb-2">点击右上角 🎤 录音按钮开始</p>
-              <p className="text-gray-400 text-sm">语音输入 → AI分析 → 自动匹配股票 → 保存笔记</p>
+              <p className="text-gray-400 text-sm">语音输入 → 纠错和匹配 → 保存笔记</p>
             </div>
           }
           image={Empty.PRESENTED_IMAGE_SIMPLE}
