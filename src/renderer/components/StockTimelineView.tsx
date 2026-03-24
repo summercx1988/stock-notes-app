@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Card, DatePicker, Empty, Select, Space, Spin, Tag, Timeline, Typography, message } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { TimeEntry, Viewpoint } from '../../shared/types'
+import type { NoteCategory, TimeEntry, Viewpoint } from '../../shared/types'
 
 const { RangePicker } = DatePicker
 const { Text } = Typography
 
 type ViewpointFilter = '全部' | Viewpoint['direction']
+type CategoryFilter = '全部' | NoteCategory
 
 const StockTimelineView: React.FC = () => {
   const {
@@ -21,6 +22,7 @@ const StockTimelineView: React.FC = () => {
 
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [viewpointFilter, setViewpointFilter] = useState<ViewpointFilter>('全部')
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('全部')
   const [timeRange, setTimeRange] = useState<[Dayjs, Dayjs] | null>(null)
 
   useEffect(() => {
@@ -68,6 +70,10 @@ const StockTimelineView: React.FC = () => {
           if (direction !== viewpointFilter) return false
         }
 
+        if (categoryFilter !== '全部' && entry.category !== categoryFilter) {
+          return false
+        }
+
         if (timeRange) {
           const eventTime = dayjs(entry.eventTime || entry.timestamp)
           if (eventTime.isBefore(timeRange[0]) || eventTime.isAfter(timeRange[1])) return false
@@ -80,7 +86,7 @@ const StockTimelineView: React.FC = () => {
         const right = new Date(b.eventTime || b.timestamp).getTime()
         return right - left
       })
-  }, [entries, timeRange, viewpointFilter])
+  }, [categoryFilter, entries, timeRange, viewpointFilter])
 
   const getViewpointColor = (direction?: Viewpoint['direction']) => {
     if (direction === '看多') return 'red'
@@ -96,10 +102,24 @@ const StockTimelineView: React.FC = () => {
     return '#9ca3af'
   }
 
+  const getCategoryColor = (category: NoteCategory) => {
+    if (category === '看盘预测') return 'magenta'
+    if (category === '交易札记') return 'gold'
+    if (category === '资讯备忘') return 'cyan'
+    return 'default'
+  }
+
   const formatMinuteTime = (value?: Date | string) => {
     const date = dayjs(value)
     return date.isValid() ? date.format('YYYY-MM-DD HH:mm') : '-'
   }
+
+  const summarizeContent = (content: string) => {
+    const oneLine = content.replace(/\s+/g, ' ').trim()
+    return oneLine.length > 120 ? `${oneLine.slice(0, 120)}...` : oneLine
+  }
+
+  const stockDisplayName = currentStockName ? `${currentStockName}+${currentStockCode}` : currentStockCode
 
   if (!currentStockCode) {
     return (
@@ -122,11 +142,23 @@ const StockTimelineView: React.FC = () => {
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl font-semibold m-0">
-            {currentStockName || currentStockCode} 时间轴
+            {stockDisplayName} 事件时间轴
           </h2>
           <Tag color="blue">{currentStockCode}</Tag>
         </div>
         <Space wrap>
+          <Select
+            value={categoryFilter}
+            style={{ width: 140 }}
+            onChange={(value) => setCategoryFilter(value as CategoryFilter)}
+            options={[
+              { label: '全部类别', value: '全部' },
+              { label: '看盘预测', value: '看盘预测' },
+              { label: '交易札记', value: '交易札记' },
+              { label: '备忘', value: '备忘' },
+              { label: '资讯备忘', value: '资讯备忘' }
+            ]}
+          />
           <Select
             value={viewpointFilter}
             style={{ width: 120 }}
@@ -135,6 +167,7 @@ const StockTimelineView: React.FC = () => {
               { label: '全部观点', value: '全部' },
               { label: '看多', value: '看多' },
               { label: '看空', value: '看空' },
+              { label: '中性', value: '中性' },
               { label: '未知', value: '未知' }
             ]}
           />
@@ -166,7 +199,7 @@ const StockTimelineView: React.FC = () => {
                   <Card size="small" bordered className="mb-3">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2">
-                        <Text strong>{entry.title}</Text>
+                        <Tag color={getCategoryColor(entry.category)}>{entry.category}</Tag>
                         <Tag color={getViewpointColor(entry.viewpoint?.direction)}>
                           {entry.viewpoint?.direction || '未知'}
                         </Tag>
@@ -175,7 +208,8 @@ const StockTimelineView: React.FC = () => {
                       <Text type="secondary">{formatMinuteTime(entry.eventTime || entry.timestamp)}</Text>
                     </div>
                     <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                      {entry.content}
+                      <Text strong>{entry.title}</Text>
+                      <div className="mt-2">{summarizeContent(entry.content)}</div>
                     </div>
                     <div className="mt-2 text-xs text-gray-400">
                       记录时间：{formatMinuteTime(entry.createdAt)}

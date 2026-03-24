@@ -82,6 +82,10 @@ const Sidebar: React.FC = () => {
     return timeline.filter(n => n.stockCode === stockCode).length
   }
 
+  const getDisplayName = (item: { code: string; name: string }) => (
+    item.name && item.name !== item.code ? `${item.name}+${item.code}` : item.code
+  )
+
   const displayItems = searchText.trim()
     ? searchResults.map(r => ({
         code: r.stock.code,
@@ -121,11 +125,11 @@ const Sidebar: React.FC = () => {
               >
                 <div className="flex justify-between items-center w-full">
                   <div>
-                    <div className="font-medium">{item.name}</div>
-                    <div className="text-xs text-gray-400">
-                      {item.code} · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
+                      <div className="font-medium">{getDisplayName(item)}</div>
+                      <div className="text-xs text-gray-400">
+                      {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
+                      </div>
                     </div>
-                  </div>
                   {!item.isFromSearch && getNoteCount(item.code) > 0 && (
                     <Tag color="blue" className="text-xs">{getNoteCount(item.code)}</Tag>
                   )}

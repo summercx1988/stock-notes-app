@@ -8,6 +8,8 @@
 - 每个股票的所有笔记记录在一个文件中
 - 文件内按时间轴组织，每次语音录入是一个时间节点
 - 每个时间节点有精确到分钟的时间戳
+- 每个时间节点必须带有笔记类别
+- 新增事件后按 `event_time` 排序重写整个文档
 
 ## 文件组织结构
 
@@ -158,9 +160,12 @@ tags:
 ## 时间节点数据结构
 
 ```typescript
+type NoteCategory = '看盘预测' | '交易札记' | '备忘' | '资讯备忘'
+
 interface TimeEntry {
   id: string                    // UUID
   timestamp: Date               // 精确时间戳（精确到分钟）
+  category: NoteCategory        // 笔记类别
   title: string                 // 时间节点标题
   content: string               // 内容正文
   
@@ -211,6 +216,11 @@ interface StockNote {
   entries: TimeEntry[]
 }
 ```
+
+## 复盘统计约束
+
+- 只有 `看盘预测` 类别进入复盘引擎
+- `交易札记`、`备忘`、`资讯备忘` 只参与检索、展示与经验沉淀
 
 ## SQLite索引设计
 

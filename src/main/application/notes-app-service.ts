@@ -4,6 +4,7 @@ import { evaluateReviewEvents } from '../core/review-evaluator'
 import { buildReviewSnapshot, filterByRange, normalizeDirection } from '../core/review-snapshot'
 import type {
   Action,
+  NoteCategory,
   KlineInterval,
   NoteInputType,
   ReviewEvaluateRequest,
@@ -21,6 +22,7 @@ interface AddEntryPayload {
   content: string
   title?: string
   eventTime?: Date | string
+  category?: NoteCategory
   viewpoint?: Viewpoint
   action?: Action
   inputType?: NoteInputType
@@ -34,6 +36,7 @@ interface TimelineFilters {
   startDate?: Date
   endDate?: Date
   viewpoint?: string
+  category?: NoteCategory
 }
 
 const DEFAULT_REVIEW_RULE: ReviewRuleConfig = {
@@ -87,6 +90,7 @@ export class NotesAppService {
       }
       const entries = await this.notesService.getEntries(request.stockCode)
       const rangedEntries = filterByRange(entries, startDate, endDate)
+        .filter((entry) => entry.category === '看盘预测')
       const snapshot = buildReviewSnapshot(
         rangedEntries.map((entry) => ({ direction: entry.viewpoint?.direction }))
       )
@@ -104,7 +108,8 @@ export class NotesAppService {
 
     const timelineItems = await this.notesService.getTimeline({
       startDate,
-      endDate
+      endDate,
+      category: '看盘预测'
     })
     const snapshot = buildReviewSnapshot(
       timelineItems.map((item) => ({ direction: normalizeDirection(item.viewpoint?.direction) }))
@@ -187,6 +192,7 @@ export class NotesAppService {
       }
       const entries = await this.notesService.getEntries(params.stockCode)
       const rangedEntries = filterByRange(entries, params.startDate, params.endDate)
+        .filter((entry) => entry.category === '看盘预测')
       return rangedEntries.map((entry) => ({
         entryId: entry.id,
         stockCode: params.stockCode!,
@@ -197,7 +203,8 @@ export class NotesAppService {
 
     const timelineItems = await this.notesService.getTimeline({
       startDate: params.startDate,
-      endDate: params.endDate
+      endDate: params.endDate,
+      category: '看盘预测'
     })
     return timelineItems.map((item) => ({
       entryId: item.id,

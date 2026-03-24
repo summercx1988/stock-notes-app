@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import yaml from 'js-yaml'
 import fs from 'fs/promises'
 import path from 'path'
-import type { StockNote, TimeEntry, TimelineItem, Viewpoint, Action, NoteInputType } from '../../shared/types'
+import type { StockNote, TimeEntry, TimelineItem, Viewpoint, Action, NoteInputType, NoteCategory } from '../../shared/types'
 import { stockDatabase } from './stock-db'
 
 interface EntryMeta {
@@ -10,6 +10,7 @@ interface EntryMeta {
   eventTime?: string
   createdAt?: string
   inputType?: string
+  category?: string
 }
 
 export class NotesService {
@@ -26,6 +27,7 @@ export class NotesService {
       content: string
       title?: string
       eventTime?: Date | string
+      category?: NoteCategory
       viewpoint?: Viewpoint
       action?: Action
       inputType?: NoteInputType
@@ -37,7 +39,7 @@ export class NotesService {
     const id = uuidv4()
     const now = new Date()
     const eventTime = this.normalizeDate(data.eventTime, now)
-    const title = data.title?.trim() || await this.generateDefaultTitle(stockCode, data.content)
+    const title = data.title?.trim() || this.generateDefaultTitle(data.content)
 
     const entry: TimeEntry = {
       id,
@@ -45,6 +47,7 @@ export class NotesService {
       eventTime,
       createdAt: now,
       inputType: this.normalizeInputType(data.inputType) ?? this.detectInputType(data.audioFile),
+      category: data.category ?? this.createDefaultCategory(),
       title,
       content: data.content.trim(),
       viewpoint: data.viewpoint ?? this.createDefaultViewpoint(),
@@ -148,6 +151,7 @@ export class NotesService {
     startDate?: Date
     endDate?: Date
     viewpoint?: string
+    category?: NoteCategory
   }): Promise<TimelineItem[]> {
     const stockCodes = await this.getAllStockCodes()
     const items: TimelineItem[] = []
@@ -161,6 +165,7 @@ export class NotesService {
       for (const entry of note.entries) {
         const eventTime = this.getEntryEventTime(entry)
         if (filters?.viewpoint && entry.viewpoint?.direction !== filters.viewpoint) continue
+        if (filters?.category && entry.category !== filters.category) continue
         if (filters?.startDate && eventTime < filters.startDate) continue
         if (filters?.endDate && eventTime > filters.endDate) continue
 
@@ -169,6 +174,7 @@ export class NotesService {
           stockCode: code,
           stockName: note.stockName,
           timestamp: eventTime,
+          category: entry.category,
           title: entry.title,
           viewpoint: entry.viewpoint,
           hasAudio: !!entry.audioFile
@@ -184,38 +190,23 @@ export class NotesService {
     return firstLine.slice(0, 50) || '无标题'
   }
 
-  private async generateDefaultTitle(stockCode: string, fallbackContent?: string): Promise<string> {
-    const stockInfo = await this.getStockInfo(stockCode)
-    const stockName = stockInfo?.name || stockCode
-    if (stockName && stockCode) {
-      return `${stockName}+${stockCode}`
-    }
-    return this.generateTitle(fallbackContent || '')
+  private generateDefaultTitle(content?: string): string {
+    return this.generateTitle(content || '')
   }
 
   private async appendEntryToStockFile(stockCode: string, entry: TimeEntry): Promise<void> {
-    const filePath = this.getStockFilePath(stockCode)
-
-    let existingContent = ''
     try {
-      existingContent = await fs.readFile(filePath, 'utf-8')
+      const existing = await this.getStockNote(stockCode)
+      if (!existing) {
+        await this.createStockFile(stockCode, entry)
+        return
+      }
+
+      existing.entries.push(entry)
+      await this.rewriteStockFile(stockCode, existing)
     } catch {
       await this.createStockFile(stockCode, entry)
-      return
     }
-
-    const entryMarkdown = this.entryToMarkdown(entry, stockCode)
-
-    const frontMatterEnd = existingContent.indexOf('---\n\n')
-    if (frontMatterEnd !== -1) {
-      const insertPos = frontMatterEnd + 4
-      const updatedContent = `${existingContent.slice(0, insertPos)}${entryMarkdown}\n\n${existingContent.slice(insertPos)}`
-      await fs.writeFile(filePath, updatedContent, 'utf-8')
-    } else {
-      await fs.appendFile(filePath, `\n\n${entryMarkdown}`, 'utf-8')
-    }
-
-    this.cache.delete(stockCode)
   }
 
   private async createStockFile(stockCode: string, entry?: TimeEntry): Promise<void> {
@@ -238,7 +229,7 @@ export class NotesService {
     }
 
     const yamlStr = yaml.dump(frontMatter, { lineWidth: -1 })
-    let content = `---\n${yamlStr}---\n\n# ${stockInfo?.name || stockCode} 投资笔记\n`
+    let content = `---\n${yamlStr}---\n`
 
     if (entry) {
       content += `\n\n${this.entryToMarkdown(entry, stockCode)}`
@@ -269,7 +260,7 @@ export class NotesService {
     }
 
     const yamlStr = yaml.dump(frontMatter, { lineWidth: -1 })
-    let content = `---\n${yamlStr}---\n\n# ${note.stockName} 投资笔记\n`
+    let content = `---\n${yamlStr}---\n`
 
     let currentDate = ''
     for (const entry of sortedEntries) {
@@ -296,10 +287,12 @@ export class NotesService {
     md += `<!-- event-time: ${eventTime.toISOString()} -->\n`
     md += `<!-- created-at: ${createdAt.toISOString()} -->\n`
     md += `<!-- input-type: ${inputType} -->\n`
+    md += `<!-- category: ${entry.category} -->\n`
     md += `### 🕐 ${eventTime.toTimeString().slice(0, 5)} ${title}\n\n`
     md += `> **事件时间**: ${this.toLocalMinuteText(eventTime)}\n`
     md += `> **记录时间**: ${this.toLocalMinuteText(createdAt)}\n`
     md += `> **记录来源**: ${inputType}\n`
+    md += `> **笔记类别**: ${entry.category}\n`
 
     const viewpoint = entry.viewpoint ?? this.createDefaultViewpoint()
     md += `> **观点**: ${viewpoint.direction} (信心: ${viewpoint.confidence}) | **周期**: ${viewpoint.timeHorizon}\n`
@@ -367,7 +360,7 @@ export class NotesService {
         continue
       }
 
-      const metaMatch = line.match(/^<!--\s*(entry-id|event-time|created-at|input-type):\s*(.+?)\s*-->$/)
+      const metaMatch = line.match(/^<!--\s*(entry-id|event-time|created-at|input-type|category):\s*(.+?)\s*-->$/)
       if (metaMatch) {
         const key = metaMatch[1]
         const value = metaMatch[2].trim()
@@ -375,6 +368,7 @@ export class NotesService {
         if (key === 'event-time') pendingMeta.eventTime = value
         if (key === 'created-at') pendingMeta.createdAt = value
         if (key === 'input-type') pendingMeta.inputType = value
+        if (key === 'category') pendingMeta.category = value
         continue
       }
 
@@ -435,6 +429,7 @@ export class NotesService {
     let eventTimeLabel: string | undefined
     let createdAtLabel: string | undefined
     let inputTypeLabel: string | undefined
+    let categoryLabel: string | undefined
 
     let inActionSection = false
 
@@ -457,6 +452,12 @@ export class NotesService {
       const inputTypeMatch = trimmed.match(/^>\s*\*\*记录来源\*\*:\s*(.+)$/)
       if (inputTypeMatch) {
         inputTypeLabel = inputTypeMatch[1].trim()
+        continue
+      }
+
+      const categoryMatch = trimmed.match(/^>\s*\*\*笔记类别\*\*:\s*(.+)$/)
+      if (categoryMatch) {
+        categoryLabel = categoryMatch[1].trim()
         continue
       }
 
@@ -541,6 +542,7 @@ export class NotesService {
       eventTime,
       createdAt,
       inputType,
+      category: this.normalizeCategory(meta.category ?? categoryLabel),
       title,
       content: normalizedContent || title,
       viewpoint: viewpoint ?? this.createDefaultViewpoint(),
@@ -583,6 +585,10 @@ export class NotesService {
     }
   }
 
+  private createDefaultCategory(): NoteCategory {
+    return '看盘预测'
+  }
+
   private getEntryEventTime(entry: TimeEntry): Date {
     return this.normalizeDate(entry.eventTime ?? entry.timestamp, new Date())
   }
@@ -595,6 +601,13 @@ export class NotesService {
     if (!value) return undefined
     if (value === 'voice' || value === 'manual') return value
     return undefined
+  }
+
+  private normalizeCategory(value?: string): NoteCategory {
+    if (value === '看盘预测' || value === '交易札记' || value === '备忘' || value === '资讯备忘') {
+      return value
+    }
+    return this.createDefaultCategory()
   }
 
   private detectInputType(audioFile?: string): NoteInputType {

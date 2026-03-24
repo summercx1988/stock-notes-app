@@ -186,7 +186,7 @@ const ReviewAnalysisView: React.FC = () => {
           type="info"
           showIcon
           className="mb-4"
-          message="复盘引擎已接入：触发API拉取K线并本地持久化，按事件时间对齐，默认规则为 3D / 3%，未知观点不计入胜率。"
+          message="复盘只统计“看盘预测”类别事件：系统会按事件时间对齐K线，默认规则为 3D / 3%，未知观点不计入胜率。"
         />
 
         {!evaluation ? (

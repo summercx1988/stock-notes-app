@@ -1,6 +1,7 @@
 export type ViewpointDirection = '看多' | '看空' | '未知' | '中性' | '观望'
 export type TimeHorizon = '短线' | '中线' | '长线'
 export type NoteInputType = 'voice' | 'manual'
+export type NoteCategory = '看盘预测' | '交易札记' | '备忘' | '资讯备忘'
 
 export interface TimeEntry {
   id: string
@@ -8,6 +9,7 @@ export interface TimeEntry {
   eventTime: Date
   createdAt: Date
   inputType?: NoteInputType
+  category: NoteCategory
   title: string
   content: string
   
@@ -155,6 +157,7 @@ export interface TimelineItem {
   stockCode: string
   stockName: string
   timestamp: Date
+  category: NoteCategory
   title: string
   viewpoint?: Viewpoint
   hasAudio: boolean

@@ -11,14 +11,14 @@ const Header: React.FC = () => {
   return (
     <div className="h-12 px-4 flex items-center justify-between border-b border-gray-200 bg-white drag-region">
       <div className="flex items-center gap-4 no-drag">
-        <h1 className="text-lg font-semibold m-0">📈 股票投资笔记</h1>
+        <h1 className="text-lg font-semibold m-0">📈 盯盘笔记</h1>
 
         <Segmented
           value={activeModule}
           onChange={(value) => setActiveModule(value as AppModule)}
           options={[
-            { label: '对象笔记', value: 'notes' },
-            { label: '时间轴', value: 'timeline' },
+            { label: '盯盘笔记', value: 'notes' },
+            { label: '事件时间轴', value: 'timeline' },
             { label: '复盘分析', value: 'review' }
           ]}
         />

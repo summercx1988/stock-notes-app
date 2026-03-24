@@ -1,11 +1,12 @@
 import { ipcMain } from 'electron'
 import { notesAppService } from '../application/container'
-import type { TimeEntry, StockNote, TimelineItem, Viewpoint, Action, NoteInputType } from '../../shared/types'
+import type { TimeEntry, StockNote, TimelineItem, Viewpoint, Action, NoteInputType, NoteCategory } from '../../shared/types'
 
 ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   content: string
   title?: string
   eventTime?: Date | string
+  category?: NoteCategory
   viewpoint?: Viewpoint
   action?: Action
   inputType?: NoteInputType
@@ -40,6 +41,7 @@ ipcMain.handle('notes:getTimeline', async (_, filters?: {
   startDate?: Date
   endDate?: Date
   viewpoint?: string
+  category?: NoteCategory
 }): Promise<TimelineItem[]> => {
   return notesAppService.getTimeline(filters)
 })

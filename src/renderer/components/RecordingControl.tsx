@@ -3,7 +3,7 @@ import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, Da
 import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { Viewpoint } from '../../shared/types'
+import type { NoteCategory, Viewpoint } from '../../shared/types'
 
 const { Step } = Steps
 const { TextArea } = Input
@@ -31,6 +31,12 @@ interface AIExtractResult {
 type TranscribeEngine = 'local' | 'cloud'
 type RecordingState = 'idle' | 'connecting' | 'recording' | 'transcribing' | 'analyzing' | 'completed'
 type StockSelectOption = { label: string; value: string; name: string }
+const NOTE_CATEGORY_OPTIONS: Array<{ label: NoteCategory; value: NoteCategory }> = [
+  { label: '看盘预测', value: '看盘预测' },
+  { label: '交易札记', value: '交易札记' },
+  { label: '备忘', value: '备忘' },
+  { label: '资讯备忘', value: '资讯备忘' }
+]
 
 const RecordingControl: React.FC = () => {
   const { setStockNote, setLoading, setCurrentStock } = useAppStore()
@@ -50,6 +56,7 @@ const RecordingControl: React.FC = () => {
   const [stockSearching, setStockSearching] = useState(false)
   const [transcribeProgress, setTranscribeProgress] = useState(0)
   const [noteEventTime, setNoteEventTime] = useState<Dayjs | null>(dayjs())
+  const [noteCategory, setNoteCategory] = useState<NoteCategory>('看盘预测')
   const [noteDirection, setNoteDirection] = useState<Viewpoint['direction']>('未知')
 
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -90,6 +97,7 @@ const RecordingControl: React.FC = () => {
     setStockSearchOptions([])
     setTranscribeProgress(0)
     setNoteEventTime(dayjs())
+    setNoteCategory('看盘预测')
     setNoteDirection('未知')
 
     if (recordingTimerRef.current) {
@@ -388,12 +396,11 @@ const RecordingControl: React.FC = () => {
       }
       const stockInfo = await window.api.stock.getByCode(stockCode)
       const resolvedStockName = selectedStockName || extractResult.stock?.name || stockInfo?.name || stockCode
-      const title = `${resolvedStockName}+${stockCode}`
 
       await window.api.notes.addEntry(stockCode, {
-        title,
         content: finalContent,
         eventTime: (noteEventTime || dayjs()).toISOString(),
+        category: noteCategory,
         viewpoint,
         inputType: 'voice',
         audioFile: audioPath,
@@ -689,6 +696,13 @@ const RecordingControl: React.FC = () => {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
+                  <Select
+                    value={noteCategory}
+                    onChange={(value) => setNoteCategory(value)}
+                    style={{ width: 140 }}
+                    size="small"
+                    options={NOTE_CATEGORY_OPTIONS}
+                  />
                   <Select
                     value={noteDirection}
                     onChange={(value) => setNoteDirection(value)}

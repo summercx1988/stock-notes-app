@@ -4,7 +4,14 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import MDEditor from '@uiw/react-md-editor'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { TimeEntry, Viewpoint } from '../../shared/types'
+import type { NoteCategory, TimeEntry, Viewpoint } from '../../shared/types'
+
+const NOTE_CATEGORY_OPTIONS: Array<{ label: NoteCategory; value: NoteCategory }> = [
+  { label: '看盘预测', value: '看盘预测' },
+  { label: '交易札记', value: '交易札记' },
+  { label: '备忘', value: '备忘' },
+  { label: '资讯备忘', value: '资讯备忘' }
+]
 
 const StockNoteView: React.FC = () => {
   const {
@@ -21,10 +28,12 @@ const StockNoteView: React.FC = () => {
   const [editContent, setEditContent] = useState('')
   const [editViewpoint, setEditViewpoint] = useState<Viewpoint | null>(null)
   const [editEventTime, setEditEventTime] = useState<Dayjs | null>(null)
+  const [editCategory, setEditCategory] = useState<NoteCategory>('看盘预测')
   const [isAdding, setIsAdding] = useState(false)
   const [newContent, setNewContent] = useState('')
   const [newViewpoint, setNewViewpoint] = useState<Viewpoint | null>(null)
   const [newEventTime, setNewEventTime] = useState<Dayjs | null>(null)
+  const [newCategory, setNewCategory] = useState<NoteCategory>('看盘预测')
 
   useEffect(() => {
     if (currentStockCode) {
@@ -75,6 +84,7 @@ const StockNoteView: React.FC = () => {
       if (editingId) {
         await window.api.notes.updateEntry(currentStockCode, editingId, {
           content: editContent,
+          category: editCategory,
           viewpoint: editViewpoint || createViewpoint('未知', '短线'),
           eventTime: (editEventTime || dayjs()).toISOString()
         })
@@ -93,6 +103,7 @@ const StockNoteView: React.FC = () => {
       setEditContent('')
       setEditViewpoint(null)
       setEditEventTime(null)
+      setEditCategory('看盘预测')
     } catch (error: any) {
       message.error('保存失败: ' + error.message)
     } finally {
@@ -121,6 +132,7 @@ const StockNoteView: React.FC = () => {
     setNewContent('')
     setNewViewpoint(createViewpoint('未知', '短线'))
     setNewEventTime(dayjs())
+    setNewCategory('看盘预测')
   }
 
   const handleSaveNewNote = async () => {
@@ -130,6 +142,7 @@ const StockNoteView: React.FC = () => {
     try {
       await window.api.notes.addEntry(currentStockCode, {
         content: newContent,
+        category: newCategory,
         viewpoint: newViewpoint || createViewpoint('未知', '短线'),
         eventTime: (newEventTime || dayjs()).toISOString(),
         inputType: 'manual'
@@ -140,6 +153,7 @@ const StockNoteView: React.FC = () => {
       setNewContent('')
       setNewViewpoint(null)
       setNewEventTime(null)
+      setNewCategory('看盘预测')
     } catch (error: any) {
       message.error('保存失败: ' + error.message)
     } finally {
@@ -152,6 +166,7 @@ const StockNoteView: React.FC = () => {
     setEditContent(entry.content)
     setEditViewpoint(entry.viewpoint || createViewpoint('未知', '短线'))
     setEditEventTime(toDayjs(entry.eventTime || entry.timestamp) || dayjs())
+    setEditCategory(entry.category || '看盘预测')
     setIsAdding(false)
   }
 
@@ -160,6 +175,7 @@ const StockNoteView: React.FC = () => {
     setEditContent('')
     setEditViewpoint(null)
     setEditEventTime(null)
+    setEditCategory('看盘预测')
   }
 
   const cancelAdd = () => {
@@ -167,6 +183,7 @@ const StockNoteView: React.FC = () => {
     setNewContent('')
     setNewViewpoint(null)
     setNewEventTime(null)
+    setNewCategory('看盘预测')
   }
 
   const getViewpointTag = (viewpoint?: Viewpoint) => {
@@ -181,11 +198,23 @@ const StockNoteView: React.FC = () => {
     return <Tag color={colorMap[viewpoint.direction]}>{viewpoint.direction}</Tag>
   }
 
+  const getCategoryTag = (category: NoteCategory) => {
+    const colorMap: Record<NoteCategory, string> = {
+      看盘预测: 'magenta',
+      交易札记: 'gold',
+      备忘: 'default',
+      资讯备忘: 'cyan'
+    }
+    return <Tag color={colorMap[category]}>{category}</Tag>
+  }
+
   const formatTime = (timestamp: Date | string, eventTime?: Date | string) => {
     const date = new Date(timestamp)
     const sourceDate = eventTime ? new Date(eventTime) : date
     return `${sourceDate.getMonth() + 1}-${sourceDate.getDate()} ${sourceDate.getHours()}:${String(sourceDate.getMinutes()).padStart(2, '0')}`
   }
+
+  const stockDisplayName = currentStockName ? `${currentStockName}+${currentStockCode}` : currentStockCode
 
   if (!currentStockCode) {
     return (
@@ -208,9 +237,9 @@ const StockNoteView: React.FC = () => {
       <div className="p-4 border-b border-gray-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold m-0">
-            {currentStockName || currentStockCode}
+            {stockDisplayName}
           </h2>
-          <span className="text-gray-400">{currentStockCode}</span>
+          <span className="text-gray-400">盯盘文档</span>
         </div>
         <Space>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAddNote}>
@@ -225,6 +254,13 @@ const StockNoteView: React.FC = () => {
             <div className="mb-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
               <div className="mb-3 flex items-center gap-4">
                 <Select
+                  value={newCategory}
+                  onChange={(value) => setNewCategory(value)}
+                  style={{ width: 120 }}
+                  size="small"
+                  options={NOTE_CATEGORY_OPTIONS}
+                />
+                <Select
                   value={newViewpoint?.direction || '未知'}
                   onChange={(v) => setNewViewpoint(createViewpoint(v as Viewpoint['direction'], newViewpoint?.timeHorizon || '短线'))}
                   style={{ width: 100 }}
@@ -232,6 +268,7 @@ const StockNoteView: React.FC = () => {
                 >
                   <Select.Option value="看多">看多</Select.Option>
                   <Select.Option value="看空">看空</Select.Option>
+                  <Select.Option value="中性">中性</Select.Option>
                   <Select.Option value="未知">未知</Select.Option>
                 </Select>
                 <Select
@@ -277,6 +314,13 @@ const StockNoteView: React.FC = () => {
                     <div className="p-4 bg-gray-50">
                       <div className="mb-3 flex items-center gap-4">
                         <Select
+                          value={editCategory}
+                          onChange={(value) => setEditCategory(value)}
+                          style={{ width: 120 }}
+                          size="small"
+                          options={NOTE_CATEGORY_OPTIONS}
+                        />
+                        <Select
                           value={editViewpoint?.direction || '未知'}
                           onChange={(v) => setEditViewpoint(createViewpoint(v as Viewpoint['direction'], editViewpoint?.timeHorizon || '短线'))}
                           style={{ width: 100 }}
@@ -284,6 +328,7 @@ const StockNoteView: React.FC = () => {
                         >
                           <Select.Option value="看多">看多</Select.Option>
                           <Select.Option value="看空">看空</Select.Option>
+                          <Select.Option value="中性">中性</Select.Option>
                           <Select.Option value="未知">未知</Select.Option>
                         </Select>
                         <Select
@@ -322,6 +367,7 @@ const StockNoteView: React.FC = () => {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-gray-500">{formatTime(entry.timestamp, entry.eventTime)}</span>
+                          {getCategoryTag(entry.category)}
                           {getViewpointTag(entry.viewpoint)}
                         </div>
                         <Space size="small">
