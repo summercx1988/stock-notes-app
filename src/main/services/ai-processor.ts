@@ -1,4 +1,5 @@
 import { stockNameMatcher } from './stock-matcher'
+import { stockDatabase } from './stock-db'
 
 export interface ExtractedStock {
   code: string
@@ -26,7 +27,7 @@ export interface AIExtractResult {
   originalText: string
 }
 
-const STOCK_EXTRACT_PROMPT_HEADER = `请纠正以下录音转写文本中的错误：
+const STOCK_CORRECTION_PROMPT = `请纠正以下录音转写文本中的错误，并仅返回JSON（不要额外解释）：
 
 {text}
 
@@ -38,7 +39,10 @@ const STOCK_EXTRACT_PROMPT_HEADER = `请纠正以下录音转写文本中的错�
 - 不要改变原意，只做文字纠正
 - 输出默认使用简体中文
 
-只返回纠正后的文本。`
+请返回：
+{
+  "corrected_text": "纠正后的简体中文文本"
+}`
 
 const THEME_EXTRACT_PROMPT = `请解析以下A股投资笔记，并返回核心主题信息（仅返回JSON）：
 
@@ -66,6 +70,10 @@ interface ThemeExtractResult {
   stockCode?: string
   viewpoint: '看多' | '看空' | '震荡' | '未知'
   keyPoints: string[]
+}
+
+interface CorrectionExtractResult {
+  correctedText: string
 }
 
 export class AIProcessor {
@@ -150,6 +158,7 @@ export class AIProcessor {
     }
 
     await stockNameMatcher.load()
+    await stockDatabase.ensureLoaded()
 
     const candidates = stockNameMatcher.findAllCandidates(cleanedInput)
     const candidateText = candidates.length > 0
@@ -161,13 +170,10 @@ export class AIProcessor {
     }
 
     try {
-      const prompt = STOCK_EXTRACT_PROMPT_HEADER
-        .replace('{text}', cleanedInput)
-        .replace('{candidates}', candidateText)
-      const response = await this.chat(prompt)
-      const correctedText = this.cleanTranscriptText(response)
-      const theme = await this.extractTheme(correctedText || cleanedInput, candidateText)
-      const result = this.parseAIResponse(correctedText || cleanedInput, cleanedInput, theme)
+      const correction = await this.extractCorrection(cleanedInput, candidateText)
+      const simplifiedText = await this.normalizeToSimplified(correction.correctedText || cleanedInput)
+      const theme = await this.extractTheme(simplifiedText || cleanedInput, candidateText)
+      const result = this.parseAIResponse(simplifiedText || cleanedInput, cleanedInput, theme)
 
       if (candidates.length > 0 && !result.stock) {
         const bestCandidate = candidates.reduce((best, c) => c.confidence > best.confidence ? c : best, candidates[0])
@@ -178,12 +184,47 @@ export class AIProcessor {
         }
       }
 
+      if (!result.stock) {
+        const matched = stockDatabase.matchStock(simplifiedText || cleanedInput)
+        if (matched) {
+          result.stock = {
+            code: matched.stock.code,
+            name: matched.stock.name,
+            confidence: Math.min(0.95, Math.max(0.6, matched.score / 100))
+          }
+        }
+      }
+
       result.originalText = cleanedInput
       return result
     } catch (error: any) {
       console.error('[AIProcessor] Extraction failed:', error)
       const fallbackTheme = this.extractThemeByRule(cleanedInput)
       return this.parseAIResponse(cleanedInput, cleanedInput, fallbackTheme)
+    }
+  }
+
+  private async extractCorrection(text: string, candidateText: string): Promise<CorrectionExtractResult> {
+    const prompt = STOCK_CORRECTION_PROMPT
+      .replace('{text}', text)
+      .replace('{candidates}', candidateText)
+
+    try {
+      const response = await this.chat(prompt)
+      const raw = this.safeParseJson(response)
+
+      // 严格只接受结构化字段，避免把模型“思考过程”当成正文保存。
+      const correctedText = typeof raw?.corrected_text === 'string'
+        ? raw.corrected_text
+        : text
+
+      return {
+        correctedText: this.cleanTranscriptText(correctedText || text)
+      }
+    } catch {
+      return {
+        correctedText: this.cleanTranscriptText(text)
+      }
     }
   }
 
@@ -260,8 +301,37 @@ export class AIProcessor {
       .replace(/^```\s*/i, '')
       .replace(/\s*```$/i, '')
       .trim()
+    try {
+      return JSON.parse(cleaned)
+    } catch {
+      const objectMatch = cleaned.match(/\{[\s\S]*\}/)
+      if (objectMatch) {
+        return JSON.parse(objectMatch[0])
+      }
+      throw new Error('invalid json')
+    }
+  }
 
-    return JSON.parse(cleaned)
+  private async normalizeToSimplified(text: string): Promise<string> {
+    const normalized = this.cleanTranscriptText(text)
+    if (!normalized) return normalized
+
+    const prompt = `请把下面内容转换为简体中文，仅返回 JSON（不要额外解释）：
+
+{
+  "text": "转换后的简体中文文本"
+}
+
+文本：
+${normalized}`
+    try {
+      const response = await this.chat(prompt)
+      const raw = this.safeParseJson(response)
+      const simplified = typeof raw?.text === 'string' ? raw.text : normalized
+      return this.cleanTranscriptText(simplified || normalized)
+    } catch {
+      return normalized
+    }
   }
 
   private cleanTranscriptText(text: string): string {

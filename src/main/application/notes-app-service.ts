@@ -19,6 +19,7 @@ import type {
 
 interface AddEntryPayload {
   content: string
+  title?: string
   eventTime?: Date | string
   viewpoint?: Viewpoint
   action?: Action

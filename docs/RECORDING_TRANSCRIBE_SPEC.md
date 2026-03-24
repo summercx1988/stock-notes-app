@@ -1,7 +1,7 @@
-# 股票投资语音笔记系统 - 录音转写功能规格 v3.1
+# 股票投资语音笔记系统 - 录音转写功能规格 v3.2
 
-**版本：** v3.1
-**更新日期：** 2026-03-23
+**版本：** v3.2
+**更新日期：** 2026-03-24
 
 ---
 
@@ -12,7 +12,7 @@
 1. 获取语音输入
 2. 产出可用的中文转写文本
 3. 做轻量纠错和股票名称匹配
-4. 把结果保存为可复盘的股票笔记
+4. 在保存前进入可编辑笔记态并确认后入库
 
 当前版本不再承担复杂观点提炼、摘要生成或结构化分析。
 
@@ -116,6 +116,12 @@
 
 前端不能依赖旧的 React 状态去判断转写是否完成，必须以本次 IPC 返回的最终文本为准。
 
+### 5.4 文本与展示规范
+
+- 展示与日志中的 transcript 需先去除 whisper 时间戳片段（`[00:00:00.000 --> ...]`）。
+- 保存页正文默认使用简体中文纠错文本，并允许用户手动编辑。
+- AI 未识别到股票时，需走本地股票库匹配兜底，并保留手动输入 6 位代码入口。
+
 ---
 
 ## 六、当前数据输出
@@ -124,7 +130,10 @@
 
 ```ts
 {
-  content: extractResult.optimizedText || extractResult.originalText,
+  title: `${stockName}+${stockCode}`,
+  content: editableNoteContent,
+  eventTime: noteEventTime,
+  viewpoint: noteDirection,
   audioFile: audioPath,
   audioDuration: recordingDuration
 }
@@ -132,7 +141,8 @@
 
 说明：
 
-- `content` 是实际写入 Markdown 的正文
+- `title` 统一为 `股票名称+代码`
+- `content` 是实际写入 Markdown 的最终正文（可在保存前编辑）
 - `audioFile` 指向原始音频
 - `audioDuration` 用于统计和展示
 

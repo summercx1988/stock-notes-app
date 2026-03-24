@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, DatePicker, Select } from 'antd'
+import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, DatePicker, Select, Input } from 'antd'
 import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
 import type { Viewpoint } from '../../shared/types'
 
 const { Step } = Steps
+const { TextArea } = Input
 
 interface AIExtractResult {
   stock?: {
@@ -42,6 +43,7 @@ const RecordingControl: React.FC = () => {
   const [audioPath, setAudioPath] = useState<string>('')
   const [transcribedText, setTranscribedText] = useState<string>('')
   const [extractResult, setExtractResult] = useState<AIExtractResult | null>(null)
+  const [editableNoteContent, setEditableNoteContent] = useState<string>('')
   const [selectedStockCode, setSelectedStockCode] = useState<string>('')
   const [selectedStockName, setSelectedStockName] = useState<string>('')
   const [stockSearchOptions, setStockSearchOptions] = useState<StockSelectOption[]>([])
@@ -82,6 +84,7 @@ const RecordingControl: React.FC = () => {
     setAudioPath('')
     setTranscribedText('')
     setExtractResult(null)
+    setEditableNoteContent('')
     setSelectedStockCode('')
     setSelectedStockName('')
     setStockSearchOptions([])
@@ -158,20 +161,37 @@ const RecordingControl: React.FC = () => {
 
     try {
       const result = await window.api.ai.extract(normalizedInput)
+      const optimizedContent = cleanTranscriptText(result.optimizedText || normalizedInput)
+      setEditableNoteContent(optimizedContent || normalizedInput)
 
-      setExtractResult(result)
+      let resolvedStock = result.stock
+      if (!resolvedStock) {
+        const fallbackMatch = await window.api.stock.match(optimizedContent || normalizedInput)
+        if (fallbackMatch?.stock) {
+          resolvedStock = {
+            code: fallbackMatch.stock.code,
+            name: fallbackMatch.stock.name,
+            confidence: Math.min(0.95, Math.max(0.6, fallbackMatch.score / 100))
+          }
+        }
+      }
+
+      setExtractResult({
+        ...result,
+        stock: resolvedStock
+      })
       setRecordingState('completed')
       setCurrentStep(4)
       setNoteDirection(mapAISentimentToDirection(result.note?.sentiment))
 
-      if (result.stock) {
-        message.success(`处理完成: ${result.stock.name} (${result.stock.code})`)
-        setSelectedStockCode(result.stock.code)
-        setSelectedStockName(result.stock.name)
+      if (resolvedStock) {
+        message.success(`处理完成: ${resolvedStock.name} (${resolvedStock.code})`)
+        setSelectedStockCode(resolvedStock.code)
+        setSelectedStockName(resolvedStock.name)
         setStockSearchOptions([{
-          value: result.stock.code,
-          name: result.stock.name,
-          label: `${result.stock.name} (${result.stock.code})`
+          value: resolvedStock.code,
+          name: resolvedStock.name,
+          label: `${resolvedStock.name} (${resolvedStock.code})`
         }])
       } else {
         message.warning('未识别到股票，请手动选择')
@@ -352,16 +372,26 @@ const RecordingControl: React.FC = () => {
       return
     }
 
+    const finalContent = cleanTranscriptText(editableNoteContent || extractResult.optimizedText || extractResult.originalText)
+    if (!finalContent.trim()) {
+      message.warning('笔记正文不能为空')
+      return
+    }
+
     setLoading(true)
 
     try {
-      const finalContent = cleanTranscriptText(extractResult.optimizedText || extractResult.originalText)
       const viewpoint: Viewpoint = {
         direction: noteDirection,
         confidence: noteDirection === '未知' ? 0 : noteDirection === '中性' ? 0.6 : 0.7,
         timeHorizon: '短线'
       }
+      const stockInfo = await window.api.stock.getByCode(stockCode)
+      const resolvedStockName = selectedStockName || extractResult.stock?.name || stockInfo?.name || stockCode
+      const title = `${resolvedStockName}+${stockCode}`
+
       await window.api.notes.addEntry(stockCode, {
+        title,
         content: finalContent,
         eventTime: (noteEventTime || dayjs()).toISOString(),
         viewpoint,
@@ -375,8 +405,7 @@ const RecordingControl: React.FC = () => {
         setStockNote(stockCode, updatedNote)
       }
 
-      const stockInfo = await window.api.stock.getByCode(stockCode)
-      setCurrentStock(stockCode, selectedStockName || stockInfo?.name || stockCode)
+      setCurrentStock(stockCode, resolvedStockName)
 
       message.success('笔记已保存')
       setIsModalOpen(false)
@@ -563,13 +592,23 @@ const RecordingControl: React.FC = () => {
           {currentStep === 4 && extractResult && (
             <div className="space-y-4">
               <div className="p-4 bg-gray-50 rounded-lg">
-                <h4 className="font-medium mb-2">转写结果</h4>
+                <h4 className="font-medium mb-2">ASR 原文</h4>
                 <div className="text-gray-700">{transcribedText}</div>
                 {!!extractResult.note?.sentiment && (
                   <div className="mt-2">
                     <Tag color="purple">AI观点: {extractResult.note.sentiment}</Tag>
                   </div>
                 )}
+              </div>
+
+              <div className="p-4 bg-amber-50 rounded-lg">
+                <h4 className="font-medium mb-2">笔记正文（可编辑，默认简体）</h4>
+                <TextArea
+                  value={editableNoteContent}
+                  onChange={(event) => setEditableNoteContent(event.target.value)}
+                  autoSize={{ minRows: 5, maxRows: 10 }}
+                  placeholder="请确认或编辑最终保存的笔记内容"
+                />
               </div>
 
               {extractResult.stock && (
@@ -605,6 +644,45 @@ const RecordingControl: React.FC = () => {
                       }
                     }}
                     notFoundContent={stockSearching ? '搜索中...' : '未找到匹配股票'}
+                  />
+                  <Input
+                    value={selectedStockCode}
+                    placeholder="或手动输入6位代码"
+                    style={{ width: 180 }}
+                    maxLength={6}
+                    onChange={(event) => {
+                      const code = event.target.value.replace(/\D/g, '').slice(0, 6)
+                      setSelectedStockCode(code)
+
+                      if (!code) {
+                        setSelectedStockName('')
+                        return
+                      }
+
+                      if (code.length === 6) {
+                        void window.api.stock.getByCode(code).then((stockInfo: any) => {
+                          if (stockInfo?.name) {
+                            setSelectedStockName(stockInfo.name)
+                            setStockSearchOptions((prev) => {
+                              const exists = prev.some((item) => item.value === code)
+                              if (exists) return prev
+                              return [...prev, {
+                                value: code,
+                                name: stockInfo.name,
+                                label: `${stockInfo.name} (${code})`
+                              }]
+                            })
+                          } else {
+                            setSelectedStockName(code)
+                          }
+                        }).catch((error) => {
+                          console.error('[RecordingControl] getByCode failed:', error)
+                          setSelectedStockName(code)
+                        })
+                      } else {
+                        setSelectedStockName(code)
+                      }
+                    }}
                   />
                   {selectedStockCode && (
                     <Tag color="blue">已选: {selectedStockName || selectedStockCode}</Tag>

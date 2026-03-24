@@ -4,6 +4,7 @@ import type { TimeEntry, StockNote, TimelineItem, Viewpoint, Action, NoteInputTy
 
 ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   content: string
+  title?: string
   eventTime?: Date | string
   viewpoint?: Viewpoint
   action?: Action

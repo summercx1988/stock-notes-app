@@ -77,10 +77,10 @@
 - `created_at`（系统写入时间，不可编辑）
 5. 时间输入粒度默认到分钟（`YYYY-MM-DD HH:mm`）。
 
-### 3.4 观点配置（看多/看空/未知）
+### 3.4 观点配置（看多/看空/中性/未知）
 
-1. 每个事件支持观点字段：`bullish` / `bearish` / `unknown`。  
-2. 默认值为 `unknown`。  
+1. 每个事件支持观点字段：`看多` / `看空` / `中性` / `未知`。  
+2. 默认值为 `未知`。  
 3. 用户可在创建时设置，也可在后续编辑修改。  
 4. 可选附加字段：
 - 预测周期（如 `T+1`, `3D`, `1W`）
@@ -166,7 +166,7 @@ total_events: 15
 ### 5.3 事件结构（逻辑）
 
 ```ts
-type Viewpoint = "bullish" | "bearish" | "unknown"
+type Viewpoint = "看多" | "看空" | "中性" | "未知"
 
 interface NoteEvent {
   id: string
@@ -213,9 +213,10 @@ interface NoteEvent {
 
 ### 6.3 观点视觉规范（建议）
 
-- `bullish`：红色
-- `bearish`：绿色
-- `unknown`：灰色
+- `看多`：红色
+- `看空`：绿色
+- `中性`：蓝色
+- `未知`：灰色
 
 ---
 

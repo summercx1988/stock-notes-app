@@ -3,6 +3,7 @@ import yaml from 'js-yaml'
 import fs from 'fs/promises'
 import path from 'path'
 import type { StockNote, TimeEntry, TimelineItem, Viewpoint, Action, NoteInputType } from '../../shared/types'
+import { stockDatabase } from './stock-db'
 
 interface EntryMeta {
   id?: string
@@ -23,6 +24,7 @@ export class NotesService {
     stockCode: string,
     data: {
       content: string
+      title?: string
       eventTime?: Date | string
       viewpoint?: Viewpoint
       action?: Action
@@ -35,6 +37,7 @@ export class NotesService {
     const id = uuidv4()
     const now = new Date()
     const eventTime = this.normalizeDate(data.eventTime, now)
+    const title = data.title?.trim() || await this.generateDefaultTitle(stockCode, data.content)
 
     const entry: TimeEntry = {
       id,
@@ -42,7 +45,7 @@ export class NotesService {
       eventTime,
       createdAt: now,
       inputType: this.normalizeInputType(data.inputType) ?? this.detectInputType(data.audioFile),
-      title: this.generateTitle(data.content),
+      title,
       content: data.content.trim(),
       viewpoint: data.viewpoint ?? this.createDefaultViewpoint(),
       action: data.action,
@@ -179,6 +182,15 @@ export class NotesService {
   private generateTitle(content: string): string {
     const firstLine = content.trim().split('\n')[0] || ''
     return firstLine.slice(0, 50) || '无标题'
+  }
+
+  private async generateDefaultTitle(stockCode: string, fallbackContent?: string): Promise<string> {
+    const stockInfo = await this.getStockInfo(stockCode)
+    const stockName = stockInfo?.name || stockCode
+    if (stockName && stockCode) {
+      return `${stockName}+${stockCode}`
+    }
+    return this.generateTitle(fallbackContent || '')
   }
 
   private async appendEntryToStockFile(stockCode: string, entry: TimeEntry): Promise<void> {
@@ -644,12 +656,16 @@ export class NotesService {
     industry?: string
     sector?: string
   } | null> {
-    const mockData: Record<string, { name: string; market: string; industry?: string; sector?: string }> = {
-      '600519': { name: '贵州茅台', market: 'SH', industry: '白酒', sector: '消费' },
-      '000858': { name: '五粮液', market: 'SZ', industry: '白酒', sector: '消费' },
-      '000001': { name: '平安银行', market: 'SZ', industry: '银行', sector: '金融' }
+    await stockDatabase.ensureLoaded()
+    const stock = stockDatabase.getByCode(stockCode)
+    if (!stock) {
+      return { name: stockCode, market: 'SH' }
     }
-
-    return mockData[stockCode] || { name: stockCode, market: 'SH' }
+    return {
+      name: stock.name,
+      market: stock.market,
+      industry: stock.industry,
+      sector: stock.sector
+    }
   }
 }
