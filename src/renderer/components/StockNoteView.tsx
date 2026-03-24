@@ -214,7 +214,9 @@ const StockNoteView: React.FC = () => {
     return `${sourceDate.getMonth() + 1}-${sourceDate.getDate()} ${sourceDate.getHours()}:${String(sourceDate.getMinutes()).padStart(2, '0')}`
   }
 
-  const stockDisplayName = currentStockName ? `${currentStockName}+${currentStockCode}` : currentStockCode
+  const stockDisplayName = currentStockName && currentStockName !== currentStockCode
+    ? `${currentStockName}+${currentStockCode}`
+    : currentStockCode
 
   if (!currentStockCode) {
     return (

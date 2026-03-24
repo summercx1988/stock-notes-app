@@ -34,16 +34,48 @@ const Sidebar: React.FC = () => {
   }, [refreshTimeline, stockNotes])
 
   useEffect(() => {
-    const stockCodes = [...new Set(timeline.map((item) => item.stockCode))]
-    const stockList = stockCodes.map((code) => {
-      const item = timeline.find((timelineItem) => timelineItem.stockCode === code)
-      return {
-        code,
-        name: item?.stockName || code,
-        market: 'SH' as const
+    let cancelled = false
+
+    const syncStocks = async () => {
+      const stockCodes = [...new Set(timeline.map((item) => item.stockCode))]
+      const stockList = await Promise.all(stockCodes.map(async (code) => {
+        const item = timeline.find((timelineItem) => timelineItem.stockCode === code)
+        const timelineName = item?.stockName || code
+        if (timelineName && timelineName !== code) {
+          return {
+            code,
+            name: timelineName,
+            market: 'SH' as const
+          }
+        }
+        try {
+          const dbStock = await window.api.stock.getByCode(code)
+          return {
+            code,
+            name: dbStock?.name || code,
+            market: (dbStock?.market || 'SH') as 'SH' | 'SZ' | 'BJ'
+          }
+        } catch {
+          return {
+            code,
+            name: code,
+            market: 'SH' as const
+          }
+        }
+      }))
+
+      if (!cancelled) {
+        setStocks(stockList)
       }
+    }
+
+    syncStocks().catch((error) => {
+      console.error('Failed to sync stocks:', error)
     })
-    setStocks(stockList)
+
+    return () => {
+      cancelled = true
+    }
   }, [setStocks, timeline])
 
   const handleSearch = useCallback(async (query: string) => {

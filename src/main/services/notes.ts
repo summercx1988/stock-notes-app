@@ -5,6 +5,7 @@ import path from 'path'
 import type { StockNote, TimeEntry, TimelineItem, Viewpoint, Action, NoteInputType, NoteCategory } from '../../shared/types'
 import { stockDatabase } from './stock-db'
 import { createTraceId, logPipelineEvent } from './pipeline-logger'
+import { normalizeNoteContent, normalizeStockNameText } from '../../shared/text-normalizer'
 
 interface EntryMeta {
   id?: string
@@ -50,7 +51,8 @@ export class NotesService {
     const id = uuidv4()
     const now = new Date()
     const eventTime = this.normalizeDate(data.eventTime, now)
-    const title = data.title?.trim() || this.generateDefaultTitle(data.content)
+    const normalizedContent = normalizeNoteContent(data.content)
+    const title = data.title?.trim() || this.generateDefaultTitle(normalizedContent)
 
     const entry: TimeEntry = {
       id,
@@ -60,7 +62,7 @@ export class NotesService {
       inputType: this.normalizeInputType(data.inputType) ?? this.detectInputType(data.audioFile),
       category: data.category ?? this.createDefaultCategory(),
       title,
-      content: data.content.trim(),
+      content: normalizedContent,
       viewpoint: data.viewpoint ?? this.createDefaultViewpoint(),
       action: data.action,
       keywords: [],
@@ -103,7 +105,11 @@ export class NotesService {
     const filePath = this.getStockFilePath(stockCode)
     try {
       const content = await fs.readFile(filePath, 'utf-8')
-      const note = await this.parseStockNote(content)
+      const parsed = await this.parseStockNote(content)
+      if (parsed.needsBackfill) {
+        await this.rewriteStockFile(parsed.note.stockCode, parsed.note)
+      }
+      const note = parsed.note
       this.cache.set(stockCode, note)
       return note
     } catch {
@@ -144,15 +150,22 @@ export class NotesService {
     }
 
     const current = stockNote.entries[index]
+    const normalizedContent = typeof data.content === 'string'
+      ? normalizeNoteContent(data.content)
+      : current.content
     const updatedEventTime = this.normalizeDate(
       data.eventTime ?? data.timestamp,
       this.getEntryEventTime(current)
     )
-    const updatedTitle = data.title ?? (data.content ? this.generateTitle(data.content) : current.title)
+    const updatedTitle = data.title ?? (data.content ? this.generateTitle(normalizedContent) : current.title)
+    const normalizedPatch = {
+      ...data,
+      content: normalizedContent
+    }
 
     const updated: TimeEntry = {
       ...current,
-      ...data,
+      ...normalizedPatch,
       id: current.id,
       title: updatedTitle,
       eventTime: updatedEventTime,
@@ -299,10 +312,14 @@ export class NotesService {
     const sortedEntries = [...note.entries].sort(
       (a, b) => this.getEntryEventTime(b).getTime() - this.getEntryEventTime(a).getTime()
     )
+    const stockInfo = await this.getStockInfo(note.stockCode)
+    const resolvedStockName = note.stockName && note.stockName !== note.stockCode
+      ? note.stockName
+      : (stockInfo?.name || note.stockCode)
 
     const frontMatter = {
       stock_code: note.stockCode,
-      stock_name: note.stockName,
+      stock_name: resolvedStockName,
       market: note.market,
       industry: note.industry,
       sector: note.sector,
@@ -375,7 +392,7 @@ export class NotesService {
     return md
   }
 
-  private async parseStockNote(content: string): Promise<StockNote> {
+  private async parseStockNote(content: string): Promise<{ note: StockNote; needsBackfill: boolean }> {
     const normalized = content.replace(/\r\n/g, '\n')
     const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
     if (!match) throw new Error('Invalid note format')
@@ -384,18 +401,29 @@ export class NotesService {
     const body = match[2].trimStart()
     const fallbackDate = this.normalizeDate(frontMatter.updated_at, new Date())
     const entries = this.parseEntries(body, fallbackDate)
+    const stockCode = String(frontMatter.stock_code || '').trim()
+    const rawStockName = String(frontMatter.stock_name || '').trim()
+    const normalizedRawName = normalizeStockNameText(rawStockName)
+    const stockInfo = await this.getStockInfo(stockCode)
+    const resolvedStockName = normalizedRawName && normalizedRawName !== stockCode
+      ? normalizedRawName
+      : (stockInfo?.name || stockCode)
+    const needsBackfill = (!normalizedRawName || normalizedRawName === stockCode) && resolvedStockName !== stockCode
 
     return {
-      stockCode: String(frontMatter.stock_code),
-      stockName: String(frontMatter.stock_name || frontMatter.stock_code),
-      market: (frontMatter.market || 'SH') as StockNote['market'],
-      industry: frontMatter.industry,
-      sector: frontMatter.sector,
-      createdAt: this.normalizeDate(frontMatter.created_at, new Date()),
-      updatedAt: this.normalizeDate(frontMatter.updated_at, new Date()),
-      totalEntries: Number(frontMatter.total_entries || entries.length),
-      totalAudioDuration: Number(frontMatter.total_audio_duration || 0),
-      entries
+      note: {
+        stockCode,
+        stockName: resolvedStockName,
+        market: (frontMatter.market || 'SH') as StockNote['market'],
+        industry: frontMatter.industry,
+        sector: frontMatter.sector,
+        createdAt: this.normalizeDate(frontMatter.created_at, new Date()),
+        updatedAt: this.normalizeDate(frontMatter.updated_at, new Date()),
+        totalEntries: Number(frontMatter.total_entries || entries.length),
+        totalAudioDuration: Number(frontMatter.total_audio_duration || 0),
+        entries
+      },
+      needsBackfill
     }
   }
 
@@ -578,7 +606,7 @@ export class NotesService {
       contentLines.push(rawLine)
     }
 
-    const normalizedContent = contentLines.join('\n').trim()
+    const normalizedContent = normalizeNoteContent(contentLines.join('\n').trim())
     const eventTime = this.resolveEventTime({
       metaEventTime: meta.eventTime,
       lineEventTime: eventTimeLabel,

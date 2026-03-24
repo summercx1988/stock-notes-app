@@ -1,12 +1,14 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Button, Select, Badge, Space, Segmented } from 'antd'
 import { SettingOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
 import { useAppStore } from '../stores/app'
 import type { AppModule } from '../stores/app'
 import RecordingControl from './RecordingControl'
+import SettingsModal from './SettingsModal'
 
 const Header: React.FC = () => {
   const { aiMode, aiHealth, activeModule, setAIMode, setActiveModule } = useAppStore()
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
     <div className="h-12 px-4 flex items-center justify-between border-b border-gray-200 bg-white drag-region">
@@ -52,10 +54,12 @@ const Header: React.FC = () => {
 
       <div className="flex items-center gap-2 no-drag">
         <RecordingControl />
-        <Button icon={<SettingOutlined />}>
+        <Button icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}>
           设置
         </Button>
       </div>
+
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }

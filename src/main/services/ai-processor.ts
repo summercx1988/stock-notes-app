@@ -1,6 +1,9 @@
 import { stockNameMatcher } from './stock-matcher'
 import { stockDatabase } from './stock-db'
 import { createTraceId, logPipelineEvent } from './pipeline-logger'
+import { appConfigService } from './app-config'
+import { watchlistService } from './watchlist'
+import { cleanTranscriptText, normalizeStockNameText, normalizeToSimplifiedChinese, toHalfWidthText } from '../../shared/text-normalizer'
 
 export interface ExtractedStock {
   code: string
@@ -78,25 +81,30 @@ interface CorrectionExtractResult {
 }
 
 export class AIProcessor {
-  private apiKey: string
-  private baseUrl: string
-  private model: string
+  private defaultApiKey: string
+  private defaultBaseUrl: string
+  private defaultModel: string
 
   constructor() {
-    this.apiKey = process.env.MINIMAX_API_KEY || process.env.OPENAI_API_KEY || ''
-    this.baseUrl = process.env.OPENAI_BASE_URL || 'https://api.minimaxi.com/v1'
-    this.model = process.env.MINIMAX_MODEL || 'MiniMax-M2.7-highspeed'
+    this.defaultApiKey = process.env.MINIMAX_API_KEY || process.env.OPENAI_API_KEY || ''
+    this.defaultBaseUrl = process.env.OPENAI_BASE_URL || 'https://api.minimaxi.com/v1'
+    this.defaultModel = process.env.MINIMAX_MODEL || 'MiniMax-M2.7-highspeed'
   }
 
   private async chat(prompt: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const runtime = await this.getRuntimeConfig()
+    if (!runtime.apiKey) {
+      throw new Error('Text analysis API key is not configured')
+    }
+
+    const response = await fetch(`${runtime.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
+        'Authorization': `Bearer ${runtime.apiKey}`
       },
       body: JSON.stringify({
-        model: this.model,
+        model: runtime.model,
         messages: [
           { role: 'user', content: prompt }
         ],
@@ -115,7 +123,7 @@ export class AIProcessor {
   }
 
   private parseAIResponse(correctedTextRaw: string, originalText: string, theme: ThemeExtractResult): AIExtractResult {
-    const correctedText = this.cleanTranscriptText(correctedTextRaw)
+    const correctedText = cleanTranscriptText(correctedTextRaw)
     const candidates = stockNameMatcher.findAllCandidates(correctedText || originalText)
     let stockName: string | undefined
     let stockCode: string | undefined
@@ -175,11 +183,20 @@ export class AIProcessor {
 
     await stockNameMatcher.load()
     await stockDatabase.ensureLoaded()
+    const watchlistCodes = await watchlistService.getCodes()
+    const watchlistSet = new Set(watchlistCodes)
+    const watchlistStocks = watchlistCodes
+      .map((code) => stockDatabase.getByCode(code))
+      .filter((stock): stock is NonNullable<typeof stock> => Boolean(stock))
+      .slice(0, 60)
 
     const candidates = stockNameMatcher.findAllCandidates(cleanedInput)
+    const watchlistCandidateText = watchlistStocks.length > 0
+      ? `\n优先关注股票（优先从这些股票中匹配）：\n${watchlistStocks.map((stock) => `  - ${stock.name} (${stock.code})`).join('\n')}`
+      : ''
     const candidateText = candidates.length > 0
-      ? `候选股票列表（文本中可能提到的股票）：\n${candidates.map(c => `  - "${c.segment}" 可能对应 "${c.stock.name}"，可信度${(c.confidence * 100).toFixed(0)}%`).join('\n')}`
-      : '（未检测到候选股票）'
+      ? `候选股票列表（文本中可能提到的股票）：\n${candidates.map(c => `  - "${c.segment}" 可能对应 "${c.stock.name}"，可信度${(c.confidence * 100).toFixed(0)}%`).join('\n')}${watchlistCandidateText}`
+      : `（未检测到候选股票）${watchlistCandidateText}`
 
     if (candidates.length > 0) {
       console.log('[AIProcessor] Stock candidates found:', candidates.map(c => `${c.segment}->${c.stock.name}`).join(', '))
@@ -191,6 +208,7 @@ export class AIProcessor {
       const theme = await this.extractTheme(simplifiedText || cleanedInput, candidateText)
       const result = this.parseAIResponse(simplifiedText || cleanedInput, cleanedInput, theme)
       const dbMatch = stockDatabase.matchStock(simplifiedText || cleanedInput)
+      const watchlistMatch = this.findWatchlistMatch(simplifiedText || cleanedInput, watchlistStocks)
 
       if (candidates.length > 0 && !result.stock) {
         const bestCandidate = candidates.reduce((best, c) => c.confidence > best.confidence ? c : best, candidates[0])
@@ -209,8 +227,28 @@ export class AIProcessor {
             confidence: Math.min(0.95, Math.max(0.6, dbMatch.score / 100))
           }
         }
+      }
+
+      if (watchlistMatch && (!result.stock || result.stock.code !== watchlistMatch.code || result.stock.confidence < 0.95)) {
+        result.stock = {
+          code: watchlistMatch.code,
+          name: watchlistMatch.name,
+          confidence: Math.max(result.stock?.confidence ?? 0, 0.95)
+        }
+      } else if (result.stock && watchlistSet.size > 0 && !watchlistSet.has(result.stock.code)) {
+        const preferredCandidate = candidates
+          .filter((candidate) => watchlistSet.has(candidate.stock.code))
+          .sort((a, b) => b.confidence - a.confidence)[0]
+        if (preferredCandidate && preferredCandidate.confidence >= result.stock.confidence - 0.1) {
+          result.stock = {
+            code: preferredCandidate.stock.code,
+            name: preferredCandidate.stock.name,
+            confidence: Math.max(result.stock.confidence, preferredCandidate.confidence)
+          }
+        }
       } else if (
         dbMatch &&
+        result.stock &&
         (
           dbMatch.score >= 95 ||
           (result.stock.confidence < 0.9 && dbMatch.stock.code !== result.stock.code)
@@ -281,11 +319,11 @@ export class AIProcessor {
         : text
 
       return {
-        correctedText: this.cleanTranscriptText(correctedText || text)
+        correctedText: cleanTranscriptText(correctedText || text)
       }
     } catch {
       return {
-        correctedText: this.cleanTranscriptText(text)
+        correctedText: cleanTranscriptText(text)
       }
     }
   }
@@ -305,7 +343,7 @@ export class AIProcessor {
         : []
 
       return {
-        stockName: stockName || undefined,
+        stockName: stockName ? normalizeStockNameText(stockName) : undefined,
         stockCode: stockCode || undefined,
         viewpoint,
         keyPoints: keyPoints.length > 0 ? keyPoints : this.extractThemeByRule(text).keyPoints
@@ -375,7 +413,7 @@ export class AIProcessor {
   }
 
   private async normalizeToSimplified(text: string): Promise<string> {
-    const normalized = this.cleanTranscriptText(text)
+    const normalized = cleanTranscriptText(text)
     if (!normalized) return normalized
 
     const prompt = `请把下面内容转换为简体中文，仅返回 JSON（不要额外解释）：
@@ -390,18 +428,14 @@ ${normalized}`
       const response = await this.chat(prompt)
       const raw = this.safeParseJson(response)
       const simplified = typeof raw?.text === 'string' ? raw.text : normalized
-      return this.cleanTranscriptText(simplified || normalized)
+      return cleanTranscriptText(normalizeToSimplifiedChinese(toHalfWidthText(simplified || normalized)))
     } catch {
-      return normalized
+      return cleanTranscriptText(normalizeToSimplifiedChinese(toHalfWidthText(normalized)))
     }
   }
 
   private cleanTranscriptText(text: string): string {
-    const withoutTimestamps = text.replace(/\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]/g, ' ')
-    return withoutTimestamps
-      .replace(/\s+/g, ' ')
-      .replace(/\s+([，。！？；：])/g, '$1')
-      .trim()
+    return cleanTranscriptText(text)
   }
 
   private emptyResult(text: string): AIExtractResult {
@@ -412,8 +446,42 @@ ${normalized}`
         timeHorizon: undefined
       },
       timestamp: { type: 'none' },
-      optimizedText: text,
-      originalText: text
+      optimizedText: cleanTranscriptText(text),
+      originalText: cleanTranscriptText(text)
     }
+  }
+
+  private async getRuntimeConfig(): Promise<{ baseUrl: string; model: string; apiKey: string }> {
+    const settings = await appConfigService.getAll()
+    return {
+      baseUrl: settings.textAnalysis.baseUrl || this.defaultBaseUrl,
+      model: settings.textAnalysis.model || this.defaultModel,
+      apiKey: settings.textAnalysis.apiKey || this.defaultApiKey
+    }
+  }
+
+  private findWatchlistMatch(
+    text: string,
+    watchlistStocks: Array<{ code: string; name: string }>
+  ): { code: string; name: string } | null {
+    if (watchlistStocks.length === 0) return null
+
+    const normalizedText = normalizeStockNameText(text)
+    const byCode = text.match(/\d{6}/g) || []
+
+    for (const code of byCode) {
+      const stock = watchlistStocks.find((item) => item.code === code)
+      if (stock) {
+        return { code: stock.code, name: stock.name }
+      }
+    }
+
+    for (const stock of watchlistStocks) {
+      if (normalizedText.includes(normalizeStockNameText(stock.name))) {
+        return { code: stock.code, name: stock.name }
+      }
+    }
+
+    return null
   }
 }

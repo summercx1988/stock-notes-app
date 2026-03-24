@@ -119,7 +119,9 @@ const StockTimelineView: React.FC = () => {
     return oneLine.length > 120 ? `${oneLine.slice(0, 120)}...` : oneLine
   }
 
-  const stockDisplayName = currentStockName ? `${currentStockName}+${currentStockCode}` : currentStockCode
+  const stockDisplayName = currentStockName && currentStockName !== currentStockCode
+    ? `${currentStockName}+${currentStockCode}`
+    : currentStockCode
 
   if (!currentStockCode) {
     return (

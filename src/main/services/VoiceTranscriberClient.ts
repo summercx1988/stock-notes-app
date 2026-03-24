@@ -5,6 +5,7 @@ import path from 'path'
 import fs from 'fs'
 import { app, BrowserWindow } from 'electron'
 import { createTraceId, logPipelineEvent } from './pipeline-logger'
+import { cleanTranscriptText } from '../../shared/text-normalizer'
 
 interface ServerMessage {
   type: 'transcript' | 'audio_saved' | 'error' | 'pong' | 'status'
@@ -323,11 +324,7 @@ export class VoiceTranscriberClient extends EventEmitter {
 
   private cleanTranscriptText(text?: string): string {
     if (!text) return ''
-    const withoutTimestamps = text.replace(/\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]/g, ' ')
-    return withoutTimestamps
-      .replace(/\s+/g, ' ')
-      .replace(/\s+([，。！？；：])/g, '$1')
-      .trim()
+    return cleanTranscriptText(text)
   }
 }
 

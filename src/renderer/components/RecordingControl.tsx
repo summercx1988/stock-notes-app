@@ -3,7 +3,8 @@ import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, Da
 import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { NoteCategory, Viewpoint } from '../../shared/types'
+import type { NoteCategory, UserSettings, Viewpoint } from '../../shared/types'
+import { cleanTranscriptText, normalizeNoteContent } from '../../shared/text-normalizer'
 
 const { Step } = Steps
 const { TextArea } = Input
@@ -53,27 +54,22 @@ const RecordingControl: React.FC = () => {
   const [selectedStockCode, setSelectedStockCode] = useState<string>('')
   const [selectedStockName, setSelectedStockName] = useState<string>('')
   const [stockSearchOptions, setStockSearchOptions] = useState<StockSelectOption[]>([])
+  const [watchlistOptions, setWatchlistOptions] = useState<StockSelectOption[]>([])
   const [stockSearching, setStockSearching] = useState(false)
   const [transcribeProgress, setTranscribeProgress] = useState(0)
   const [noteEventTime, setNoteEventTime] = useState<Dayjs | null>(dayjs())
   const [noteCategory, setNoteCategory] = useState<NoteCategory>('看盘预测')
   const [noteDirection, setNoteDirection] = useState<Viewpoint['direction']>('未知')
+  const [settings, setSettings] = useState<UserSettings | null>(null)
 
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
   const stockSearchTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const cloudASRReady = Boolean(settings?.cloudASR?.apiKey && settings?.cloudASR?.baseUrl)
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
-
-  const cleanTranscriptText = (text: string) => {
-    const withoutTimestamps = text.replace(/\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]/g, ' ')
-    return withoutTimestamps
-      .replace(/\s+/g, ' ')
-      .replace(/\s+([，。！？；：])/g, '$1')
-      .trim()
   }
 
   const mapAISentimentToDirection = (sentiment?: string): Viewpoint['direction'] => {
@@ -83,6 +79,28 @@ const RecordingControl: React.FC = () => {
     if (sentiment.includes('震荡') || sentiment.includes('中性')) return '中性'
     return '未知'
   }
+
+  const loadUserPreferences = useCallback(async () => {
+    try {
+      const [config, watchlist] = await Promise.all([
+        window.api.config.getAll(),
+        window.api.watchlist.get()
+      ])
+      setSettings(config)
+      setNoteCategory(config.notes.defaultCategory || '看盘预测')
+      setNoteDirection(config.notes.defaultDirection || '未知')
+
+      const options: StockSelectOption[] = (watchlist || []).map((stock: any) => ({
+        value: stock.code,
+        name: stock.name,
+        label: `${stock.name} (${stock.code})`
+      }))
+      setWatchlistOptions(options)
+      setStockSearchOptions(options)
+    } catch (error) {
+      console.error('[RecordingControl] Failed to load user preferences:', error)
+    }
+  }, [])
 
   const resetState = useCallback(() => {
     setCurrentStep(0)
@@ -94,11 +112,11 @@ const RecordingControl: React.FC = () => {
     setEditableNoteContent('')
     setSelectedStockCode('')
     setSelectedStockName('')
-    setStockSearchOptions([])
+    setStockSearchOptions((prev) => (prev.length > 0 ? prev : watchlistOptions))
     setTranscribeProgress(0)
     setNoteEventTime(dayjs())
-    setNoteCategory('看盘预测')
-    setNoteDirection('未知')
+    setNoteCategory(settings?.notes.defaultCategory || '看盘预测')
+    setNoteDirection(settings?.notes.defaultDirection || '未知')
 
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current)
@@ -109,7 +127,11 @@ const RecordingControl: React.FC = () => {
       clearTimeout(stockSearchTimerRef.current)
       stockSearchTimerRef.current = null
     }
-  }, [])
+  }, [settings?.notes.defaultCategory, settings?.notes.defaultDirection, watchlistOptions])
+
+  useEffect(() => {
+    void loadUserPreferences()
+  }, [loadUserPreferences])
 
   const handleStockSearch = useCallback((query: string) => {
     if (stockSearchTimerRef.current) {
@@ -119,7 +141,19 @@ const RecordingControl: React.FC = () => {
     stockSearchTimerRef.current = setTimeout(async () => {
       const q = query.trim()
       if (!q) {
-        setStockSearchOptions((prev) => prev.filter((item) => item.value === selectedStockCode))
+        setStockSearchOptions(() => {
+          const selected = watchlistOptions.find((item) => item.value === selectedStockCode)
+          if (selected) {
+            return watchlistOptions
+          }
+          if (!selectedStockCode) {
+            return watchlistOptions
+          }
+          return [
+            ...watchlistOptions,
+            { value: selectedStockCode, name: selectedStockName || selectedStockCode, label: `${selectedStockName || selectedStockCode} (${selectedStockCode})` }
+          ]
+        })
         setStockSearching(false)
         return
       }
@@ -144,9 +178,15 @@ const RecordingControl: React.FC = () => {
         }))
         setStockSearchOptions((prev) => {
           const map = new Map<string, StockSelectOption>()
+          watchlistOptions.forEach((item) => map.set(item.value, item))
           prev.forEach((item) => map.set(item.value, item))
           options.forEach((item) => map.set(item.value, item))
-          return Array.from(map.values())
+          return Array.from(map.values()).sort((left, right) => {
+            const leftWatch = watchlistOptions.some((item) => item.value === left.value)
+            const rightWatch = watchlistOptions.some((item) => item.value === right.value)
+            if (leftWatch === rightWatch) return 0
+            return leftWatch ? -1 : 1
+          })
         })
       } catch (error) {
         console.error('[RecordingControl] Stock search failed:', error)
@@ -154,7 +194,7 @@ const RecordingControl: React.FC = () => {
         setStockSearching(false)
       }
     }, 220)
-  }, [selectedStockCode])
+  }, [selectedStockCode, selectedStockName, watchlistOptions])
 
   const handleAnalyze = useCallback(async (textToAnalyze: string) => {
     const normalizedInput = cleanTranscriptText(textToAnalyze)
@@ -169,7 +209,7 @@ const RecordingControl: React.FC = () => {
 
     try {
       const result = await window.api.ai.extract(normalizedInput)
-      const optimizedContent = cleanTranscriptText(result.optimizedText || normalizedInput)
+      const optimizedContent = normalizeNoteContent(result.optimizedText || normalizedInput)
       setEditableNoteContent(optimizedContent || normalizedInput)
 
       let resolvedStock = result.stock
@@ -196,11 +236,17 @@ const RecordingControl: React.FC = () => {
         message.success(`处理完成: ${resolvedStock.name} (${resolvedStock.code})`)
         setSelectedStockCode(resolvedStock.code)
         setSelectedStockName(resolvedStock.name)
-        setStockSearchOptions([{
-          value: resolvedStock.code,
-          name: resolvedStock.name,
-          label: `${resolvedStock.name} (${resolvedStock.code})`
-        }])
+        setStockSearchOptions((prev) => {
+          const merged = new Map<string, StockSelectOption>()
+          watchlistOptions.forEach((item) => merged.set(item.value, item))
+          prev.forEach((item) => merged.set(item.value, item))
+          merged.set(resolvedStock.code, {
+            value: resolvedStock.code,
+            name: resolvedStock.name,
+            label: `${resolvedStock.name} (${resolvedStock.code})`
+          })
+          return Array.from(merged.values())
+        })
       } else {
         message.warning('未识别到股票，请手动选择')
       }
@@ -216,7 +262,14 @@ const RecordingControl: React.FC = () => {
       setRecordingState('transcribing')
       setCurrentStep(2)
     }
-  }, [])
+  }, [watchlistOptions])
+
+  const transcribeAudio = useCallback(async (path: string) => {
+    if (transcribeEngine === 'cloud') {
+      return window.api.voice.transcribeWithCloud(path)
+    }
+    return window.api.voice.transcribeFile(path)
+  }, [transcribeEngine])
 
   useEffect(() => {
     if (!isModalOpen) return
@@ -253,7 +306,7 @@ const RecordingControl: React.FC = () => {
       }, 500)
 
       try {
-        const result = await window.api.voice.transcribeFile(path)
+        const result = await transcribeAudio(path)
 
         clearInterval(progressInterval)
         setTranscribeProgress(100)
@@ -288,7 +341,7 @@ const RecordingControl: React.FC = () => {
       unsubscribeAudioSaved()
       unsubscribeError()
     }
-  }, [isModalOpen, handleAnalyze, recordingDuration])
+  }, [isModalOpen, handleAnalyze, recordingDuration, transcribeAudio])
 
   const checkVoiceServiceStatus = async () => {
     try {
@@ -301,8 +354,9 @@ const RecordingControl: React.FC = () => {
   }
 
   const handleOpenModal = async () => {
-    setIsModalOpen(true)
+    await loadUserPreferences()
     resetState()
+    setIsModalOpen(true)
 
     try {
       const status = await checkVoiceServiceStatus()
@@ -380,7 +434,7 @@ const RecordingControl: React.FC = () => {
       return
     }
 
-    const finalContent = cleanTranscriptText(editableNoteContent || extractResult.optimizedText || extractResult.originalText)
+    const finalContent = normalizeNoteContent(editableNoteContent || extractResult.optimizedText || extractResult.originalText)
     if (!finalContent.trim()) {
       message.warning('笔记正文不能为空')
       return
@@ -392,7 +446,7 @@ const RecordingControl: React.FC = () => {
       const viewpoint: Viewpoint = {
         direction: noteDirection,
         confidence: noteDirection === '未知' ? 0 : noteDirection === '中性' ? 0.6 : 0.7,
-        timeHorizon: '短线'
+        timeHorizon: settings?.notes.defaultTimeHorizon || '短线'
       }
       const stockInfo = await window.api.stock.getByCode(stockCode)
       const resolvedStockName = selectedStockName || extractResult.stock?.name || stockInfo?.name || stockCode
@@ -437,7 +491,7 @@ const RecordingControl: React.FC = () => {
     setTranscribeProgress(0)
 
     try {
-      const result = await window.api.voice.transcribeFile(file.path)
+      const result = await transcribeAudio(file.path)
       if (result.success && result.text) {
         const cleaned = cleanTranscriptText(result.text)
         setTranscribedText(cleaned)
@@ -514,11 +568,15 @@ const RecordingControl: React.FC = () => {
                   type={transcribeEngine === 'cloud' ? 'primary' : 'default'}
                   icon={<CloudOutlined />}
                   onClick={() => {
-                    message.warning('云端 ASR 服务暂不可用')
+                    if (!cloudASRReady) {
+                      message.warning('请先在设置中配置云端 ASR 的 API 地址和 Key')
+                      return
+                    }
+                    setTranscribeEngine('cloud')
                   }}
-                  disabled
+                  disabled={!cloudASRReady}
                 >
-                  云端 ASR (暂不可用)
+                  云端 ASR
                 </Button>
               </div>
             </div>

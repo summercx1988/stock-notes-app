@@ -3,7 +3,8 @@ import type {
   ReviewEvaluateRequest,
   ReviewEvaluateResponse,
   ReviewSnapshotRequest,
-  ReviewSnapshotResponse
+  ReviewSnapshotResponse,
+  UserSettings
 } from '../shared/types'
 
 interface VoiceCommandResult {
@@ -82,7 +83,17 @@ const api = {
   
   config: {
     get: (key: string) => ipcRenderer.invoke('config:get', key),
+    getAll: () => ipcRenderer.invoke('config:getAll') as Promise<UserSettings>,
     set: (key: string, value: any) => ipcRenderer.invoke('config:set', key, value),
+    update: (partial: Partial<UserSettings>) => ipcRenderer.invoke('config:update', partial) as Promise<UserSettings>,
+  },
+
+  watchlist: {
+    get: () => ipcRenderer.invoke('watchlist:get'),
+    getCodes: () => ipcRenderer.invoke('watchlist:getCodes') as Promise<string[]>,
+    import: (rawInput: string, mode: 'append' | 'replace' = 'append') =>
+      ipcRenderer.invoke('watchlist:import', rawInput, mode),
+    clear: () => ipcRenderer.invoke('watchlist:clear') as Promise<boolean>
   },
 
   stock: {

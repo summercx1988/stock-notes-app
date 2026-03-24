@@ -1,6 +1,7 @@
 import { distance } from 'fastest-levenshtein'
 import fs from 'fs'
 import path from 'path'
+import { normalizeStockNameText, normalizeToSimplifiedChinese, toHalfWidthText } from '../../shared/text-normalizer'
 
 interface Stock {
   code: string
@@ -40,14 +41,14 @@ class StockNameMatcher {
         this.stocks = raw
           .filter((item) => item?.code && item?.name)
           .map((item) => ({
-            code: item.code,
-            name: item.name,
+            code: String(item.code).trim(),
+            name: normalizeStockNameText(item.name),
             pinyin: item.pinyin || item.pinyinShort
           }))
       } else {
         this.stocks = Object.entries(raw).map(([code, info]) => ({
-          code,
-          name: info.name,
+          code: String(code).trim(),
+          name: normalizeStockNameText(info.name),
           pinyin: info.pinyin
         }))
       }
@@ -62,11 +63,12 @@ class StockNameMatcher {
   }
 
   extractChineseSegments(text: string): string[] {
+    const normalizedText = normalizeToSimplifiedChinese(toHalfWidthText(text || ''))
     const segments: string[] = []
     const regex = /[\u4e00-\u9fa5]{2,6}/g
     let match
     
-    while ((match = regex.exec(text)) !== null) {
+    while ((match = regex.exec(normalizedText)) !== null) {
       segments.push(match[0])
     }
     
@@ -74,11 +76,12 @@ class StockNameMatcher {
   }
 
   findBestMatch(segment: string): MatchResult {
+    const normalizedSegment = normalizeStockNameText(segment)
     let bestMatch: Stock | null = null
     let minDistance = Infinity
 
     for (const stock of this.stocks) {
-      const d = distance(segment, stock.name)
+      const d = distance(normalizedSegment, stock.name)
       
       if (d < minDistance) {
         minDistance = d
@@ -86,12 +89,12 @@ class StockNameMatcher {
       }
     }
 
-    const maxDistance = Math.max(1, Math.floor(segment.length * 0.3))
-    const confidence = Math.max(0, 1 - minDistance / segment.length)
+    const maxDistance = Math.max(1, Math.floor(normalizedSegment.length * 0.3))
+    const confidence = Math.max(0, 1 - minDistance / Math.max(1, normalizedSegment.length))
 
     if (minDistance <= maxDistance && minDistance <= 2) {
       return {
-        original: segment,
+        original: normalizedSegment,
         matched: bestMatch,
         distance: minDistance,
         confidence
@@ -107,9 +110,10 @@ class StockNameMatcher {
   }
 
   correctText(text: string): { text: string; matches: MatchResult[] } {
-    const segments = this.extractChineseSegments(text)
+    const normalizedText = normalizeToSimplifiedChinese(toHalfWidthText(text || ''))
+    const segments = this.extractChineseSegments(normalizedText)
     const matches: MatchResult[] = []
-    let correctedText = text
+    let correctedText = normalizedText
 
     for (const segment of segments) {
       if (this.nameSet.has(segment)) {
@@ -174,18 +178,19 @@ class StockNameMatcher {
   }
 
   findByName(name: string): { code: string; name: string; confidence: number } | null {
+    const normalizedName = normalizeStockNameText(name)
     const start = Date.now()
 
-    const exactMatch = this.stocks.find(s => s.name === name)
+    const exactMatch = this.stocks.find(s => s.name === normalizedName)
     if (exactMatch) {
       console.log(`[StockMatcher] findByName exact match: ${Date.now() - start}ms`)
       return { code: exactMatch.code, name: exactMatch.name, confidence: 1.0 }
     }
 
     for (const stock of this.stocks) {
-      const d = distance(name, stock.name)
+      const d = distance(normalizedName, stock.name)
       if (d <= 2) {
-        const confidence = Math.max(0, 1 - d / name.length)
+        const confidence = Math.max(0, 1 - d / Math.max(1, normalizedName.length))
         console.log(`[StockMatcher] findByName fuzzy match: ${Date.now() - start}ms`)
         return { code: stock.code, name: stock.name, confidence }
       }

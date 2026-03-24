@@ -2,6 +2,7 @@ export type ViewpointDirection = '看多' | '看空' | '未知' | '中性' | '�
 export type TimeHorizon = '短线' | '中线' | '长线'
 export type NoteInputType = 'voice' | 'manual'
 export type NoteCategory = '看盘预测' | '交易札记' | '备忘' | '资讯备忘'
+export type NoteStyle = '轻量' | '结构化'
 
 export interface TimeEntry {
   id: string
@@ -150,6 +151,35 @@ export interface AppConfig {
     theme: 'light' | 'dark'
     timelineScale: string
   }
+}
+
+export interface UserSettings {
+  textAnalysis: {
+    baseUrl: string
+    model: string
+    apiKey: string
+  }
+  cloudASR: {
+    baseUrl: string
+    model: string
+    apiKey: string
+    language: 'zh-CN' | 'zh'
+  }
+  notes: {
+    defaultCategory: NoteCategory
+    defaultDirection: ViewpointDirection
+    defaultTimeHorizon: TimeHorizon
+    style: NoteStyle
+  }
+}
+
+export interface WatchlistImportResult {
+  mode: 'append' | 'replace'
+  totalCodes: number
+  importedCodes: string[]
+  duplicatedCodes: string[]
+  invalidTokens: string[]
+  knownStocks: number
 }
 
 export interface TimelineItem {

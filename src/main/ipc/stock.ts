@@ -3,16 +3,10 @@ import { stockDatabase, type StockInfo, type SearchResult } from '../services/st
 import { AIProcessor, type AIExtractResult } from '../services/ai-processor'
 import { voiceTranscriberClient } from '../services/VoiceTranscriberClient'
 import { openAIWhisperService } from '../services/OpenAIWhisper'
+import { cleanTranscriptText } from '../../shared/text-normalizer'
+import { watchlistService } from '../services/watchlist'
 
 const aiProcessor = new AIProcessor()
-
-const cleanTranscriptText = (text: string): string => {
-  const withoutTimestamps = text.replace(/\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]/g, ' ')
-  return withoutTimestamps
-    .replace(/\s+/g, ' ')
-    .replace(/\s+([，。！？；：])/g, '$1')
-    .trim()
-}
 
 ipcMain.handle('stock:search', async (_, query: string, limit?: number): Promise<SearchResult[]> => {
   await stockDatabase.ensureLoaded()
@@ -31,7 +25,23 @@ ipcMain.handle('stock:getByName', async (_, name: string): Promise<StockInfo | n
 
 ipcMain.handle('stock:match', async (_, text: string): Promise<SearchResult | null> => {
   await stockDatabase.ensureLoaded()
-  return stockDatabase.matchStock(text)
+  const cleaned = cleanTranscriptText(text || '')
+  const watchlistCodes = await watchlistService.getCodes()
+
+  if (watchlistCodes.length > 0) {
+    for (const code of watchlistCodes) {
+      const stock = stockDatabase.getByCode(code)
+      if (!stock) continue
+      if (cleaned.includes(code) || cleaned.includes(stock.name)) {
+        return {
+          stock,
+          matchType: 'name',
+          score: 99
+        }
+      }
+    }
+  }
+  return stockDatabase.matchStock(cleaned)
 })
 
 ipcMain.handle('ai:extract', async (_, text: string): Promise<AIExtractResult> => {

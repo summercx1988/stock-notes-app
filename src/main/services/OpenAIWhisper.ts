@@ -1,6 +1,8 @@
 import fs from 'fs'
 import FormData from 'form-data'
 import fetch from 'node-fetch'
+import { appConfigService } from './app-config'
+import { cleanTranscriptText } from '../../shared/text-normalizer'
 
 interface WhisperConfig {
   apiKey: string
@@ -20,25 +22,27 @@ export class OpenAIWhisperService {
   }
 
   async transcribe(audioPath: string): Promise<string | null> {
-    if (!this.config.apiKey) {
+    const runtime = await this.getRuntimeConfig()
+
+    if (!runtime.apiKey) {
       console.error('[OpenAIWhisper] No API key configured. Set MINIMAX_API_KEY or OPENAI_API_KEY environment variable')
       return null
     }
 
     try {
       console.log('[OpenAIWhisper] Transcribing:', audioPath)
-      console.log('[OpenAIWhisper] Using API:', this.config.apiBaseUrl)
-      console.log('[OpenAIWhisper] Using model:', this.config.model)
+      console.log('[OpenAIWhisper] Using API:', runtime.apiBaseUrl)
+      console.log('[OpenAIWhisper] Using model:', runtime.model)
       
       const formData = new FormData()
       formData.append('file', fs.createReadStream(audioPath))
-      formData.append('model', this.config.model)
-      formData.append('language', 'zh')
+      formData.append('model', runtime.model)
+      formData.append('language', runtime.language === 'zh-CN' ? 'zh' : runtime.language)
 
-      const response = await fetch(`${this.config.apiBaseUrl}/audio/transcriptions`, {
+      const response = await fetch(`${runtime.apiBaseUrl}/audio/transcriptions`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          'Authorization': `Bearer ${runtime.apiKey}`,
           ...formData.getHeaders()
         },
         body: formData
@@ -51,11 +55,22 @@ export class OpenAIWhisperService {
       }
 
       const result = await response.json() as { text?: string }
-      console.log('[OpenAIWhisper] Result:', result.text?.substring(0, 100))
-      return result.text || null
+      const cleanedText = cleanTranscriptText(result.text || '')
+      console.log('[OpenAIWhisper] Result:', cleanedText.substring(0, 100))
+      return cleanedText || null
     } catch (error) {
       console.error('[OpenAIWhisper] Error:', error)
       return null
+    }
+  }
+
+  private async getRuntimeConfig(): Promise<WhisperConfig & { language: 'zh-CN' | 'zh' }> {
+    const settings = await appConfigService.getAll()
+    return {
+      apiKey: settings.cloudASR.apiKey || this.config.apiKey,
+      apiBaseUrl: settings.cloudASR.baseUrl || this.config.apiBaseUrl,
+      model: settings.cloudASR.model || this.config.model,
+      language: settings.cloudASR.language || 'zh-CN'
     }
   }
 }

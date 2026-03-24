@@ -1,5 +1,6 @@
 import fs from 'fs/promises'
 import path from 'path'
+import { normalizeStockNameText, normalizeToSimplifiedChinese, toHalfWidthText } from '../../shared/text-normalizer'
 
 export interface StockInfo {
   code: string
@@ -47,9 +48,9 @@ class StockDatabase {
       console.log(`[StockDB] 加载 ${stocks.length} 只股票数据`)
 
       for (const stock of stocks) {
-        this.stocks.set(stock.code, stock)
-        this.nameIndex.set(stock.name, stock)
-        this.nameIndex.set(stock.fullName, stock)
+        const normalizedStock = this.normalizeStockInfo(stock)
+        this.stocks.set(normalizedStock.code, normalizedStock)
+        this.indexStockName(normalizedStock)
       }
     } catch (error: any) {
       if (error.code === 'ENOENT') {
@@ -104,9 +105,9 @@ class StockDatabase {
     ]
 
     for (const stock of defaultStocks) {
-      this.stocks.set(stock.code, stock)
-      this.nameIndex.set(stock.name, stock)
-      this.nameIndex.set(stock.fullName, stock)
+      const normalizedStock = this.normalizeStockInfo(stock)
+      this.stocks.set(normalizedStock.code, normalizedStock)
+      this.indexStockName(normalizedStock)
     }
 
     console.log(`[StockDB] 加载了 ${defaultStocks.length} 只默认股票`)
@@ -116,45 +117,46 @@ class StockDatabase {
     if (!query.trim()) return []
 
     const results: SearchResult[] = []
-    const lowerQuery = query.toLowerCase()
+    const normalizedQuery = normalizeStockNameText(query)
+    const lowerQuery = normalizedQuery.toLowerCase()
 
     // 精确代码匹配
-    const exactCode = this.stocks.get(query)
+    const exactCode = this.stocks.get(query.trim())
     if (exactCode) {
       results.push({ stock: exactCode, matchType: 'code', score: 100 })
       return results
     }
 
     // 精确名称匹配
-    const exactName = this.nameIndex.get(query)
+    const exactName = this.nameIndex.get(normalizedQuery)
     if (exactName) {
       results.push({ stock: exactName, matchType: 'name', score: 100 })
     }
 
     // 模糊匹配
     for (const [code, stock] of this.stocks) {
-      if (code === query) continue
+      if (code === query.trim()) continue
 
       let score = 0
       let matchType: 'code' | 'name' | 'fuzzy' = 'fuzzy'
 
       // 代码前缀匹配
-      if (code.startsWith(query)) {
+      if (code.startsWith(query.trim())) {
         score = 80
         matchType = 'code'
       }
       // 名称开头匹配
-      else if (stock.name.startsWith(query)) {
+      else if (normalizeStockNameText(stock.name).startsWith(normalizedQuery)) {
         score = 90
         matchType = 'name'
       }
       // 名称包含匹配
-      else if (stock.name.toLowerCase().includes(lowerQuery)) {
+      else if (normalizeStockNameText(stock.name).toLowerCase().includes(lowerQuery)) {
         score = 70
         matchType = 'name'
       }
       // 全名包含匹配
-      else if (stock.fullName.toLowerCase().includes(lowerQuery)) {
+      else if (normalizeStockNameText(stock.fullName).toLowerCase().includes(lowerQuery)) {
         score = 60
         matchType = 'name'
       }
@@ -174,14 +176,15 @@ class StockDatabase {
   }
 
   getByName(name: string): StockInfo | undefined {
-    return this.nameIndex.get(name)
+    return this.nameIndex.get(normalizeStockNameText(name))
   }
 
   matchStock(text: string): SearchResult | null {
-    const lowerText = text.toLowerCase()
+    const normalizedText = normalizeToSimplifiedChinese(toHalfWidthText(text || ''))
+    const lowerText = normalizeStockNameText(normalizedText).toLowerCase()
 
     // 尝试匹配 6 位数字代码
-    const codeMatch = text.match(/\b(\d{6})\b/)
+    const codeMatch = normalizedText.match(/\b(\d{6})\b/)
     if (codeMatch) {
       const stock = this.stocks.get(codeMatch[1])
       if (stock) {
@@ -197,9 +200,9 @@ class StockDatabase {
     }
 
     // 尝试模糊匹配（至少 2 个字符）
-    if (text.length >= 2) {
+    if (lowerText.length >= 2) {
       for (const stock of this.stocks.values()) {
-        const name = stock.name.toLowerCase()
+        const name = normalizeStockNameText(stock.name).toLowerCase()
         if (name.includes(lowerText) || lowerText.includes(name.substring(0, 2))) {
           return { stock, matchType: 'fuzzy', score: 70 }
         }
@@ -219,6 +222,34 @@ class StockDatabase {
 
   isReady(): boolean {
     return this.isLoaded
+  }
+
+  private normalizeStockInfo(stock: StockInfo): StockInfo {
+    const code = String(stock.code || '').trim()
+    const normalizedName = normalizeStockNameText(stock.name || code) || code
+    const normalizedFullName = normalizeStockNameText(stock.fullName || stock.name || code) || normalizedName
+    return {
+      ...stock,
+      code,
+      name: normalizedName,
+      fullName: normalizedFullName,
+      industry: normalizeToSimplifiedChinese(toHalfWidthText(stock.industry || '未知')),
+      sector: normalizeToSimplifiedChinese(toHalfWidthText(stock.sector || '未知'))
+    }
+  }
+
+  private indexStockName(stock: StockInfo): void {
+    const aliases = new Set<string>([
+      stock.name,
+      stock.fullName,
+      normalizeStockNameText(stock.name),
+      normalizeStockNameText(stock.fullName)
+    ])
+    for (const alias of aliases) {
+      if (alias) {
+        this.nameIndex.set(alias, stock)
+      }
+    }
   }
 }
 
