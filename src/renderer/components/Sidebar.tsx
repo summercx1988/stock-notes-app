@@ -6,9 +6,12 @@ import { useAppStore } from '../stores/app'
 const Sidebar: React.FC = () => {
   const {
     stocks,
+    stockNotes,
     currentStockCode,
     setCurrentStock,
     timeline,
+    setTimeline,
+    setStocks,
     searchResults,
     setSearchResults,
     clearSearchResults
@@ -17,18 +20,31 @@ const Sidebar: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const [localSearching, setLocalSearching] = useState(false)
 
+  const refreshTimeline = useCallback(async () => {
+    try {
+      const items = await window.api.notes.getTimeline()
+      setTimeline(items)
+    } catch (error) {
+      console.error('Failed to refresh timeline:', error)
+    }
+  }, [setTimeline])
+
   useEffect(() => {
-    const stockCodes = [...new Set(timeline.map(item => item.stockCode))]
-    const stockList = stockCodes.map(code => {
-      const item = timeline.find(t => t.stockCode === code)
+    refreshTimeline()
+  }, [refreshTimeline, stockNotes])
+
+  useEffect(() => {
+    const stockCodes = [...new Set(timeline.map((item) => item.stockCode))]
+    const stockList = stockCodes.map((code) => {
+      const item = timeline.find((timelineItem) => timelineItem.stockCode === code)
       return {
         code,
         name: item?.stockName || code,
         market: 'SH' as const
       }
     })
-    useAppStore.getState().setStocks(stockList)
-  }, [timeline])
+    setStocks(stockList)
+  }, [setStocks, timeline])
 
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) {

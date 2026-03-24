@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { StockNote, TimeEntry, Stock, AIMode, HealthStatus, TimelineItem, SearchResult } from '../../shared/types'
 
 export type RecordingStatus = 'idle' | 'requesting' | 'recording' | 'processing' | 'error'
+export type AppModule = 'notes' | 'timeline' | 'review'
 
 interface RecordingState {
   status: RecordingStatus
@@ -22,6 +23,7 @@ interface AppState {
   aiHealth: { local: HealthStatus; cloud: HealthStatus } | null
   darkMode: boolean
   loading: boolean
+  activeModule: AppModule
 
   recording: RecordingState
   searchResults: SearchResult[]
@@ -37,6 +39,7 @@ interface AppState {
   setAIHealth: (health: { local: HealthStatus; cloud: HealthStatus }) => void
   setDarkMode: (dark: boolean) => void
   setLoading: (loading: boolean) => void
+  setActiveModule: (module: AppModule) => void
 
   setRecordingStatus: (status: RecordingStatus) => void
   setRecordingDuration: (duration: number) => void
@@ -65,6 +68,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   aiHealth: null,
   darkMode: false,
   loading: false,
+  activeModule: 'notes',
 
   recording: initialRecordingState,
   searchResults: [],
@@ -96,6 +100,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDarkMode: (dark) => set({ darkMode: dark }),
 
   setLoading: (loading) => set({ loading }),
+
+  setActiveModule: (module) => set({ activeModule: module }),
 
   setRecordingStatus: (status) => set((state) => ({
     recording: { ...state.recording, status }

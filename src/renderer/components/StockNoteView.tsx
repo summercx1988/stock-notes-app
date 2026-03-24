@@ -37,6 +37,11 @@ const StockNoteView: React.FC = () => {
     setIsAdding(false)
   }, [currentStockCode, stockNotes])
 
+  useEffect(() => {
+    if (!currentStockCode || stockNotes.get(currentStockCode)) return
+    loadNote()
+  }, [currentStockCode, stockNotes])
+
   const createViewpoint = (direction: Viewpoint['direction'], timeHorizon: Viewpoint['timeHorizon']): Viewpoint => ({
     direction,
     timeHorizon,
