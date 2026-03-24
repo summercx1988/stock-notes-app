@@ -8,6 +8,13 @@ interface Stock {
   pinyin?: string
 }
 
+interface StockArrayItem {
+  code: string
+  name: string
+  pinyin?: string
+  pinyinShort?: string
+}
+
 interface MatchResult {
   original: string
   matched: Stock | null
@@ -27,13 +34,23 @@ class StockNameMatcher {
     
     try {
       const data = fs.readFileSync(dbPath, 'utf-8')
-      const stocksData = JSON.parse(data) as Record<string, { name: string; pinyin?: string }>
-      
-      this.stocks = Object.entries(stocksData).map(([code, info]) => ({
-        code,
-        name: info.name,
-        pinyin: info.pinyin
-      }))
+      const raw = JSON.parse(data) as StockArrayItem[] | Record<string, { name: string; pinyin?: string }>
+
+      if (Array.isArray(raw)) {
+        this.stocks = raw
+          .filter((item) => item?.code && item?.name)
+          .map((item) => ({
+            code: item.code,
+            name: item.name,
+            pinyin: item.pinyin || item.pinyinShort
+          }))
+      } else {
+        this.stocks = Object.entries(raw).map(([code, info]) => ({
+          code,
+          name: info.name,
+          pinyin: info.pinyin
+        }))
+      }
       
       this.stocks.forEach(s => this.nameSet.add(s.name))
       this.loaded = true

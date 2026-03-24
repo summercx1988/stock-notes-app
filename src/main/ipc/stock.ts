@@ -6,6 +6,14 @@ import { openAIWhisperService } from '../services/OpenAIWhisper'
 
 const aiProcessor = new AIProcessor()
 
+const cleanTranscriptText = (text: string): string => {
+  const withoutTimestamps = text.replace(/\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]/g, ' ')
+  return withoutTimestamps
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([，。！？；：])/g, '$1')
+    .trim()
+}
+
 ipcMain.handle('stock:search', async (_, query: string, limit?: number): Promise<SearchResult[]> => {
   await stockDatabase.ensureLoaded()
   return stockDatabase.search(query, limit)
@@ -110,7 +118,7 @@ ipcMain.handle('voice:transcribeFile', async (_, audioPath: string) => {
     }
 
     const text = await voiceTranscriberClient.transcribeFile(audioPath)
-    return { success: true, text }
+    return { success: true, text: cleanTranscriptText(text) }
   } catch (error: any) {
     console.error('[IPC] voice:transcribeFile error:', error)
     return { success: false, error: error.message }
@@ -121,8 +129,9 @@ ipcMain.handle('voice:transcribeWithCloud', async (_, audioPath: string) => {
   console.log('[IPC] voice:transcribeWithCloud:', audioPath)
   try {
     const result = await openAIWhisperService.transcribe(audioPath)
-    console.log('[IPC] voice:transcribeWithCloud result:', result?.substring(0, 100))
-    return { success: true, text: result }
+    const cleaned = cleanTranscriptText(result || '')
+    console.log('[IPC] voice:transcribeWithCloud result:', cleaned?.substring(0, 100))
+    return { success: true, text: cleaned }
   } catch (error: any) {
     console.error('[IPC] voice:transcribeWithCloud error:', error)
     return { success: false, error: error.message }

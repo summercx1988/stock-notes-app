@@ -15,7 +15,7 @@ interface AIExtractResult {
   }
   note: {
     keyPoints: string[]
-    sentiment?: string
+    sentiment?: '看多' | '看空' | '震荡' | '未知' | string
     timeHorizon?: string
   }
   timestamp: {
@@ -29,6 +29,7 @@ interface AIExtractResult {
 
 type TranscribeEngine = 'local' | 'cloud'
 type RecordingState = 'idle' | 'connecting' | 'recording' | 'transcribing' | 'analyzing' | 'completed'
+type StockSelectOption = { label: string; value: string; name: string }
 
 const RecordingControl: React.FC = () => {
   const { setStockNote, setLoading, setCurrentStock } = useAppStore()
@@ -42,16 +43,36 @@ const RecordingControl: React.FC = () => {
   const [transcribedText, setTranscribedText] = useState<string>('')
   const [extractResult, setExtractResult] = useState<AIExtractResult | null>(null)
   const [selectedStockCode, setSelectedStockCode] = useState<string>('')
+  const [selectedStockName, setSelectedStockName] = useState<string>('')
+  const [stockSearchOptions, setStockSearchOptions] = useState<StockSelectOption[]>([])
+  const [stockSearching, setStockSearching] = useState(false)
   const [transcribeProgress, setTranscribeProgress] = useState(0)
   const [noteEventTime, setNoteEventTime] = useState<Dayjs | null>(dayjs())
   const [noteDirection, setNoteDirection] = useState<Viewpoint['direction']>('未知')
 
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const stockSearchTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const cleanTranscriptText = (text: string) => {
+    const withoutTimestamps = text.replace(/\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]/g, ' ')
+    return withoutTimestamps
+      .replace(/\s+/g, ' ')
+      .replace(/\s+([，。！？；：])/g, '$1')
+      .trim()
+  }
+
+  const mapAISentimentToDirection = (sentiment?: string): Viewpoint['direction'] => {
+    if (!sentiment) return '未知'
+    if (sentiment.includes('看多') || sentiment === 'bullish') return '看多'
+    if (sentiment.includes('看空') || sentiment === 'bearish') return '看空'
+    if (sentiment.includes('震荡') || sentiment.includes('中性')) return '中性'
+    return '未知'
   }
 
   const resetState = useCallback(() => {
@@ -62,6 +83,8 @@ const RecordingControl: React.FC = () => {
     setTranscribedText('')
     setExtractResult(null)
     setSelectedStockCode('')
+    setSelectedStockName('')
+    setStockSearchOptions([])
     setTranscribeProgress(0)
     setNoteEventTime(dayjs())
     setNoteDirection('未知')
@@ -70,10 +93,61 @@ const RecordingControl: React.FC = () => {
       clearInterval(recordingTimerRef.current)
       recordingTimerRef.current = null
     }
+
+    if (stockSearchTimerRef.current) {
+      clearTimeout(stockSearchTimerRef.current)
+      stockSearchTimerRef.current = null
+    }
   }, [])
 
+  const handleStockSearch = useCallback((query: string) => {
+    if (stockSearchTimerRef.current) {
+      clearTimeout(stockSearchTimerRef.current)
+    }
+
+    stockSearchTimerRef.current = setTimeout(async () => {
+      const q = query.trim()
+      if (!q) {
+        setStockSearchOptions((prev) => prev.filter((item) => item.value === selectedStockCode))
+        setStockSearching(false)
+        return
+      }
+
+      if (/^\d{6}$/.test(q)) {
+        setSelectedStockCode(q)
+        setSelectedStockName(q)
+        setStockSearchOptions((prev) => {
+          const existing = prev.find((item) => item.value === q)
+          if (existing) return prev
+          return [...prev, { value: q, name: q, label: `股票代码 ${q}` }]
+        })
+      }
+
+      setStockSearching(true)
+      try {
+        const results = await window.api.stock.search(q, 15)
+        const options: StockSelectOption[] = results.map((result: any) => ({
+          value: result.stock.code,
+          name: result.stock.name,
+          label: `${result.stock.name} (${result.stock.code})`
+        }))
+        setStockSearchOptions((prev) => {
+          const map = new Map<string, StockSelectOption>()
+          prev.forEach((item) => map.set(item.value, item))
+          options.forEach((item) => map.set(item.value, item))
+          return Array.from(map.values())
+        })
+      } catch (error) {
+        console.error('[RecordingControl] Stock search failed:', error)
+      } finally {
+        setStockSearching(false)
+      }
+    }, 220)
+  }, [selectedStockCode])
+
   const handleAnalyze = useCallback(async (textToAnalyze: string) => {
-    if (!textToAnalyze.trim()) {
+    const normalizedInput = cleanTranscriptText(textToAnalyze)
+    if (!normalizedInput.trim()) {
       message.warning('没有转写内容可供处理')
       return
     }
@@ -83,15 +157,22 @@ const RecordingControl: React.FC = () => {
     message.info('正在纠错并匹配股票...')
 
     try {
-      const result = await window.api.ai.extract(textToAnalyze)
+      const result = await window.api.ai.extract(normalizedInput)
 
       setExtractResult(result)
       setRecordingState('completed')
       setCurrentStep(4)
+      setNoteDirection(mapAISentimentToDirection(result.note?.sentiment))
 
       if (result.stock) {
         message.success(`处理完成: ${result.stock.name} (${result.stock.code})`)
         setSelectedStockCode(result.stock.code)
+        setSelectedStockName(result.stock.name)
+        setStockSearchOptions([{
+          value: result.stock.code,
+          name: result.stock.name,
+          label: `${result.stock.name} (${result.stock.code})`
+        }])
       } else {
         message.warning('未识别到股票，请手动选择')
       }
@@ -113,8 +194,9 @@ const RecordingControl: React.FC = () => {
     if (!isModalOpen) return
 
     const unsubscribeTranscript = window.api.voice.onTranscript((text, isFinal) => {
-      console.log('[RecordingControl] Transcript received:', text, 'isFinal:', isFinal)
-      setTranscribedText(text)
+      const cleaned = cleanTranscriptText(text)
+      console.log('[RecordingControl] Transcript received:', cleaned, 'isFinal:', isFinal)
+      setTranscribedText(cleaned)
       setTranscribeProgress(100)
     })
 
@@ -148,7 +230,7 @@ const RecordingControl: React.FC = () => {
         clearInterval(progressInterval)
         setTranscribeProgress(100)
 
-        const finalText = result?.success ? result.text?.trim() ?? '' : ''
+        const finalText = result?.success ? cleanTranscriptText(result.text?.trim() ?? '') : ''
 
         if (finalText) {
           setTranscribedText(finalText)
@@ -273,13 +355,14 @@ const RecordingControl: React.FC = () => {
     setLoading(true)
 
     try {
+      const finalContent = cleanTranscriptText(extractResult.optimizedText || extractResult.originalText)
       const viewpoint: Viewpoint = {
         direction: noteDirection,
-        confidence: noteDirection === '未知' ? 0 : 0.7,
+        confidence: noteDirection === '未知' ? 0 : noteDirection === '中性' ? 0.6 : 0.7,
         timeHorizon: '短线'
       }
       await window.api.notes.addEntry(stockCode, {
-        content: extractResult.optimizedText || extractResult.originalText,
+        content: finalContent,
         eventTime: (noteEventTime || dayjs()).toISOString(),
         viewpoint,
         inputType: 'voice',
@@ -293,7 +376,7 @@ const RecordingControl: React.FC = () => {
       }
 
       const stockInfo = await window.api.stock.getByCode(stockCode)
-      setCurrentStock(stockCode, stockInfo?.name || stockCode)
+      setCurrentStock(stockCode, selectedStockName || stockInfo?.name || stockCode)
 
       message.success('笔记已保存')
       setIsModalOpen(false)
@@ -320,8 +403,9 @@ const RecordingControl: React.FC = () => {
     try {
       const result = await window.api.voice.transcribeFile(file.path)
       if (result.success && result.text) {
-        setTranscribedText(result.text)
-        handleAnalyze(result.text)
+        const cleaned = cleanTranscriptText(result.text)
+        setTranscribedText(cleaned)
+        handleAnalyze(cleaned)
       } else {
         throw new Error(result.error || '转写结果为空')
       }
@@ -481,6 +565,11 @@ const RecordingControl: React.FC = () => {
               <div className="p-4 bg-gray-50 rounded-lg">
                 <h4 className="font-medium mb-2">转写结果</h4>
                 <div className="text-gray-700">{transcribedText}</div>
+                {!!extractResult.note?.sentiment && (
+                  <div className="mt-2">
+                    <Tag color="purple">AI观点: {extractResult.note.sentiment}</Tag>
+                  </div>
+                )}
               </div>
 
               {extractResult.stock && (
@@ -494,6 +583,33 @@ const RecordingControl: React.FC = () => {
 
               <div className="p-4 bg-gray-50 rounded-lg">
                 <h4 className="font-medium mb-3">记录配置</h4>
+                <div className="flex flex-wrap items-center gap-3 mb-3">
+                  <Select
+                    showSearch
+                    value={selectedStockCode || undefined}
+                    onSearch={handleStockSearch}
+                    filterOption={false}
+                    loading={stockSearching}
+                    style={{ width: 260 }}
+                    placeholder="输入股票名称或代码"
+                    options={stockSearchOptions}
+                    onChange={(value, option) => {
+                      const picked = option as { name?: string; label?: string }
+                      setSelectedStockCode(value)
+                      if (picked?.name) {
+                        setSelectedStockName(picked.name)
+                      } else if (typeof picked?.label === 'string') {
+                        setSelectedStockName(picked.label)
+                      } else {
+                        setSelectedStockName(value)
+                      }
+                    }}
+                    notFoundContent={stockSearching ? '搜索中...' : '未找到匹配股票'}
+                  />
+                  {selectedStockCode && (
+                    <Tag color="blue">已选: {selectedStockName || selectedStockCode}</Tag>
+                  )}
+                </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <Select
                     value={noteDirection}
@@ -503,7 +619,8 @@ const RecordingControl: React.FC = () => {
                     options={[
                       { label: '未知', value: '未知' },
                       { label: '看多', value: '看多' },
-                      { label: '看空', value: '看空' }
+                      { label: '看空', value: '看空' },
+                      { label: '震荡/中性', value: '中性' }
                     ]}
                   />
                   <DatePicker

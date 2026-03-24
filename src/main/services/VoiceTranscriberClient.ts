@@ -159,9 +159,12 @@ export class VoiceTranscriberClient extends EventEmitter {
     
     switch (message.type) {
       case 'transcript':
-        console.log('[VoiceClient] Emitting transcript:', message.text, message.isFinal)
-        this.emit('transcript', message.text, message.isFinal)
-        this.sendToRenderer('voice:transcript', message.text, message.isFinal)
+        {
+          const cleaned = this.cleanTranscriptText(message.text)
+          console.log('[VoiceClient] Emitting transcript:', cleaned, message.isFinal)
+          this.emit('transcript', cleaned, message.isFinal)
+          this.sendToRenderer('voice:transcript', cleaned, message.isFinal)
+        }
         break
       case 'audio_saved':
         console.log('[VoiceClient] Emitting audio_saved:', message.audioPath)
@@ -278,6 +281,15 @@ export class VoiceTranscriberClient extends EventEmitter {
       isConnected: this.isConnected,
       isRunning: this.process !== null
     }
+  }
+
+  private cleanTranscriptText(text?: string): string {
+    if (!text) return ''
+    const withoutTimestamps = text.replace(/\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]/g, ' ')
+    return withoutTimestamps
+      .replace(/\s+/g, ' ')
+      .replace(/\s+([，。！？；：])/g, '$1')
+      .trim()
   }
 }
 
