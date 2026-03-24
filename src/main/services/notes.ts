@@ -4,6 +4,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { StockNote, TimeEntry, TimelineItem, Viewpoint, Action, NoteInputType, NoteCategory } from '../../shared/types'
 import { stockDatabase } from './stock-db'
+import { createTraceId, logPipelineEvent } from './pipeline-logger'
 
 interface EntryMeta {
   id?: string
@@ -36,6 +37,16 @@ export class NotesService {
       transcriptionConfidence?: number
     }
   ): Promise<TimeEntry> {
+    const traceId = createTraceId('save')
+    const startedAt = Date.now()
+    logPipelineEvent({
+      traceId,
+      stage: 'save',
+      status: 'start',
+      stockCode,
+      category: data.category
+    })
+
     const id = uuidv4()
     const now = new Date()
     const eventTime = this.normalizeDate(data.eventTime, now)
@@ -59,8 +70,30 @@ export class NotesService {
       transcriptionConfidence: data.transcriptionConfidence
     }
 
-    await this.appendEntryToStockFile(stockCode, entry)
-    return entry
+    try {
+      await this.appendEntryToStockFile(stockCode, entry)
+      logPipelineEvent({
+        traceId,
+        stage: 'save',
+        status: 'success',
+        stockCode,
+        category: entry.category,
+        durationMs: Date.now() - startedAt
+      })
+      return entry
+    } catch (error: any) {
+      logPipelineEvent({
+        traceId,
+        stage: 'save',
+        status: 'error',
+        stockCode,
+        category: entry.category,
+        durationMs: Date.now() - startedAt,
+        errorCode: 'SAVE_FAILED',
+        message: error?.message || String(error)
+      })
+      throw error
+    }
   }
 
   async getStockNote(stockCode: string): Promise<StockNote | null> {
@@ -153,6 +186,16 @@ export class NotesService {
     viewpoint?: string
     category?: NoteCategory
   }): Promise<TimelineItem[]> {
+    const traceId = createTraceId('timeline')
+    const startedAt = Date.now()
+    logPipelineEvent({
+      traceId,
+      stage: 'timeline',
+      status: 'start',
+      stockCode: filters?.stockCode,
+      category: filters?.category
+    })
+
     const stockCodes = await this.getAllStockCodes()
     const items: TimelineItem[] = []
 
@@ -182,7 +225,17 @@ export class NotesService {
       }
     }
 
-    return items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    const sorted = items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    logPipelineEvent({
+      traceId,
+      stage: 'timeline',
+      status: 'success',
+      stockCode: filters?.stockCode,
+      category: filters?.category,
+      durationMs: Date.now() - startedAt,
+      extra: { total_items: sorted.length }
+    })
+    return sorted
   }
 
   private generateTitle(content: string): string {

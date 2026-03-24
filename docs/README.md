@@ -52,6 +52,21 @@ npm run electron:dev
 npm run cli:review -- --mode evaluate --scope overall --start 2026-03-01T00:00:00+08:00 --end 2026-03-24T23:59:59+08:00 --interval 5m
 ```
 
+### 3.1.2 回归 CLI（Sprint1 稳定性）
+
+```bash
+# 默认使用离线回退路径（不调用真实 AI 接口）
+npm run cli:regression
+
+# 使用真实 AI 接口（需配置 API Key）
+npm run cli:regression -- --use-real-ai
+
+# 保留回归运行临时数据目录（便于排查）
+npm run cli:regression -- --keep-data
+```
+
+回归样例文件：`docs/regression-cases.json`（当前 24 条）。
+
 ### 3.2 Swift 语音服务
 
 ```bash
@@ -118,6 +133,7 @@ voice-transcriber-service/whisper.cpp/models/ggml-medium.bin
 - 纠错错别字和同音字
 - 根据候选股票列表修正常见股票名称
 - 给出最可能的股票匹配结果
+- 关键链路会输出统一的 `[Pipeline]` 结构化日志，便于定位失败阶段
 
 ---
 

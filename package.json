@@ -12,6 +12,7 @@
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron --no-sandbox .\"",
     "electron:build": "vite build && tsc -p tsconfig.main.json && electron-builder",
     "cli:review": "npm run build:main && node dist/main/main/cli/review-cli.js",
+    "cli:regression": "npm run build:main && node dist/main/main/cli/regression-cli.js",
     "update-stocks": "python3 scripts/fetch-stocks.py",
     "lint": "eslint src --ext ts,tsx",
     "typecheck": "tsc --noEmit"

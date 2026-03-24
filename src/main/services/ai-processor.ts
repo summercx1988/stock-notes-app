@@ -1,5 +1,6 @@
 import { stockNameMatcher } from './stock-matcher'
 import { stockDatabase } from './stock-db'
+import { createTraceId, logPipelineEvent } from './pipeline-logger'
 
 export interface ExtractedStock {
   code: string
@@ -152,8 +153,23 @@ export class AIProcessor {
   }
 
   async extract(text: string): Promise<AIExtractResult> {
+    const traceId = createTraceId('extract')
+    const startedAt = Date.now()
+    logPipelineEvent({
+      traceId,
+      stage: 'extract',
+      status: 'start'
+    })
+
     const cleanedInput = this.cleanTranscriptText(text)
     if (!cleanedInput.trim()) {
+      logPipelineEvent({
+        traceId,
+        stage: 'extract',
+        status: 'success',
+        durationMs: Date.now() - startedAt,
+        message: 'empty_input'
+      })
       return this.emptyResult(text)
     }
 
@@ -174,6 +190,7 @@ export class AIProcessor {
       const simplifiedText = await this.normalizeToSimplified(correction.correctedText || cleanedInput)
       const theme = await this.extractTheme(simplifiedText || cleanedInput, candidateText)
       const result = this.parseAIResponse(simplifiedText || cleanedInput, cleanedInput, theme)
+      const dbMatch = stockDatabase.matchStock(simplifiedText || cleanedInput)
 
       if (candidates.length > 0 && !result.stock) {
         const bestCandidate = candidates.reduce((best, c) => c.confidence > best.confidence ? c : best, candidates[0])
@@ -185,20 +202,65 @@ export class AIProcessor {
       }
 
       if (!result.stock) {
-        const matched = stockDatabase.matchStock(simplifiedText || cleanedInput)
-        if (matched) {
+        if (dbMatch) {
           result.stock = {
-            code: matched.stock.code,
-            name: matched.stock.name,
-            confidence: Math.min(0.95, Math.max(0.6, matched.score / 100))
+            code: dbMatch.stock.code,
+            name: dbMatch.stock.name,
+            confidence: Math.min(0.95, Math.max(0.6, dbMatch.score / 100))
           }
+        }
+      } else if (
+        dbMatch &&
+        (
+          dbMatch.score >= 95 ||
+          (result.stock.confidence < 0.9 && dbMatch.stock.code !== result.stock.code)
+        )
+      ) {
+        // 本地库高置信命中时，覆盖低置信的模糊匹配结果，降低误配率。
+        result.stock = {
+          code: dbMatch.stock.code,
+          name: dbMatch.stock.name,
+          confidence: Math.min(0.98, Math.max(result.stock.confidence, dbMatch.score / 100))
         }
       }
 
+      if (result.stock) {
+        logPipelineEvent({
+          traceId,
+          stage: 'match',
+          status: 'success',
+          stockCode: result.stock.code,
+          durationMs: Date.now() - startedAt
+        })
+      } else {
+        logPipelineEvent({
+          traceId,
+          stage: 'match',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          errorCode: 'STOCK_NOT_FOUND'
+        })
+      }
+
       result.originalText = cleanedInput
+      logPipelineEvent({
+        traceId,
+        stage: 'extract',
+        status: 'success',
+        stockCode: result.stock?.code,
+        durationMs: Date.now() - startedAt
+      })
       return result
     } catch (error: any) {
       console.error('[AIProcessor] Extraction failed:', error)
+      logPipelineEvent({
+        traceId,
+        stage: 'extract',
+        status: 'error',
+        durationMs: Date.now() - startedAt,
+        errorCode: 'EXTRACT_FAILED',
+        message: error?.message || String(error)
+      })
       const fallbackTheme = this.extractThemeByRule(cleanedInput)
       return this.parseAIResponse(cleanedInput, cleanedInput, fallbackTheme)
     }

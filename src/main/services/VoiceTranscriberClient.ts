@@ -4,6 +4,7 @@ import EventEmitter from 'events'
 import path from 'path'
 import fs from 'fs'
 import { app, BrowserWindow } from 'electron'
+import { createTraceId, logPipelineEvent } from './pipeline-logger'
 
 interface ServerMessage {
   type: 'transcript' | 'audio_saved' | 'error' | 'pong' | 'status'
@@ -211,10 +212,25 @@ export class VoiceTranscriberClient extends EventEmitter {
 
   async transcribeFile(audioPath: string): Promise<string> {
     console.log('[VoiceClient] Transcribing file:', audioPath)
+    const traceId = createTraceId('asr')
+    const startedAt = Date.now()
+    logPipelineEvent({
+      traceId,
+      stage: 'asr',
+      status: 'start',
+      message: path.basename(audioPath)
+    })
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup()
+        logPipelineEvent({
+          traceId,
+          stage: 'asr',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          errorCode: 'ASR_TIMEOUT'
+        })
         reject(new Error('语音转写超时'))
       }, 120000)
 
@@ -230,11 +246,25 @@ export class VoiceTranscriberClient extends EventEmitter {
         }
 
         cleanup()
+        logPipelineEvent({
+          traceId,
+          stage: 'asr',
+          status: 'success',
+          durationMs: Date.now() - startedAt
+        })
         resolve(text || '')
       }
 
       const handleError = (error?: string) => {
         cleanup()
+        logPipelineEvent({
+          traceId,
+          stage: 'asr',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          errorCode: 'ASR_STREAM_ERROR',
+          message: error
+        })
         reject(new Error(error || '语音转写失败'))
       }
 
@@ -245,6 +275,14 @@ export class VoiceTranscriberClient extends EventEmitter {
         this.send({ type: 'transcribe_file', audioPath })
       } catch (error) {
         cleanup()
+        logPipelineEvent({
+          traceId,
+          stage: 'asr',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          errorCode: 'ASR_SEND_FAILED',
+          message: error instanceof Error ? error.message : String(error)
+        })
         reject(error)
       }
     })
