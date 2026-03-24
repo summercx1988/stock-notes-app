@@ -23,19 +23,30 @@ renderer(UI)
 - 统一用例入口（笔记 CRUD / 时间轴 / 复盘快照）
 - UI 与 CLI 复用同一应用层
 
-3. `src/main/ipc/review.ts`
+3. `src/main/services/market-data.ts`（Phase 3）
+- 行情适配层：触发 API 拉取 + 本地持久化缓存
+- API 失败时回退本地缓存，避免复盘中断
+
+4. `src/main/core/review-evaluator.ts`（Phase 3）
+- 纯逻辑判定引擎：事件时间对齐 K 线、按 3D/3% 计算命中
+- 输出单条事件判定和汇总指标
+
+5. `src/main/ipc/review.ts`
 - 新增 `review:getSnapshot` IPC
+- 新增 `review:evaluate` IPC
 - renderer 不再在组件内部实现复盘统计
 
-4. `src/main/cli/review-cli.ts`
+6. `src/main/cli/review-cli.ts`
 - 命令行模式调用同一应用层用例
-- 支持 `single/overall` 两种 scope
+- 支持 `evaluate/snapshot` 两种 mode，`single/overall` 两种 scope
 
 ## 3. 关键复用点
 
-- Electron UI 调用：`window.api.review.getSnapshot(...)`
-- CLI 调用：`npm run cli:review -- --scope overall --start ... --end ...`
-- 两者底层都走 `NotesAppService#getReviewSnapshot`
+- Electron UI 调用：
+  - `window.api.review.getSnapshot(...)`
+  - `window.api.review.evaluate(...)`
+- CLI 调用：`npm run cli:review -- --mode evaluate --scope overall --start ... --end ...`
+- 两者底层都走 `NotesAppService`
 
 ## 4. 下一步建议（Phase 3 前后）
 

@@ -46,6 +46,12 @@ npm install
 npm run electron:dev
 ```
 
+### 3.1.1 复盘 CLI（Agent/脚本可调用）
+
+```bash
+npm run cli:review -- --mode evaluate --scope overall --start 2026-03-01T00:00:00+08:00 --end 2026-03-24T23:59:59+08:00 --interval 5m
+```
+
 ### 3.2 Swift 语音服务
 
 ```bash

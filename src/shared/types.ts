@@ -189,6 +189,73 @@ export interface ReviewSnapshotResponse {
   generatedAt: string
 }
 
+export interface MarketCandle {
+  stockCode: string
+  timestamp: string
+  open: number
+  close: number
+  high: number
+  low: number
+  volume: number
+}
+
+export interface ReviewRuleConfig {
+  windowDays: number
+  thresholdPct: number
+  excludeUnknown: boolean
+}
+
+export interface ReviewEventResult {
+  entryId: string
+  stockCode: string
+  eventTime: string
+  direction: '看多' | '看空'
+  entryPrice: number
+  targetPrice: number
+  changePct: number
+  hit: boolean
+  reason: string
+}
+
+export interface ReviewDirectionStats {
+  samples: number
+  hits: number
+  accuracy: number
+}
+
+export interface ReviewEvaluateSummary {
+  totalNotes: number
+  unknownNotes: number
+  actionableNotes: number
+  evaluatedSamples: number
+  insufficientData: number
+  hits: number
+  accuracy: number
+  bullish: ReviewDirectionStats
+  bearish: ReviewDirectionStats
+}
+
+export interface ReviewEvaluateRequest {
+  scope: ReviewScope
+  stockCode?: string
+  startDate?: string
+  endDate?: string
+  interval?: KlineInterval
+  rule?: Partial<ReviewRuleConfig>
+}
+
+export interface ReviewEvaluateResponse {
+  scope: ReviewScope
+  stockCode?: string
+  startDate?: string
+  endDate?: string
+  interval: KlineInterval
+  rule: ReviewRuleConfig
+  summary: ReviewEvaluateSummary
+  results: ReviewEventResult[]
+  generatedAt: string
+}
+
 export interface IAIService {
   readonly provider: string
   readonly mode: 'local' | 'cloud'

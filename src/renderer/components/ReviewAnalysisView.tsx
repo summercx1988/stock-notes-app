@@ -1,8 +1,24 @@
 import React, { useMemo, useState } from 'react'
-import { Alert, Button, Card, Col, DatePicker, Empty, Radio, Row, Select, Space, Statistic, Tag, message } from 'antd'
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  DatePicker,
+  Empty,
+  Radio,
+  Row,
+  Select,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Tooltip,
+  message
+} from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { KlineInterval, ReviewScope, ReviewSnapshot } from '../../shared/types'
+import type { KlineInterval, ReviewEvaluateResponse, ReviewEventResult, ReviewScope } from '../../shared/types'
 
 const { RangePicker } = DatePicker
 
@@ -15,9 +31,8 @@ const ReviewAnalysisView: React.FC = () => {
     dayjs().subtract(30, 'day').startOf('day'),
     dayjs().endOf('day')
   ])
-  const [snapshot, setSnapshot] = useState<ReviewSnapshot | null>(null)
+  const [evaluation, setEvaluation] = useState<ReviewEvaluateResponse | null>(null)
   const [running, setRunning] = useState(false)
-  const [lastRun, setLastRun] = useState<string>('')
 
   const selectedScopeLabel = useMemo(() => {
     if (scope === 'single') {
@@ -34,15 +49,19 @@ const ReviewAnalysisView: React.FC = () => {
 
     setRunning(true)
     try {
-      const result = await window.api.review.getSnapshot({
+      const result = await window.api.review.evaluate({
         scope,
         stockCode: scope === 'single' ? currentStockCode || undefined : undefined,
         startDate: timeRange?.[0]?.toISOString(),
         endDate: timeRange?.[1]?.toISOString(),
-        interval
+        interval,
+        rule: {
+          windowDays: 3,
+          thresholdPct: 3,
+          excludeUnknown: true
+        }
       })
-      setSnapshot(result.snapshot)
-      setLastRun(dayjs(result.generatedAt).format('YYYY-MM-DD HH:mm:ss'))
+      setEvaluation(result)
     } catch (error: any) {
       message.error(`复盘计算失败: ${error.message}`)
     } finally {
@@ -50,11 +69,70 @@ const ReviewAnalysisView: React.FC = () => {
     }
   }
 
+  const columns = [
+    {
+      title: '股票',
+      dataIndex: 'stockCode',
+      width: 92
+    },
+    {
+      title: '事件时间',
+      dataIndex: 'eventTime',
+      render: (value: string) => dayjs(value).format('YYYY-MM-DD HH:mm'),
+      width: 150
+    },
+    {
+      title: '观点',
+      dataIndex: 'direction',
+      width: 88,
+      render: (value: ReviewEventResult['direction']) => (
+        <Tag color={value === '看多' ? 'red' : 'green'}>{value}</Tag>
+      )
+    },
+    {
+      title: '入场价',
+      dataIndex: 'entryPrice',
+      width: 92
+    },
+    {
+      title: '目标价',
+      dataIndex: 'targetPrice',
+      width: 92
+    },
+    {
+      title: '涨跌幅',
+      dataIndex: 'changePct',
+      width: 102,
+      render: (value: number) => {
+        const color = value >= 0 ? '#ef4444' : '#22c55e'
+        return <span style={{ color }}>{value.toFixed(2)}%</span>
+      }
+    },
+    {
+      title: '结果',
+      dataIndex: 'hit',
+      width: 84,
+      render: (value: boolean) => (
+        <Tag color={value ? 'success' : 'error'}>{value ? '命中' : '未命中'}</Tag>
+      )
+    },
+    {
+      title: '说明',
+      dataIndex: 'reason',
+      ellipsis: true,
+      render: (value: string) => (
+        <Tooltip title={value}>
+          <span>{value}</span>
+        </Tooltip>
+      )
+    }
+  ]
+
   return (
     <div className="h-full flex flex-col bg-white">
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-semibold m-0">复盘分析（基础版）</h2>
+          <h2 className="text-xl font-semibold m-0">复盘分析（Phase 3）</h2>
           <Tag color="blue">{selectedScopeLabel}</Tag>
         </div>
 
@@ -108,32 +186,42 @@ const ReviewAnalysisView: React.FC = () => {
           type="info"
           showIcon
           className="mb-4"
-          message="当前统计由主进程 review 用例统一计算（UI/CLI可复用同一逻辑）。K线拉取与命中判定将在下一阶段接入。"
+          message="复盘引擎已接入：触发API拉取K线并本地持久化，按事件时间对齐，默认规则为 3D / 3%，未知观点不计入胜率。"
         />
 
-        {!snapshot ? (
+        {!evaluation ? (
           <Empty description="设置范围后点击“开始复盘”" />
         ) : (
           <Space direction="vertical" size="middle" className="w-full">
             <Row gutter={12}>
-              <Col span={6}>
+              <Col span={4}>
                 <Card>
-                  <Statistic title="总样本" value={snapshot.total} />
+                  <Statistic title="总笔记" value={evaluation.summary.totalNotes} />
                 </Card>
               </Col>
-              <Col span={6}>
+              <Col span={4}>
                 <Card>
-                  <Statistic title="看多样本" value={snapshot.bullish} />
+                  <Statistic title="未知观点" value={evaluation.summary.unknownNotes} />
                 </Card>
               </Col>
-              <Col span={6}>
+              <Col span={4}>
                 <Card>
-                  <Statistic title="看空样本" value={snapshot.bearish} />
+                  <Statistic title="可评估样本" value={evaluation.summary.actionableNotes} />
                 </Card>
               </Col>
-              <Col span={6}>
+              <Col span={4}>
                 <Card>
-                  <Statistic title="未知样本" value={snapshot.unknown} />
+                  <Statistic title="成功对齐样本" value={evaluation.summary.evaluatedSamples} />
+                </Card>
+              </Col>
+              <Col span={4}>
+                <Card>
+                  <Statistic title="命中数" value={evaluation.summary.hits} />
+                </Card>
+              </Col>
+              <Col span={4}>
+                <Card>
+                  <Statistic title="综合胜率" value={evaluation.summary.accuracy} suffix="%" />
                 </Card>
               </Col>
             </Row>
@@ -141,30 +229,37 @@ const ReviewAnalysisView: React.FC = () => {
             <Row gutter={12}>
               <Col span={8}>
                 <Card>
-                  <Statistic
-                    title="可评估样本（看多+看空）"
-                    value={snapshot.actionable}
-                  />
+                  <Statistic title="看多胜率" value={evaluation.summary.bullish.accuracy} suffix="%" />
+                  <div className="mt-2 text-xs text-gray-500">
+                    {evaluation.summary.bullish.hits} / {evaluation.summary.bullish.samples}
+                  </div>
                 </Card>
               </Col>
               <Col span={8}>
                 <Card>
-                  <Statistic
-                    title="综合胜率"
-                    value="待接入K线"
-                  />
+                  <Statistic title="看空胜率" value={evaluation.summary.bearish.accuracy} suffix="%" />
+                  <div className="mt-2 text-xs text-gray-500">
+                    {evaluation.summary.bearish.hits} / {evaluation.summary.bearish.samples}
+                  </div>
                 </Card>
               </Col>
               <Col span={8}>
                 <Card>
-                  <Statistic
-                    title="最近一次运行"
-                    value={lastRun || '-'}
-                    valueStyle={{ fontSize: 16 }}
-                  />
+                  <Statistic title="数据不足样本" value={evaluation.summary.insufficientData} />
                 </Card>
               </Col>
             </Row>
+
+            <Card title={`事件判定明细（${evaluation.results.length} 条）`} size="small">
+              <Table<ReviewEventResult>
+                rowKey={(record) => `${record.stockCode}-${record.entryId}-${record.eventTime}`}
+                columns={columns}
+                dataSource={evaluation.results}
+                pagination={{ pageSize: 10 }}
+                scroll={{ x: 980 }}
+                size="small"
+              />
+            </Card>
           </Space>
         )}
       </div>
