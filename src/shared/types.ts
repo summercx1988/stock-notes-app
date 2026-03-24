@@ -160,6 +160,35 @@ export interface TimelineItem {
   hasAudio: boolean
 }
 
+export type ReviewScope = 'single' | 'overall'
+export type KlineInterval = '5m' | '15m' | '30m' | '1d'
+
+export interface ReviewSnapshot {
+  total: number
+  bullish: number
+  bearish: number
+  unknown: number
+  actionable: number
+}
+
+export interface ReviewSnapshotRequest {
+  scope: ReviewScope
+  stockCode?: string
+  startDate?: string
+  endDate?: string
+  interval?: KlineInterval
+}
+
+export interface ReviewSnapshotResponse {
+  scope: ReviewScope
+  stockCode?: string
+  startDate?: string
+  endDate?: string
+  interval: KlineInterval
+  snapshot: ReviewSnapshot
+  generatedAt: string
+}
+
 export interface IAIService {
   readonly provider: string
   readonly mode: 'local' | 'cloud'

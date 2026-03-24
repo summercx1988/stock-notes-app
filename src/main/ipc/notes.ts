@@ -1,8 +1,6 @@
 import { ipcMain } from 'electron'
-import { NotesService } from '../services/notes'
+import { notesAppService } from '../application/container'
 import type { TimeEntry, StockNote, TimelineItem, Viewpoint, Action, NoteInputType } from '../../shared/types'
-
-const notesService = new NotesService()
 
 ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   content: string
@@ -13,27 +11,27 @@ ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   audioFile?: string
   audioDuration?: number
 }): Promise<TimeEntry> => {
-  return notesService.addEntry(stockCode, data)
+  return notesAppService.addEntry(stockCode, data)
 })
 
 ipcMain.handle('notes:getStockNote', async (_, stockCode: string): Promise<StockNote | null> => {
-  return notesService.getStockNote(stockCode)
+  return notesAppService.getStockNote(stockCode)
 })
 
 ipcMain.handle('notes:getEntries', async (_, stockCode: string): Promise<TimeEntry[]> => {
-  return notesService.getEntries(stockCode)
+  return notesAppService.getEntries(stockCode)
 })
 
 ipcMain.handle('notes:getEntriesByTimeRange', async (_, stockCode: string, start: Date, end: Date): Promise<TimeEntry[]> => {
-  return notesService.getEntriesByTimeRange(stockCode, start, end)
+  return notesAppService.getEntriesByTimeRange(stockCode, start, end)
 })
 
 ipcMain.handle('notes:updateEntry', async (_, stockCode: string, entryId: string, data: Partial<TimeEntry>): Promise<TimeEntry> => {
-  return notesService.updateEntry(stockCode, entryId, data)
+  return notesAppService.updateEntry(stockCode, entryId, data)
 })
 
 ipcMain.handle('notes:deleteEntry', async (_, stockCode: string, entryId: string): Promise<void> => {
-  return notesService.deleteEntry(stockCode, entryId)
+  return notesAppService.deleteEntry(stockCode, entryId)
 })
 
 ipcMain.handle('notes:getTimeline', async (_, filters?: {
@@ -42,5 +40,5 @@ ipcMain.handle('notes:getTimeline', async (_, filters?: {
   endDate?: Date
   viewpoint?: string
 }): Promise<TimelineItem[]> => {
-  return notesService.getTimeline(filters)
+  return notesAppService.getTimeline(filters)
 })

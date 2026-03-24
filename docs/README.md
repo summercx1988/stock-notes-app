@@ -167,6 +167,7 @@ data/
 - `docs/TECHNICAL_SPEC.md`
 - `docs/README.md`
 - `docs/RECORDING_TRANSCRIBE_SPEC.md`
+- `docs/MODULAR_ARCHITECTURE.md`（模块化解耦现状与演进路线）
 
 下一阶段规划：
 

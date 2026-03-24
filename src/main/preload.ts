@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { ReviewSnapshotRequest, ReviewSnapshotResponse } from '../shared/types'
 
 interface VoiceCommandResult {
   success: boolean
@@ -84,6 +85,11 @@ const api = {
     getByCode: (code: string) => ipcRenderer.invoke('stock:getByCode', code),
     getByName: (name: string) => ipcRenderer.invoke('stock:getByName', name),
     match: (text: string) => ipcRenderer.invoke('stock:match', text),
+  },
+
+  review: {
+    getSnapshot: (request: ReviewSnapshotRequest): Promise<ReviewSnapshotResponse> =>
+      ipcRenderer.invoke('review:getSnapshot', request),
   },
 }
 

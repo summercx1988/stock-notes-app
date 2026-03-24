@@ -2,23 +2,12 @@ import React, { useMemo, useState } from 'react'
 import { Alert, Button, Card, Col, DatePicker, Empty, Radio, Row, Select, Space, Statistic, Tag, message } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { TimeEntry } from '../../shared/types'
+import type { KlineInterval, ReviewScope, ReviewSnapshot } from '../../shared/types'
 
 const { RangePicker } = DatePicker
 
-type ReviewScope = 'single' | 'overall'
-type KlineInterval = '5m' | '15m' | '30m' | '1d'
-
-interface ReviewSnapshot {
-  total: number
-  bullish: number
-  bearish: number
-  unknown: number
-  actionable: number
-}
-
 const ReviewAnalysisView: React.FC = () => {
-  const { currentStockCode, currentStockName, stockNotes, setStockNote } = useAppStore()
+  const { currentStockCode, currentStockName } = useAppStore()
 
   const [scope, setScope] = useState<ReviewScope>('single')
   const [interval, setInterval] = useState<KlineInterval>('5m')
@@ -37,26 +26,6 @@ const ReviewAnalysisView: React.FC = () => {
     return '全股票综合'
   }, [currentStockCode, currentStockName, scope])
 
-  const inRange = (entry: TimeEntry) => {
-    if (!timeRange) return true
-    const eventTime = dayjs(entry.eventTime || entry.timestamp)
-    return !eventTime.isBefore(timeRange[0]) && !eventTime.isAfter(timeRange[1])
-  }
-
-  const calculateSnapshot = (entries: TimeEntry[]): ReviewSnapshot => {
-    const total = entries.length
-    const bullish = entries.filter((entry) => entry.viewpoint?.direction === '看多').length
-    const bearish = entries.filter((entry) => entry.viewpoint?.direction === '看空').length
-    const unknown = entries.filter((entry) => (entry.viewpoint?.direction || '未知') === '未知').length
-    return {
-      total,
-      bullish,
-      bearish,
-      unknown,
-      actionable: bullish + bearish
-    }
-  }
-
   const handleRunReview = async () => {
     if (scope === 'single' && !currentStockCode) {
       message.warning('请先在左侧选择一只股票')
@@ -65,39 +34,15 @@ const ReviewAnalysisView: React.FC = () => {
 
     setRunning(true)
     try {
-      if (scope === 'single' && currentStockCode) {
-        let note = stockNotes.get(currentStockCode)
-        if (!note) {
-          const loaded = await window.api.notes.getStockNote(currentStockCode)
-          if (loaded) {
-            setStockNote(currentStockCode, loaded)
-            note = loaded
-          }
-        }
-        const entries = (note?.entries || []).filter(inRange)
-        setSnapshot(calculateSnapshot(entries))
-      } else {
-        const timeline = await window.api.notes.getTimeline({
-          startDate: timeRange?.[0]?.toDate(),
-          endDate: timeRange?.[1]?.toDate()
-        })
-
-        const entries: TimeEntry[] = timeline.map((item: any) => ({
-          id: item.id,
-          timestamp: item.timestamp,
-          eventTime: item.timestamp,
-          createdAt: item.timestamp,
-          inputType: 'manual',
-          title: item.title || '',
-          content: '',
-          viewpoint: item.viewpoint,
-          keywords: [],
-          aiProcessed: false
-        }))
-        setSnapshot(calculateSnapshot(entries))
-      }
-
-      setLastRun(dayjs().format('YYYY-MM-DD HH:mm:ss'))
+      const result = await window.api.review.getSnapshot({
+        scope,
+        stockCode: scope === 'single' ? currentStockCode || undefined : undefined,
+        startDate: timeRange?.[0]?.toISOString(),
+        endDate: timeRange?.[1]?.toISOString(),
+        interval
+      })
+      setSnapshot(result.snapshot)
+      setLastRun(dayjs(result.generatedAt).format('YYYY-MM-DD HH:mm:ss'))
     } catch (error: any) {
       message.error(`复盘计算失败: ${error.message}`)
     } finally {
@@ -163,7 +108,7 @@ const ReviewAnalysisView: React.FC = () => {
           type="info"
           showIcon
           className="mb-4"
-          message="当前为复盘模块基础骨架：已支持单股票与全股票范围筛选、分钟级时间区间和基础样本统计。K线拉取与命中判定将在下一阶段接入。"
+          message="当前统计由主进程 review 用例统一计算（UI/CLI可复用同一逻辑）。K线拉取与命中判定将在下一阶段接入。"
         />
 
         {!snapshot ? (
