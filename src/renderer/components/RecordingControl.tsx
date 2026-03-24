@@ -133,6 +133,12 @@ const RecordingControl: React.FC = () => {
     void loadUserPreferences()
   }, [loadUserPreferences])
 
+  useEffect(() => {
+    if (!cloudASRReady && transcribeEngine === 'cloud') {
+      setTranscribeEngine('local')
+    }
+  }, [cloudASRReady, transcribeEngine])
+
   const handleStockSearch = useCallback((query: string) => {
     if (stockSearchTimerRef.current) {
       clearTimeout(stockSearchTimerRef.current)
