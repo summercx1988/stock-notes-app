@@ -63,9 +63,9 @@ const Header: React.FC = () => {
   }
 
   return (
-    <div className="h-12 px-4 flex items-center justify-between border-b border-gray-200 bg-white drag-region">
-      <div className="flex items-center gap-4 no-drag">
-        <h1 className="text-lg font-semibold m-0">📈 盯盘笔记</h1>
+    <div className="h-14 px-4 flex items-center justify-between border-b border-slate-200 bg-white/95 backdrop-blur drag-region">
+      <div className="flex items-center gap-4 no-drag min-w-0">
+        <h1 className="text-base md:text-lg font-semibold m-0 text-slate-800 whitespace-nowrap">📈 盯盘笔记</h1>
 
         <Segmented
           value={activeModule}
@@ -80,7 +80,7 @@ const Header: React.FC = () => {
         <Select
           value={aiMode.current}
           onChange={(value) => setAIMode({ current: value, forced: true })}
-          style={{ width: 120 }}
+          style={{ width: 132 }}
           options={[
             { value: 'local', label: '💻 本地模式' },
             { value: 'cloud', label: '☁️ 云端模式' },
@@ -111,7 +111,7 @@ const Header: React.FC = () => {
           trigger={['click']}
           placement="bottomRight"
         >
-          <Button icon={<AppstoreOutlined />} >
+          <Button icon={<AppstoreOutlined />}>
             工具 <DownOutlined />
           </Button>
         </Dropdown>

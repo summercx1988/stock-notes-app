@@ -20,6 +20,22 @@ const Sidebar: React.FC = () => {
   const [searchText, setSearchText] = useState('')
   const [localSearching, setLocalSearching] = useState(false)
 
+  const normalizeStockCode = (value: string) => {
+    const normalized = String(value || '').trim()
+    const matched = normalized.match(/(\d{6})/)
+    return matched ? matched[1] : normalized
+  }
+
+  const normalizeStockName = (name: string, code: string) => {
+    const normalized = String(name || '').trim()
+    if (!normalized) return ''
+    if (!code) return normalized
+    return normalized
+      .replace(new RegExp(`（\\s*${code}\\s*）$`), '')
+      .replace(new RegExp(`\\(\\s*${code}\\s*\\)$`), '')
+      .trim()
+  }
+
   const refreshTimeline = useCallback(async () => {
     try {
       const items = await window.api.notes.getTimeline()
@@ -65,7 +81,20 @@ const Sidebar: React.FC = () => {
       }))
 
       if (!cancelled) {
-        setStocks(stockList)
+        const uniqueByCode = new Map<string, { code: string; name: string; market: 'SH' | 'SZ' | 'BJ' }>()
+        for (const stock of stockList) {
+          const normalizedCode = normalizeStockCode(stock.code)
+          const normalizedName = normalizeStockName(stock.name, normalizedCode)
+          const existing = uniqueByCode.get(normalizedCode)
+          if (!existing || normalizedName.length > existing.name.length) {
+            uniqueByCode.set(normalizedCode, {
+              code: normalizedCode,
+              name: normalizedName || normalizedCode,
+              market: stock.market
+            })
+          }
+        }
+        setStocks(Array.from(uniqueByCode.values()))
       }
     }
 
@@ -117,22 +146,6 @@ const Sidebar: React.FC = () => {
     return timeline.filter(n => n.stockCode === normalizedCode).length
   }
 
-  const normalizeStockCode = (value: string) => {
-    const normalized = String(value || '').trim()
-    const matched = normalized.match(/(\d{6})/)
-    return matched ? matched[1] : normalized
-  }
-
-  const normalizeStockName = (name: string, code: string) => {
-    const normalized = String(name || '').trim()
-    if (!normalized) return ''
-    if (!code) return normalized
-    return normalized
-      .replace(new RegExp(`（\\s*${code}\\s*）$`), '')
-      .replace(new RegExp(`\\(\\s*${code}\\s*\\)$`), '')
-      .trim()
-  }
-
   const getDisplayName = (item: { code: string; name: string }) => {
     const normalizedCode = normalizeStockCode(item.code)
     const normalizedName = normalizeStockName(item.name, normalizedCode)
@@ -141,7 +154,7 @@ const Sidebar: React.FC = () => {
       : normalizedCode
   }
 
-  const displayItems = searchText.trim()
+  const rawDisplayItems = searchText.trim()
     ? searchResults.map(r => ({
         code: normalizeStockCode(r.stock.code),
         name: normalizeStockName(r.stock.name, normalizeStockCode(r.stock.code)),
@@ -155,9 +168,19 @@ const Sidebar: React.FC = () => {
         isFromSearch: false
       }))
 
+  const displayItems = Array.from(
+    rawDisplayItems.reduce((map, item) => {
+      const existing = map.get(item.code)
+      if (!existing || item.name.length > existing.name.length) {
+        map.set(item.code, item)
+      }
+      return map
+    }, new Map<string, typeof rawDisplayItems[number]>()).values()
+  )
+
   return (
-    <div className="h-full flex flex-col bg-white">
-      <div className="p-3 border-b border-gray-200">
+    <div className="h-full flex flex-col bg-transparent">
+      <div className="p-3 border-b border-slate-200">
         <Input
           placeholder="搜索股票..."
           prefix={localSearching ? <Spin size="small" /> : <SearchOutlined />}
@@ -167,26 +190,30 @@ const Sidebar: React.FC = () => {
         />
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto p-2">
         {displayItems.length > 0 ? (
           <List
             dataSource={displayItems}
             renderItem={(item: any) => (
               <List.Item
-                className={`px-3 py-2 cursor-pointer hover:bg-gray-50 ${
-                  currentStockCode === item.code ? 'bg-blue-50 border-l-2 border-blue-500' : ''
+                className={`px-1 py-1 border-none bg-transparent cursor-pointer ${
+                  currentStockCode === item.code ? '' : ''
                 }`}
                 onClick={() => handleSelectStock(item.code, item.name)}
               >
-                <div className="flex justify-between items-center w-full">
-                  <div>
-                      <div className="font-medium">{getDisplayName(item)}</div>
-                      <div className="text-xs text-gray-400">
-                      {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
-                      </div>
-                    </div>
+                <div
+                  className={`w-full rounded-xl border px-3 py-3 text-center transition-all ${
+                    currentStockCode === item.code
+                      ? 'border-blue-300 bg-blue-50 shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="font-medium text-slate-800">{getDisplayName(item)}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
+                  </div>
                   {!item.isFromSearch && getNoteCount(item.code) > 0 && (
-                    <Tag color="blue" className="text-xs">{getNoteCount(item.code)}</Tag>
+                    <Tag color="blue" className="mt-2 text-xs">{getNoteCount(item.code)}</Tag>
                   )}
                 </div>
               </List.Item>
@@ -197,7 +224,7 @@ const Sidebar: React.FC = () => {
         )}
       </div>
 
-      <div className="p-2 border-t border-gray-200 text-xs text-gray-400 text-center">
+      <div className="p-2 border-t border-slate-200 text-xs text-slate-400 text-center">
         {stocks.length} 只股票 · {timeline.length} 条笔记
       </div>
     </div>
