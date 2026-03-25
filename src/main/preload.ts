@@ -23,6 +23,29 @@ interface VoiceTranscribeResult extends VoiceCommandResult {
   text?: string | null
 }
 
+const DEFAULT_USER_SETTINGS: UserSettings = {
+  textAnalysis: {
+    baseUrl: 'https://api.minimaxi.com/v1',
+    model: 'MiniMax-M2.7-highspeed',
+    apiKey: ''
+  },
+  cloudASR: {
+    baseUrl: 'https://api.minimaxi.com/v1',
+    model: 'speech-01',
+    apiKey: '',
+    language: 'zh-CN'
+  },
+  notes: {
+    defaultCategory: '看盘预测',
+    defaultDirection: '未知',
+    defaultTimeHorizon: '短线',
+    style: '轻量'
+  }
+}
+
+const isMissingHandlerError = (error: unknown) =>
+  String((error as { message?: string })?.message || error).includes('No handler registered')
+
 const api = {
   notes: {
     addEntry: (stockCode: string, data: any) => 
@@ -91,14 +114,44 @@ const api = {
   
   config: {
     get: (key: string) => ipcRenderer.invoke('config:get', key),
-    getAll: () => ipcRenderer.invoke('config:getAll') as Promise<UserSettings>,
+    getAll: async (): Promise<UserSettings> => {
+      try {
+        return await ipcRenderer.invoke('config:getAll')
+      } catch (error) {
+        if (isMissingHandlerError(error)) {
+          console.warn('[preload] config:getAll handler missing, using default settings')
+          return JSON.parse(JSON.stringify(DEFAULT_USER_SETTINGS))
+        }
+        throw error
+      }
+    },
     set: (key: string, value: any) => ipcRenderer.invoke('config:set', key, value),
     update: (partial: Partial<UserSettings>) => ipcRenderer.invoke('config:update', partial) as Promise<UserSettings>,
   },
 
   watchlist: {
-    get: () => ipcRenderer.invoke('watchlist:get'),
-    getCodes: () => ipcRenderer.invoke('watchlist:getCodes') as Promise<string[]>,
+    get: async () => {
+      try {
+        return await ipcRenderer.invoke('watchlist:get')
+      } catch (error) {
+        if (isMissingHandlerError(error)) {
+          console.warn('[preload] watchlist:get handler missing, returning empty list')
+          return []
+        }
+        throw error
+      }
+    },
+    getCodes: async (): Promise<string[]> => {
+      try {
+        return await ipcRenderer.invoke('watchlist:getCodes')
+      } catch (error) {
+        if (isMissingHandlerError(error)) {
+          console.warn('[preload] watchlist:getCodes handler missing, returning empty list')
+          return []
+        }
+        throw error
+      }
+    },
     import: (rawInput: string, mode: 'append' | 'replace' = 'append') =>
       ipcRenderer.invoke('watchlist:import', rawInput, mode),
     clear: () => ipcRenderer.invoke('watchlist:clear') as Promise<boolean>

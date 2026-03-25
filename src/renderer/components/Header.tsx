@@ -21,10 +21,6 @@ const Header: React.FC = () => {
       label: '偏好设置'
     },
     {
-      key: 'watchlist',
-      label: '自选股设置'
-    },
-    {
       type: 'divider'
     },
     {
@@ -42,11 +38,6 @@ const Header: React.FC = () => {
   const handleToolClick: MenuProps['onClick'] = ({ key }) => {
     if (key === 'settings') {
       setSettingsTab('text-ai')
-      setSettingsOpen(true)
-      return
-    }
-    if (key === 'watchlist') {
-      setSettingsTab('watchlist')
       setSettingsOpen(true)
       return
     }
