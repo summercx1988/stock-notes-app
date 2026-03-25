@@ -600,12 +600,10 @@ export class NotesService {
     const entries = this.parseEntries(body, fallbackDate)
     const stockCode = String(frontMatter.stock_code || '').trim()
     const rawStockName = String(frontMatter.stock_name || '').trim()
-    const normalizedRawName = normalizeStockNameText(rawStockName)
+    const normalizedRawName = this.normalizeStockNameCandidate(rawStockName, stockCode)
     const stockInfo = await this.getStockInfo(stockCode)
-    const resolvedStockName = normalizedRawName && normalizedRawName !== stockCode
-      ? normalizedRawName
-      : (stockInfo?.name || stockCode)
-    const needsBackfill = (!normalizedRawName || normalizedRawName === stockCode) && resolvedStockName !== stockCode
+    const resolvedStockName = normalizedRawName || stockInfo?.name || stockCode
+    const needsBackfill = normalizeStockNameText(rawStockName) !== resolvedStockName && resolvedStockName !== stockCode
 
     return {
       note: {
@@ -941,8 +939,24 @@ export class NotesService {
   }
 
   private getPreferredStockFilePath(stockCode: string, stockName: string): string {
-    const safeName = this.sanitizeStockFileSegment(stockName || stockCode)
+    const normalizedName = this.normalizeStockNameCandidate(stockName, stockCode)
+    const safeName = this.sanitizeStockFileSegment(normalizedName || stockCode)
     return path.join(this.notesDir, `${safeName}（${stockCode}）.md`)
+  }
+
+  private normalizeStockNameCandidate(stockName: string, stockCode: string): string {
+    const normalized = normalizeStockNameText(stockName || '').trim()
+    if (!normalized) return ''
+
+    const withoutBracketSuffix = normalized
+      .replace(new RegExp(`（\\s*${stockCode}\\s*）$`), '')
+      .replace(new RegExp(`\\(\\s*${stockCode}\\s*\\)$`), '')
+      .trim()
+
+    if (!withoutBracketSuffix || withoutBracketSuffix === stockCode) return ''
+
+    const withoutPlainSuffix = withoutBracketSuffix.replace(new RegExp(`${stockCode}$`), '').trim()
+    return withoutPlainSuffix || withoutBracketSuffix
   }
 
   private sanitizeStockFileSegment(input: string): string {

@@ -104,30 +104,53 @@ const Sidebar: React.FC = () => {
   }, [searchText, handleSearch])
 
   const handleSelectStock = (stockCode: string, stockName?: string) => {
-    setCurrentStock(stockCode, stockName)
+    const normalizedCode = normalizeStockCode(stockCode)
+    const normalizedName = normalizeStockName(stockName || '', normalizedCode) || stockName
+    setCurrentStock(normalizedCode, normalizedName)
     setSearchText('')
     clearSearchResults()
-    message.success(`已选择: ${stockName || stockCode}`)
+    message.success(`已选择: ${normalizedName || normalizedCode}`)
   }
 
   const getNoteCount = (stockCode: string) => {
-    return timeline.filter(n => n.stockCode === stockCode).length
+    const normalizedCode = normalizeStockCode(stockCode)
+    return timeline.filter(n => n.stockCode === normalizedCode).length
   }
 
-  const getDisplayName = (item: { code: string; name: string }) => (
-    item.name && item.name !== item.code ? `${item.name}${item.code}` : item.code
-  )
+  const normalizeStockCode = (value: string) => {
+    const normalized = String(value || '').trim()
+    const matched = normalized.match(/(\d{6})/)
+    return matched ? matched[1] : normalized
+  }
+
+  const normalizeStockName = (name: string, code: string) => {
+    const normalized = String(name || '').trim()
+    if (!normalized) return ''
+    if (!code) return normalized
+    return normalized
+      .replace(new RegExp(`（\\s*${code}\\s*）$`), '')
+      .replace(new RegExp(`\\(\\s*${code}\\s*\\)$`), '')
+      .trim()
+  }
+
+  const getDisplayName = (item: { code: string; name: string }) => {
+    const normalizedCode = normalizeStockCode(item.code)
+    const normalizedName = normalizeStockName(item.name, normalizedCode)
+    return normalizedName && normalizedName !== normalizedCode
+      ? `${normalizedName}${normalizedCode}`
+      : normalizedCode
+  }
 
   const displayItems = searchText.trim()
     ? searchResults.map(r => ({
-        code: r.stock.code,
-        name: r.stock.name,
+        code: normalizeStockCode(r.stock.code),
+        name: normalizeStockName(r.stock.name, normalizeStockCode(r.stock.code)),
         market: r.stock.market,
         isFromSearch: true
       }))
     : stocks.map(s => ({
-        code: typeof s === 'string' ? s : s.code,
-        name: typeof s === 'string' ? s : s.name,
+        code: normalizeStockCode(typeof s === 'string' ? s : s.code),
+        name: normalizeStockName(typeof s === 'string' ? s : s.name, normalizeStockCode(typeof s === 'string' ? s : s.code)),
         market: 'SH' as const,
         isFromSearch: false
       }))
