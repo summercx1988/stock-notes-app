@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Divider, Form, Input, Modal, Select, Space, Switch, Tabs, Tag, Typography, message } from 'antd'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import { Alert, Button, Divider, Form, Input, Modal, Select, Space, Tabs, Tag, Typography, message } from 'antd'
 import type { NoteCategoryConfig, UserSettings } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, getEnabledOptions, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 
@@ -206,70 +205,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
     }
   }
 
-  const updateCategoryConfig = (index: number, updater: (current: NoteCategoryConfig) => NoteCategoryConfig) => {
-    setCategoryConfigs((prev) => prev.map((item, currentIndex) => (currentIndex === index ? updater(item) : item)))
-  }
-
-  const parseOptionsInput = (input: string) => {
-    return input
-      .split(/[\n,，]/g)
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map((token, index) => {
-        const separator = token.includes('|') ? '|' : (token.includes(':') ? ':' : null)
-        const [rawCode, rawLabel] = separator ? token.split(separator) : [token, token]
-        const code = String(rawCode || '').trim()
-        const label = String(rawLabel || rawCode || '').trim()
-        return {
-          code,
-          label: label || code,
-          enabled: true,
-          order: index + 1
-        }
-      })
-      .filter((item) => item.code.length > 0)
-  }
-
-  const optionsToInput = (category: NoteCategoryConfig, field: 'viewpoint' | 'operationTag' | 'timeHorizon') =>
-    getEnabledOptions(category.fields[field].options)
-      .map((item) => (item.label && item.label !== item.code ? `${item.code}:${item.label}` : item.code))
-      .join(', ')
-
-  const optionsHintText = '支持“代码”或“代码:显示名”，如：bullish:看多, bearish:看空'
-
-  const handleAddCategory = () => {
-    const existingCodes = new Set(categoryConfigs.map((item) => item.code))
-    let suffix = 1
-    let code = `自定义类别${suffix}`
-    while (existingCodes.has(code)) {
-      suffix += 1
-      code = `自定义类别${suffix}`
-    }
-    setCategoryConfigs((prev) => [
-      ...prev,
-      {
-        code,
-        label: code,
-        enabled: true,
-        reviewEligible: false,
-        builtIn: false,
-        fields: {
-          viewpoint: { enabled: false, options: [{ code: '未知', label: '未知', enabled: true, order: 1 }] },
-          operationTag: { enabled: false, options: [{ code: '无', label: '无', enabled: true, order: 1 }] },
-          timeHorizon: { enabled: false, options: [{ code: '短线', label: '短线', enabled: true, order: 1 }] }
-        }
-      }
-    ])
-  }
-
-  const handleRemoveCategory = (index: number) => {
-    setCategoryConfigs((prev) => {
-      const target = prev[index]
-      if (target?.builtIn) return prev
-      return prev.filter((_, currentIndex) => currentIndex !== index)
-    })
-  }
-
   return (
     <Modal
       title="设置"
@@ -363,190 +298,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
                     type="info"
                     showIcon
                     className="mb-3"
-                    message="各类别独立维护字段与枚举。复盘只解析 reviewEligible=true 的类别（默认仅看盘预测）。"
+                    message="当前版本简化为固定双类别：看盘预测 + 普通笔记。操盘动作请用“操作打标（买入/卖出）”记录。"
                   />
-                  <div className="mb-3">
-                    <Button type="dashed" icon={<PlusOutlined />} onClick={handleAddCategory}>
-                      新增类别
-                    </Button>
-                  </div>
-                  <div className="max-h-[420px] overflow-auto pr-1">
+                  <div className="max-h-[320px] overflow-auto pr-1">
                     <Space direction="vertical" size="middle" className="w-full">
                       {categoryConfigs.map((category, index) => (
-                        <div key={`${category.code}-${index}`} className="border border-gray-200 rounded p-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <Space>
-                              <Tag color={category.builtIn ? 'blue' : 'default'}>{category.builtIn ? '内置' : '自定义'}</Tag>
-                              <Tag color={category.reviewEligible ? 'magenta' : 'default'}>
-                                {category.reviewEligible ? '参与复盘' : '不参与复盘'}
-                              </Tag>
-                            </Space>
-                            <Button
-                              danger
-                              size="small"
-                              icon={<DeleteOutlined />}
-                              onClick={() => handleRemoveCategory(index)}
-                              disabled={category.builtIn}
-                            >
-                              删除
-                            </Button>
+                        <div key={`${category.code}-${index}`} className="border border-gray-200 rounded p-3 bg-gray-50">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Tag color={category.reviewEligible ? 'magenta' : 'default'}>
+                              {category.reviewEligible ? '复盘类别' : '普通类别'}
+                            </Tag>
+                            <Typography.Text strong>{category.label}</Typography.Text>
+                            <Typography.Text type="secondary">({category.code})</Typography.Text>
                           </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <Typography.Text type="secondary">类别代码（存储值）</Typography.Text>
-                              <Input
-                                value={category.code}
-                                disabled={category.builtIn}
-                                onChange={(event) => {
-                                  const nextCode = event.target.value.trim()
-                                  updateCategoryConfig(index, (current) => ({
-                                    ...current,
-                                    code: nextCode || current.code
-                                  }))
-                                }}
-                              />
-                            </div>
-                            <div>
-                              <Typography.Text type="secondary">类别名称（展示值）</Typography.Text>
-                              <Input
-                                value={category.label}
-                                onChange={(event) => {
-                                  const nextLabel = event.target.value.trim()
-                                  updateCategoryConfig(index, (current) => ({
-                                    ...current,
-                                    label: nextLabel || current.label
-                                  }))
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          <div className="mt-3 flex items-center gap-6">
-                            <div className="flex items-center gap-2">
-                              <Typography.Text type="secondary">启用</Typography.Text>
-                              <Switch
-                                checked={category.enabled !== false}
-                                onChange={(checked) => updateCategoryConfig(index, (current) => ({ ...current, enabled: checked }))}
-                              />
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Typography.Text type="secondary">参与复盘</Typography.Text>
-                              <Switch
-                                checked={category.reviewEligible}
-                                onChange={(checked) => updateCategoryConfig(index, (current) => ({ ...current, reviewEligible: checked }))}
-                              />
-                            </div>
-                          </div>
-
-                          <Divider className="my-3" />
-
-                          <div className="grid grid-cols-1 gap-3">
-                            <div>
-                              <div className="mb-1 flex items-center gap-2">
-                                <Typography.Text type="secondary">观点枚举（逗号分隔）</Typography.Text>
-                                <Switch
-                                  checked={category.fields.viewpoint.enabled}
-                                  size="small"
-                                  onChange={(checked) => updateCategoryConfig(index, (current) => ({
-                                    ...current,
-                                    fields: {
-                                      ...current.fields,
-                                      viewpoint: {
-                                        ...current.fields.viewpoint,
-                                        enabled: checked
-                                      }
-                                    }
-                                  }))}
-                                />
-                              </div>
-                              <Input.TextArea
-                                value={optionsToInput(category, 'viewpoint')}
-                                autoSize={{ minRows: 1, maxRows: 3 }}
-                                onChange={(event) => updateCategoryConfig(index, (current) => ({
-                                  ...current,
-                                  fields: {
-                                    ...current.fields,
-                                    viewpoint: {
-                                      ...current.fields.viewpoint,
-                                      options: parseOptionsInput(event.target.value)
-                                    }
-                                  }
-                                }))}
-                              />
-                              <div className="mt-1 text-xs text-gray-400">{optionsHintText}</div>
-                            </div>
-                            <div>
-                              <div className="mb-1 flex items-center gap-2">
-                                <Typography.Text type="secondary">操作枚举（逗号分隔）</Typography.Text>
-                                <Switch
-                                  checked={category.fields.operationTag.enabled}
-                                  size="small"
-                                  onChange={(checked) => updateCategoryConfig(index, (current) => ({
-                                    ...current,
-                                    fields: {
-                                      ...current.fields,
-                                      operationTag: {
-                                        ...current.fields.operationTag,
-                                        enabled: checked
-                                      }
-                                    }
-                                  }))}
-                                />
-                              </div>
-                              <Input.TextArea
-                                value={optionsToInput(category, 'operationTag')}
-                                autoSize={{ minRows: 1, maxRows: 3 }}
-                                onChange={(event) => updateCategoryConfig(index, (current) => ({
-                                  ...current,
-                                  fields: {
-                                    ...current.fields,
-                                    operationTag: {
-                                      ...current.fields.operationTag,
-                                      options: parseOptionsInput(event.target.value)
-                                    }
-                                  }
-                                }))}
-                              />
-                            </div>
-                            <div>
-                              <div className="mb-1 flex items-center gap-2">
-                                <Typography.Text type="secondary">周期枚举（逗号分隔）</Typography.Text>
-                                <Switch
-                                  checked={category.fields.timeHorizon.enabled}
-                                  size="small"
-                                  onChange={(checked) => updateCategoryConfig(index, (current) => ({
-                                    ...current,
-                                    fields: {
-                                      ...current.fields,
-                                      timeHorizon: {
-                                        ...current.fields.timeHorizon,
-                                        enabled: checked
-                                      }
-                                    }
-                                  }))}
-                                />
-                              </div>
-                              <Input.TextArea
-                                value={optionsToInput(category, 'timeHorizon')}
-                                autoSize={{ minRows: 1, maxRows: 3 }}
-                                onChange={(event) => updateCategoryConfig(index, (current) => ({
-                                  ...current,
-                                  fields: {
-                                    ...current.fields,
-                                    timeHorizon: {
-                                      ...current.fields.timeHorizon,
-                                      options: parseOptionsInput(event.target.value)
-                                    }
-                                  }
-                                }))}
-                              />
-                            </div>
+                          <div className="text-xs text-gray-500">
+                            观点字段: {category.fields.viewpoint.enabled ? '开启' : '关闭'} | 操作打标: {category.fields.operationTag.enabled ? '开启' : '关闭'} | 周期字段: {category.fields.timeHorizon.enabled ? '开启' : '关闭'}
                           </div>
                         </div>
                       ))}
                     </Space>
                   </div>
+                  <Divider className="my-3" />
+                  <Typography.Text type="secondary">
+                    如需进一步扩展类别体系，我们后续可以在不影响主流程的前提下再分阶段开放。
+                  </Typography.Text>
                 </>
               )
             },

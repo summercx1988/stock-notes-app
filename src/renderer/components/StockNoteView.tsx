@@ -291,10 +291,7 @@ const StockNoteView: React.FC = () => {
   const getCategoryTag = (category: NoteCategory) => {
     const colorMap: Record<string, string> = {
       看盘预测: 'magenta',
-      操盘打标: 'volcano',
-      交易札记: 'gold',
-      备忘: 'default',
-      资讯备忘: 'cyan'
+      普通笔记: 'blue'
     }
     const config = categoryConfigs.find((item) => item.code === category)
     return <Tag color={colorMap[category] || 'default'}>类别: {config?.label || category}</Tag>

@@ -900,8 +900,11 @@ export class NotesService {
 
   private normalizeCategory(value?: string): NoteCategory {
     const normalized = String(value || '').trim()
-    if (normalized) return normalized
-    return this.createDefaultCategory()
+    if (!normalized) return this.createDefaultCategory()
+    if (normalized === '看盘预测') return normalized
+    if (normalized === '普通笔记') return normalized
+    // 历史类别统一归并为“普通笔记”，保证双类别模型一致
+    return '普通笔记'
   }
 
   private normalizeOperationTag(value?: string, action?: Action): OperationTag {

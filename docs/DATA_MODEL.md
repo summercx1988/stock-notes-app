@@ -160,7 +160,7 @@ tags:
 ## 时间节点数据结构
 
 ```typescript
-type NoteCategory = '看盘预测' | '操盘打标' | '交易札记' | '备忘' | '资讯备忘'
+type NoteCategory = '看盘预测' | '普通笔记'
 type OperationTag = '无' | '买入' | '卖出'
 
 interface TimeEntry {
@@ -222,8 +222,8 @@ interface StockNote {
 ## 复盘统计约束
 
 - 只有 `reviewEligible=true` 的类别进入复盘引擎（默认 `看盘预测`）
-- `操盘打标` 通过 `operationTag` 参与操作归因统计（买入/卖出）
-- `交易札记`、`备忘`、`资讯备忘` 只参与检索、展示与经验沉淀
+- 操盘归因通过 `operationTag` 参与统计（买入/卖出）
+- `普通笔记` 只参与检索、展示与经验沉淀
 
 ## 类别 Schema 配置（settings）
 

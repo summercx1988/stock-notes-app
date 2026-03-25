@@ -43,91 +43,8 @@ export const DEFAULT_NOTE_CATEGORY_CONFIGS: NoteCategoryConfig[] = [
     }
   },
   {
-    code: '操盘打标',
-    label: '操盘打标',
-    enabled: true,
-    reviewEligible: false,
-    builtIn: true,
-    fields: {
-      viewpoint: {
-        enabled: false,
-        options: [
-          toOption('未知', '未知', 1)
-        ]
-      },
-      operationTag: {
-        enabled: true,
-        options: [
-          toOption('无', '无', 1),
-          toOption('买入', '买入', 2),
-          toOption('卖出', '卖出', 3)
-        ]
-      },
-      timeHorizon: {
-        enabled: false,
-        options: [
-          toOption('短线', '短线', 1)
-        ]
-      }
-    }
-  },
-  {
-    code: '交易札记',
-    label: '交易札记',
-    enabled: true,
-    reviewEligible: false,
-    builtIn: true,
-    fields: {
-      viewpoint: {
-        enabled: false,
-        options: [
-          toOption('未知', '未知', 1)
-        ]
-      },
-      operationTag: {
-        enabled: false,
-        options: [
-          toOption('无', '无', 1)
-        ]
-      },
-      timeHorizon: {
-        enabled: false,
-        options: [
-          toOption('短线', '短线', 1)
-        ]
-      }
-    }
-  },
-  {
-    code: '备忘',
-    label: '备忘',
-    enabled: true,
-    reviewEligible: false,
-    builtIn: true,
-    fields: {
-      viewpoint: {
-        enabled: false,
-        options: [
-          toOption('未知', '未知', 1)
-        ]
-      },
-      operationTag: {
-        enabled: false,
-        options: [
-          toOption('无', '无', 1)
-        ]
-      },
-      timeHorizon: {
-        enabled: false,
-        options: [
-          toOption('短线', '短线', 1)
-        ]
-      }
-    }
-  },
-  {
-    code: '资讯备忘',
-    label: '资讯备忘',
+    code: '普通笔记',
+    label: '普通笔记',
     enabled: true,
     reviewEligible: false,
     builtIn: true,
@@ -156,60 +73,21 @@ export const DEFAULT_NOTE_CATEGORY_CONFIGS: NoteCategoryConfig[] = [
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 
-const normalizeOptions = (options: EnumOptionConfig[] | undefined, fallback: EnumOptionConfig[]): EnumOptionConfig[] => {
-  const source = Array.isArray(options) && options.length > 0 ? options : fallback
-  return source
-    .map((item, index) => ({
-      code: String(item?.code || '').trim(),
-      label: String(item?.label || item?.code || '').trim(),
-      enabled: item?.enabled !== false,
-      order: Number.isFinite(item?.order) ? Number(item.order) : index + 1
-    }))
-    .filter((item) => item.code.length > 0)
-    .sort((left, right) => left.order - right.order)
-}
-
 export const normalizeNoteCategoryConfigs = (configs?: NoteCategoryConfig[]): NoteCategoryConfig[] => {
-  const fallbackByCode = new Map(DEFAULT_NOTE_CATEGORY_CONFIGS.map((item) => [item.code, item]))
-  const input = Array.isArray(configs) && configs.length > 0 ? configs : DEFAULT_NOTE_CATEGORY_CONFIGS
-
-  const normalized = input
-    .map((item) => {
-      const code = String(item?.code || '').trim()
-      if (!code) return null
-      const fallback = fallbackByCode.get(code)
-      return {
-        code,
-        label: String(item?.label || code).trim() || code,
-        enabled: item?.enabled !== false,
-        reviewEligible: Boolean(item?.reviewEligible),
-        builtIn: item?.builtIn ?? fallback?.builtIn ?? false,
-        fields: {
-          viewpoint: {
-            enabled: item?.fields?.viewpoint?.enabled ?? fallback?.fields.viewpoint.enabled ?? false,
-            options: normalizeOptions(item?.fields?.viewpoint?.options, fallback?.fields.viewpoint.options || [])
-          },
-          operationTag: {
-            enabled: item?.fields?.operationTag?.enabled ?? fallback?.fields.operationTag.enabled ?? false,
-            options: normalizeOptions(item?.fields?.operationTag?.options, fallback?.fields.operationTag.options || [])
-          },
-          timeHorizon: {
-            enabled: item?.fields?.timeHorizon?.enabled ?? fallback?.fields.timeHorizon.enabled ?? false,
-            options: normalizeOptions(item?.fields?.timeHorizon?.options, fallback?.fields.timeHorizon.options || [])
-          }
-        }
-      } as NoteCategoryConfig
-    })
-    .filter((item): item is NoteCategoryConfig => Boolean(item))
-    .filter((item, index, array) => array.findIndex((other) => other.code === item.code) === index)
-
-  for (const builtin of DEFAULT_NOTE_CATEGORY_CONFIGS) {
-    if (!normalized.some((item) => item.code === builtin.code)) {
-      normalized.push(clone(builtin))
-    }
+  const input = Array.isArray(configs) ? configs : []
+  const mapByCode = new Map<string, NoteCategoryConfig>()
+  for (const item of input) {
+    const code = String(item?.code || '').trim()
+    if (!code) continue
+    mapByCode.set(code, item)
   }
-
-  return normalized
+  return DEFAULT_NOTE_CATEGORY_CONFIGS.map((builtin) => {
+    const incoming = mapByCode.get(builtin.code)
+    return {
+      ...clone(builtin),
+      enabled: incoming?.enabled !== false
+    }
+  })
 }
 
 export const getCategoryConfig = (configs: NoteCategoryConfig[], code?: string): NoteCategoryConfig | null => {

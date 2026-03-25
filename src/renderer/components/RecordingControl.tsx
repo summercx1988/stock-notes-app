@@ -325,10 +325,6 @@ const RecordingControl: React.FC = () => {
       setNoteDirection(mapAISentimentToDirection(result.note?.sentiment))
       const resolvedOperationTag = mapAIActionToOperationTag(result.note?.operationTag)
       setNoteOperationTag(resolvedOperationTag)
-      const operationCategory = categoryConfigs.find((item) => item.code === '操盘打标' && item.enabled !== false)
-      if (resolvedOperationTag !== '无' && operationCategory) {
-        setNoteCategory((current) => (current === '看盘预测' ? operationCategory.code : current))
-      }
 
       if (resolvedStock) {
         message.success(`处理完成: ${resolvedStock.name}${resolvedStock.code}`)
@@ -360,7 +356,7 @@ const RecordingControl: React.FC = () => {
       setRecordingState('transcribing')
       setCurrentStep(2)
     }
-  }, [categoryConfigs, watchlistOptions])
+  }, [watchlistOptions])
 
   const transcribeAudio = useCallback(async (path: string) => {
     if (transcribeEngine === 'cloud') {

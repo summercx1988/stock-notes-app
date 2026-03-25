@@ -127,9 +127,7 @@ const StockTimelineView: React.FC = () => {
   const getCategoryColor = (category: NoteCategory) => {
     const colorMap: Record<string, string> = {
       看盘预测: 'magenta',
-      操盘打标: 'volcano',
-      交易札记: 'gold',
-      资讯备忘: 'cyan'
+      普通笔记: 'blue'
     }
     return colorMap[category] || 'default'
   }

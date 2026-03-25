@@ -87,7 +87,7 @@ total_entries: 18
 
 - `event_time`（业务时间，可指定）
 - `created_at`（写入时间）
-- `category`（看盘预测/交易札记/备忘/资讯备忘）
+- `category`（看盘预测/普通笔记）
 - `viewpoint.direction`（看多/看空/中性/未知）
 - `content`（最终可读文本）
 
