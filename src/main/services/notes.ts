@@ -309,7 +309,7 @@ export class NotesService {
       exported_at: new Date().toISOString(),
       scope: 'single',
       stock_codes: [stockCode],
-      file_naming: '股票名称(股票代码).md'
+      file_naming: '股票名称（股票代码）.md'
     }, null, 2), 'utf-8')
 
     return {
@@ -357,7 +357,7 @@ export class NotesService {
       exported_at: new Date().toISOString(),
       scope: 'all',
       stock_codes: stockCodes,
-      file_naming: '股票名称(股票代码).md'
+      file_naming: '股票名称（股票代码）.md'
     }, null, 2), 'utf-8')
 
     return {
@@ -942,13 +942,13 @@ export class NotesService {
 
   private getPreferredStockFilePath(stockCode: string, stockName: string): string {
     const safeName = this.sanitizeStockFileSegment(stockName || stockCode)
-    return path.join(this.notesDir, `${safeName}(${stockCode}).md`)
+    return path.join(this.notesDir, `${safeName}（${stockCode}）.md`)
   }
 
   private sanitizeStockFileSegment(input: string): string {
     const sanitized = normalizeStockNameText(input)
       .replace(/[\\/:*?"<>|]/g, '')
-      .replace(/[()]/g, '')
+      .replace(/[()（）]/g, '')
       .trim()
 
     if (!sanitized) {
@@ -1010,7 +1010,7 @@ export class NotesService {
     const directCode = basename.match(/^(\d{6})$/)
     if (directCode) return directCode[1]
 
-    const newStyleCode = basename.match(/\((\d{6})\)$/)
+    const newStyleCode = basename.match(/[（(](\d{6})[)）]$/)
     if (newStyleCode) return newStyleCode[1]
 
     const legacyCode = basename.match(/^(\d{6})[-_]/)

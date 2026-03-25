@@ -93,7 +93,7 @@ const RecordingControl: React.FC = () => {
       const options: StockSelectOption[] = (watchlist || []).map((stock: any) => ({
         value: stock.code,
         name: stock.name,
-        label: `${stock.name} (${stock.code})`
+        label: `${stock.name}${stock.code}`
       }))
       setWatchlistOptions(options)
       setStockSearchOptions(options)
@@ -157,7 +157,7 @@ const RecordingControl: React.FC = () => {
           }
           return [
             ...watchlistOptions,
-            { value: selectedStockCode, name: selectedStockName || selectedStockCode, label: `${selectedStockName || selectedStockCode} (${selectedStockCode})` }
+            { value: selectedStockCode, name: selectedStockName || selectedStockCode, label: `${selectedStockName || selectedStockCode}${selectedStockCode}` }
           ]
         })
         setStockSearching(false)
@@ -180,7 +180,7 @@ const RecordingControl: React.FC = () => {
         const options: StockSelectOption[] = results.map((result: any) => ({
           value: result.stock.code,
           name: result.stock.name,
-          label: `${result.stock.name} (${result.stock.code})`
+          label: `${result.stock.name}${result.stock.code}`
         }))
         setStockSearchOptions((prev) => {
           const map = new Map<string, StockSelectOption>()
@@ -239,7 +239,7 @@ const RecordingControl: React.FC = () => {
       setNoteDirection(mapAISentimentToDirection(result.note?.sentiment))
 
       if (resolvedStock) {
-        message.success(`处理完成: ${resolvedStock.name} (${resolvedStock.code})`)
+        message.success(`处理完成: ${resolvedStock.name}${resolvedStock.code}`)
         setSelectedStockCode(resolvedStock.code)
         setSelectedStockName(resolvedStock.name)
         setStockSearchOptions((prev) => {
@@ -249,7 +249,7 @@ const RecordingControl: React.FC = () => {
           merged.set(resolvedStock.code, {
             value: resolvedStock.code,
             name: resolvedStock.name,
-            label: `${resolvedStock.name} (${resolvedStock.code})`
+            label: `${resolvedStock.name}${resolvedStock.code}`
           })
           return Array.from(merged.values())
         })
@@ -740,7 +740,7 @@ const RecordingControl: React.FC = () => {
                               return [...prev, {
                                 value: code,
                                 name: stockInfo.name,
-                                label: `${stockInfo.name} (${code})`
+                                label: `${stockInfo.name}${code}`
                               }]
                             })
                           } else {

@@ -76,7 +76,7 @@ const DataTransferModal: React.FC<DataTransferModalProps> = ({ open, mode, onClo
   }
 
   const currentStockHint = currentStockCode
-    ? `${currentStockName && currentStockName !== currentStockCode ? `${currentStockName} (${currentStockCode})` : currentStockCode}`
+    ? `${currentStockName && currentStockName !== currentStockCode ? `${currentStockName}${currentStockCode}` : currentStockCode}`
     : '未选择股票'
 
   return (

@@ -120,7 +120,7 @@ const StockTimelineView: React.FC = () => {
   }
 
   const stockDisplayName = currentStockName && currentStockName !== currentStockCode
-    ? `${currentStockName}+${currentStockCode}`
+    ? `${currentStockName}${currentStockCode}`
     : currentStockCode
 
   if (!currentStockCode) {

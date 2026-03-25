@@ -115,7 +115,7 @@ const Sidebar: React.FC = () => {
   }
 
   const getDisplayName = (item: { code: string; name: string }) => (
-    item.name && item.name !== item.code ? `${item.name}+${item.code}` : item.code
+    item.name && item.name !== item.code ? `${item.name}${item.code}` : item.code
   )
 
   const displayItems = searchText.trim()
