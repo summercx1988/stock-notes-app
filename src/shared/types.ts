@@ -180,6 +180,20 @@ export interface AppConfig {
   }
 }
 
+export interface FeishuConfig {
+  enabled: boolean
+  appId: string
+  appSecret: string
+  encryptKey?: string
+  verificationToken?: string
+}
+
+export interface FeishuStatus {
+  enabled: boolean
+  connected: boolean
+  error?: string
+}
+
 export interface UserSettings {
   textAnalysis: {
     baseUrl: string
@@ -199,6 +213,7 @@ export interface UserSettings {
     style: NoteStyle
     categoryConfigs: NoteCategoryConfig[]
   }
+  feishu: FeishuConfig
 }
 
 export interface WatchlistImportResult {
@@ -245,7 +260,8 @@ export interface TimelineItem {
 }
 
 export type ReviewScope = 'single' | 'overall'
-export type KlineInterval = '5m' | '15m' | '30m' | '1d'
+export type KlineInterval = '5m' | '15m' | '30m' | '60m' | '1d'
+export type ReviewMarkerDirection = '看多' | '看空' | '中性' | '未知'
 
 export interface ReviewSnapshot {
   total: number
@@ -270,6 +286,55 @@ export interface ReviewSnapshotResponse {
   endDate?: string
   interval: KlineInterval
   snapshot: ReviewSnapshot
+  generatedAt: string
+}
+
+export interface ReviewVisualRequest {
+  scope: ReviewScope
+  stockCode?: string
+  startDate?: string
+  endDate?: string
+  interval?: KlineInterval
+  includeCategories?: NoteCategory[]
+}
+
+export interface ReviewMarker {
+  entryId: string
+  stockCode: string
+  eventTime: string
+  alignedCandleTime?: string
+  direction: ReviewMarkerDirection
+  category: NoteCategory
+  outOfRange: boolean
+}
+
+export interface ReviewMarkerCluster {
+  candleTime: string
+  count: number
+  bullish: number
+  bearish: number
+  neutral: number
+  unknown: number
+  markerEntryIds: string[]
+}
+
+export interface ReviewVisualStats {
+  totalMarkers: number
+  clusteredCandles: number
+  maxClusterSize: number
+  outOfRangeMarkers: number
+}
+
+export interface ReviewVisualResponse {
+  scope: ReviewScope
+  stockCode: string
+  startDate?: string
+  endDate?: string
+  interval: KlineInterval
+  candles: MarketCandle[]
+  markers: ReviewMarker[]
+  clusters: ReviewMarkerCluster[]
+  stats: ReviewVisualStats
   generatedAt: string
 }
 

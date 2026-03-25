@@ -4,7 +4,9 @@ import type {
   ReviewEvaluateRequest,
   ReviewEvaluateResponse,
   ReviewSnapshotRequest,
-  ReviewSnapshotResponse
+  ReviewSnapshotResponse,
+  ReviewVisualRequest,
+  ReviewVisualResponse
 } from '../../shared/types'
 
 ipcMain.handle('review:getSnapshot', async (_, request: ReviewSnapshotRequest): Promise<ReviewSnapshotResponse> => {
@@ -13,4 +15,8 @@ ipcMain.handle('review:getSnapshot', async (_, request: ReviewSnapshotRequest): 
 
 ipcMain.handle('review:evaluate', async (_, request: ReviewEvaluateRequest): Promise<ReviewEvaluateResponse> => {
   return notesAppService.getReviewEvaluation(request)
+})
+
+ipcMain.handle('review:getVisualData', async (_, request: ReviewVisualRequest): Promise<ReviewVisualResponse> => {
+  return notesAppService.getReviewVisualData(request)
 })

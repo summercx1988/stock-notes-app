@@ -6,7 +6,10 @@ import type {
   ReviewEvaluateResponse,
   ReviewSnapshotRequest,
   ReviewSnapshotResponse,
-  UserSettings
+  ReviewVisualRequest,
+  ReviewVisualResponse,
+  UserSettings,
+  FeishuStatus
 } from '../shared/types'
 
 interface VoiceCommandResult {
@@ -118,11 +121,27 @@ const api = {
       ipcRenderer.invoke('review:getSnapshot', request),
     evaluate: (request: ReviewEvaluateRequest): Promise<ReviewEvaluateResponse> =>
       ipcRenderer.invoke('review:evaluate', request),
+    getVisualData: (request: ReviewVisualRequest): Promise<ReviewVisualResponse> =>
+      ipcRenderer.invoke('review:getVisualData', request),
   },
 
   system: {
     pickDirectory: (defaultPath?: string): Promise<string | null> =>
       ipcRenderer.invoke('system:pickDirectory', defaultPath)
+  },
+
+  feishu: {
+    setEnabled: (enabled: boolean): Promise<void> =>
+      ipcRenderer.invoke('feishu:setEnabled', enabled),
+    getStatus: (): Promise<FeishuStatus> =>
+      ipcRenderer.invoke('feishu:getStatus'),
+    testConnection: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('feishu:testConnection'),
+    onStatusChanged: (callback: (status: FeishuStatus) => void) => {
+      const handler = (_: unknown, status: FeishuStatus) => callback(status)
+      ipcRenderer.on('feishu:statusChanged', handler)
+      return () => ipcRenderer.removeListener('feishu:statusChanged', handler)
+    }
   }
 }
 

@@ -2,6 +2,7 @@ import { NotesService } from '../services/notes'
 import { MarketDataService } from '../services/market-data'
 import { evaluateActionEvents, evaluateReviewEvents } from '../core/review-evaluator'
 import { buildReviewSnapshot, filterByRange, normalizeDirection } from '../core/review-snapshot'
+import { alignReviewMarkers, type ReviewVisualEventInput } from '../core/review-alignment'
 import { createTraceId, logPipelineEvent } from '../services/pipeline-logger'
 import { appConfigService } from '../services/app-config'
 import type {
@@ -15,6 +16,8 @@ import type {
   ReviewRuleConfig,
   ReviewSnapshotRequest,
   ReviewSnapshotResponse,
+  ReviewVisualRequest,
+  ReviewVisualResponse,
   StockNote,
   TimeEntry,
   TimelineItem,
@@ -50,6 +53,7 @@ const DEFAULT_REVIEW_RULE: ReviewRuleConfig = {
   thresholdPct: 3,
   excludeUnknown: true
 }
+const OVERALL_BENCHMARK_STOCK_CODE = 'SH000001'
 
 export class NotesAppService {
   constructor(
@@ -247,6 +251,56 @@ export class NotesAppService {
     }
   }
 
+  async getReviewVisualData(request: ReviewVisualRequest): Promise<ReviewVisualResponse> {
+    const startDate = this.parseDate(request.startDate)
+    const endDate = this.parseDate(request.endDate)
+    const interval = this.normalizeInterval(request.interval)
+    const reviewCategories = await this.getReviewEligibleCategories()
+    const includeCategories = (request.includeCategories || [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+    const activeCategories = includeCategories.length > 0
+      ? new Set(includeCategories.filter((item) => reviewCategories.has(item)))
+      : reviewCategories
+    const categories = activeCategories.size > 0 ? activeCategories : reviewCategories
+
+    const scope = request.scope || 'single'
+    const visualStockCode = this.resolveVisualStockCode(scope, request.stockCode)
+    const events = await this.collectReviewVisualEvents({
+      scope,
+      stockCode: request.stockCode,
+      startDate,
+      endDate,
+      categories
+    })
+
+    const eventTimes = events
+      .map((item) => new Date(item.eventTime).getTime())
+      .filter((value) => Number.isFinite(value))
+    const minEventMs = eventTimes.length > 0 ? Math.min(...eventTimes) : Date.now() - (7 * 24 * 60 * 60 * 1000)
+    const maxEventMs = eventTimes.length > 0 ? Math.max(...eventTimes) : Date.now()
+    const requestedStart = startDate ? startDate.getTime() : minEventMs
+    const requestedEnd = endDate ? endDate.getTime() : maxEventMs
+
+    const fetchStart = new Date(Math.min(requestedStart, minEventMs) - (24 * 60 * 60 * 1000))
+    const fetchEnd = new Date(Math.max(requestedEnd, maxEventMs) + (24 * 60 * 60 * 1000))
+    const candles = await this.marketDataService.getCandles(visualStockCode, interval, fetchStart, fetchEnd)
+    const aligned = alignReviewMarkers(candles, events)
+
+    return {
+      scope,
+      stockCode: visualStockCode,
+      startDate: request.startDate || new Date(requestedStart).toISOString(),
+      endDate: request.endDate || new Date(requestedEnd).toISOString(),
+      interval,
+      candles,
+      markers: aligned.markers,
+      clusters: aligned.clusters,
+      stats: aligned.stats,
+      generatedAt: new Date().toISOString()
+    }
+  }
+
   private async collectReviewEvents(params: {
     scope: 'single' | 'overall'
     stockCode?: string
@@ -334,6 +388,44 @@ export class NotesAppService {
       }))
   }
 
+  private async collectReviewVisualEvents(params: {
+    scope: 'single' | 'overall'
+    stockCode?: string
+    startDate?: Date
+    endDate?: Date
+    categories: Set<string>
+  }): Promise<ReviewVisualEventInput[]> {
+    if (params.scope === 'single') {
+      if (!params.stockCode) {
+        throw new Error('single scope requires stockCode')
+      }
+      const entries = await this.notesService.getEntries(params.stockCode)
+      return filterByRange(entries, params.startDate, params.endDate)
+        .filter((entry) => params.categories.has(entry.category))
+        .map((entry) => ({
+          entryId: entry.id,
+          stockCode: params.stockCode!,
+          eventTime: this.toIsoString(entry.eventTime || entry.timestamp),
+          direction: this.normalizeVisualDirection(entry.viewpoint?.direction),
+          category: entry.category
+        }))
+    }
+
+    const timelineItems = await this.notesService.getTimeline({
+      startDate: params.startDate,
+      endDate: params.endDate
+    })
+    return timelineItems
+      .filter((item) => params.categories.has(item.category))
+      .map((item) => ({
+        entryId: item.id,
+        stockCode: item.stockCode,
+        eventTime: this.toIsoString(item.timestamp),
+        direction: this.normalizeVisualDirection(item.viewpoint?.direction),
+        category: item.category
+      }))
+  }
+
   private async getReviewEligibleCategories(): Promise<Set<string>> {
     const settings = await appConfigService.getAll()
     const configs = settings.notes.categoryConfigs || []
@@ -364,10 +456,27 @@ export class NotesAppService {
 
   private normalizeInterval(input?: KlineInterval): KlineInterval {
     if (!input) return '5m'
-    if (input === '5m' || input === '15m' || input === '30m' || input === '1d') {
+    if (input === '5m' || input === '15m' || input === '30m' || input === '60m' || input === '1d') {
       return input
     }
     return '5m'
+  }
+
+  private normalizeVisualDirection(direction?: string): '看多' | '看空' | '中性' | '未知' {
+    if (direction === '看多') return '看多'
+    if (direction === '看空') return '看空'
+    if (direction === '中性' || direction === '震荡') return '中性'
+    return '未知'
+  }
+
+  private resolveVisualStockCode(scope: 'single' | 'overall', stockCode?: string): string {
+    if (scope === 'single') {
+      if (!stockCode) {
+        throw new Error('single scope requires stockCode')
+      }
+      return stockCode
+    }
+    return stockCode || OVERALL_BENCHMARK_STOCK_CODE
   }
 
   private normalizeRule(rule?: Partial<ReviewRuleConfig>): ReviewRuleConfig {

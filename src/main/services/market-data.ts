@@ -120,17 +120,34 @@ export class MarketDataService {
     if (interval === '5m') return '5'
     if (interval === '15m') return '15'
     if (interval === '30m') return '30'
+    if (interval === '60m') return '60'
     return '101'
   }
 
   private buildSecId(stockCode: string): string {
-    if (stockCode.startsWith('6') || stockCode.startsWith('5') || stockCode.startsWith('9')) {
-      return `1.${stockCode}`
+    const normalized = String(stockCode || '').trim().toUpperCase()
+    const prefixedMatch = normalized.match(/^(SH|SZ|BJ)(\d{6})$/)
+    if (prefixedMatch) {
+      const market = prefixedMatch[1]
+      const code = prefixedMatch[2]
+      if (market === 'SH') return `1.${code}`
+      if (market === 'SZ') return `0.${code}`
+      return `0.${code}`
     }
-    if (stockCode.startsWith('8') || stockCode.startsWith('4')) {
-      return `0.${stockCode}`
+
+    if (normalized.startsWith('6') || normalized.startsWith('5') || normalized.startsWith('9')) {
+      return `1.${normalized}`
     }
-    return `0.${stockCode}`
+    if (normalized.startsWith('8') || normalized.startsWith('4')) {
+      return `0.${normalized}`
+    }
+    if (normalized.startsWith('399')) {
+      return `0.${normalized}`
+    }
+    if (normalized === '000001') {
+      return `1.${normalized}`
+    }
+    return `0.${normalized}`
   }
 
   private formatDateForApi(date: Date): string {

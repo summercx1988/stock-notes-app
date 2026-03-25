@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import {
   Button,
   Card,
@@ -17,7 +17,15 @@ import {
 import { InfoCircleOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { KlineInterval, ReviewActionResult, ReviewEvaluateResponse, ReviewEventResult, ReviewScope } from '../../shared/types'
+import type {
+  KlineInterval,
+  ReviewActionResult,
+  ReviewEvaluateResponse,
+  ReviewEventResult,
+  ReviewScope,
+  ReviewVisualResponse
+} from '../../shared/types'
+import ReviewKlinePanel from './ReviewKlinePanel'
 
 const { RangePicker } = DatePicker
 const DEFAULT_ACTION_SUMMARY: ReviewEvaluateResponse['actionSummary'] = {
@@ -47,7 +55,39 @@ const ReviewAnalysisView: React.FC = () => {
     dayjs().endOf('day')
   ])
   const [evaluation, setEvaluation] = useState<ReviewEvaluateResponse | null>(null)
+  const [visualData, setVisualData] = useState<ReviewVisualResponse | null>(null)
+  const [visualLoading, setVisualLoading] = useState(false)
   const [running, setRunning] = useState(false)
+  const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
+  const [predictionPage, setPredictionPage] = useState(1)
+  const [actionPage, setActionPage] = useState(1)
+  const predictionTableRef = useRef<HTMLDivElement | null>(null)
+  const actionTableRef = useRef<HTMLDivElement | null>(null)
+  const PAGE_SIZE = 10
+
+  const buildVisualPayload = () => ({
+    scope,
+    stockCode: scope === 'single' ? currentStockCode || undefined : undefined,
+    startDate: timeRange?.[0]?.toISOString(),
+    endDate: timeRange?.[1]?.toISOString(),
+    interval
+  })
+
+  const loadVisualData = async () => {
+    if (scope === 'single' && !currentStockCode) {
+      return
+    }
+    setVisualLoading(true)
+    try {
+      const result = await window.api.review.getVisualData(buildVisualPayload())
+      setVisualData(result)
+    } catch (error: any) {
+      setVisualData(null)
+      message.warning(`K线对齐数据加载失败: ${error?.message || String(error)}`)
+    } finally {
+      setVisualLoading(false)
+    }
+  }
 
   const selectedScopeLabel = useMemo(() => {
     if (scope === 'single') {
@@ -56,6 +96,49 @@ const ReviewAnalysisView: React.FC = () => {
     return '全股票综合'
   }, [currentStockCode, currentStockName, scope])
 
+  const predictionIndexByEntry = useMemo(() => {
+    const map = new Map<string, number>()
+    ;(evaluation?.results || []).forEach((item, index) => map.set(item.entryId, index))
+    return map
+  }, [evaluation?.results])
+
+  const actionIndexByEntry = useMemo(() => {
+    const map = new Map<string, number>()
+    ;(evaluation?.actionResults || []).forEach((item, index) => map.set(item.entryId, index))
+    return map
+  }, [evaluation?.actionResults])
+
+  const scrollToEntryRow = useCallback((entryId: string) => {
+    const selectors = [predictionTableRef.current, actionTableRef.current]
+    for (const container of selectors) {
+      if (!container) continue
+      const row = container.querySelector(`tr[data-row-key="${entryId}"]`) as HTMLElement | null
+      if (!row) continue
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+  }, [])
+
+  const selectEntry = useCallback((entryId: string, source: 'chart' | 'prediction' | 'action') => {
+    setActiveEntryId(entryId)
+
+    const predictionIndex = predictionIndexByEntry.get(entryId)
+    if (predictionIndex !== undefined) {
+      setPredictionPage(Math.floor(predictionIndex / PAGE_SIZE) + 1)
+    }
+
+    const actionIndex = actionIndexByEntry.get(entryId)
+    if (actionIndex !== undefined) {
+      setActionPage(Math.floor(actionIndex / PAGE_SIZE) + 1)
+    }
+
+    if (source === 'chart') {
+      window.setTimeout(() => {
+        scrollToEntryRow(entryId)
+      }, 120)
+    }
+  }, [actionIndexByEntry, predictionIndexByEntry, scrollToEntryRow])
+
   const handleRunReview = async () => {
     if (scope === 'single' && !currentStockCode) {
       message.warning('请先在左侧选择一只股票')
@@ -63,29 +146,52 @@ const ReviewAnalysisView: React.FC = () => {
     }
 
     setRunning(true)
+    setVisualLoading(true)
+    setActiveEntryId(null)
+    setPredictionPage(1)
+    setActionPage(1)
     try {
-      const result = await window.api.review.evaluate({
-        scope,
-        stockCode: scope === 'single' ? currentStockCode || undefined : undefined,
-        startDate: timeRange?.[0]?.toISOString(),
-        endDate: timeRange?.[1]?.toISOString(),
-        interval,
-        rule: {
-          windowDays: ruleWindowDays,
-          thresholdPct: ruleThresholdPct,
-          excludeUnknown: true
+      const [evaluationResult, visualResult] = await Promise.allSettled([
+        window.api.review.evaluate({
+          scope,
+          stockCode: scope === 'single' ? currentStockCode || undefined : undefined,
+          startDate: timeRange?.[0]?.toISOString(),
+          endDate: timeRange?.[1]?.toISOString(),
+          interval,
+          rule: {
+            windowDays: ruleWindowDays,
+            thresholdPct: ruleThresholdPct,
+            excludeUnknown: true
+          }
+        }),
+        window.api.review.getVisualData(buildVisualPayload())
+      ])
+
+      if (evaluationResult.status === 'fulfilled') {
+        const result = evaluationResult.value
+        const normalizedResult: ReviewEvaluateResponse = {
+          ...result,
+          actionSummary: (result as Partial<ReviewEvaluateResponse>).actionSummary || DEFAULT_ACTION_SUMMARY,
+          actionResults: (result as Partial<ReviewEvaluateResponse>).actionResults || []
         }
-      })
-      const normalizedResult: ReviewEvaluateResponse = {
-        ...result,
-        actionSummary: (result as Partial<ReviewEvaluateResponse>).actionSummary || DEFAULT_ACTION_SUMMARY,
-        actionResults: (result as Partial<ReviewEvaluateResponse>).actionResults || []
+        setEvaluation(normalizedResult)
+      } else {
+        const reason = evaluationResult.reason as { message?: string }
+        throw new Error(reason?.message || String(evaluationResult.reason))
       }
-      setEvaluation(normalizedResult)
+
+      if (visualResult.status === 'fulfilled') {
+        setVisualData(visualResult.value)
+      } else {
+        setVisualData(null)
+        const reason = visualResult.reason as { message?: string }
+        message.warning(`K线对齐数据加载失败: ${reason?.message || String(visualResult.reason)}`)
+      }
     } catch (error: any) {
       message.error(`复盘计算失败: ${error.message}`)
     } finally {
       setRunning(false)
+      setVisualLoading(false)
     }
   }
 
@@ -263,7 +369,7 @@ const ReviewAnalysisView: React.FC = () => {
               { label: '5 分钟', value: '5m' },
               { label: '15 分钟', value: '15m' },
               { label: '30 分钟', value: '30m' },
-              { label: '日线', value: '1d' }
+              { label: '60 分钟', value: '60m' }
             ]}
           />
 
@@ -370,26 +476,62 @@ const ReviewAnalysisView: React.FC = () => {
               />
             </Card>
 
-            <Card title={`事件判定明细（${evaluation.results.length} 条）`} size="small">
-              <Table<ReviewEventResult>
-                rowKey={(record) => `${record.stockCode}-${record.entryId}-${record.eventTime}`}
-                columns={columns}
-                dataSource={evaluation.results}
-                pagination={{ pageSize: 10 }}
-                scroll={{ x: 980 }}
-                size="small"
+            <Card title="K线与笔记对齐验证" size="small">
+              <ReviewKlinePanel
+                data={visualData}
+                loading={visualLoading}
+                selectedEntryId={activeEntryId}
+                onMarkerSelect={(entryId) => selectEntry(entryId, 'chart')}
+                onRetry={() => { void loadVisualData() }}
               />
             </Card>
 
+            <Card title={`事件判定明细（${evaluation.results.length} 条）`} size="small">
+              <div ref={predictionTableRef}>
+                <Table<ReviewEventResult>
+                  rowKey={(record) => record.entryId}
+                  columns={columns}
+                  dataSource={evaluation.results}
+                  pagination={{
+                    pageSize: PAGE_SIZE,
+                    current: predictionPage,
+                    onChange: (page) => setPredictionPage(page)
+                  }}
+                  onRow={(record) => ({
+                    onClick: () => selectEntry(record.entryId, 'prediction'),
+                    style: {
+                      cursor: 'pointer',
+                      backgroundColor: activeEntryId === record.entryId ? '#eff6ff' : undefined
+                    }
+                  })}
+                  scroll={{ x: 980 }}
+                  size="small"
+                />
+              </div>
+            </Card>
+
             <Card title={`操作归因明细（${actionResults.length} 条）`} size="small">
-              <Table<ReviewActionResult>
-                rowKey={(record) => `${record.stockCode}-${record.entryId}-${record.eventTime}`}
-                columns={actionColumns}
-                dataSource={actionResults}
-                pagination={{ pageSize: 10 }}
-                scroll={{ x: 1050 }}
-                size="small"
-              />
+              <div ref={actionTableRef}>
+                <Table<ReviewActionResult>
+                  rowKey={(record) => record.entryId}
+                  columns={actionColumns}
+                  dataSource={actionResults}
+                  pagination={{
+                    pageSize: PAGE_SIZE,
+                    current: actionPage,
+                    onChange: (page) => setActionPage(page)
+                  }}
+                  onRow={(record) => ({
+                    onClick: () => selectEntry(record.entryId, 'action'),
+                    style: {
+                      cursor: 'pointer',
+                      backgroundColor: activeEntryId === record.entryId ? '#f0fdf4' : undefined
+                    }
+                  })}
+                  scroll={{ x: 1050 }}
+                  size="small"
+                />
+              </div>
             </Card>
           </Space>
         )}
