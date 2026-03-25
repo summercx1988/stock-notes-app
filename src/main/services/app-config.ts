@@ -1,6 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import type { UserSettings } from '../../shared/types'
+import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 
 const SETTINGS_PATH = path.join(process.cwd(), 'data', 'config', 'settings.json')
 
@@ -20,7 +21,8 @@ const DEFAULT_SETTINGS: UserSettings = {
     defaultCategory: '看盘预测',
     defaultDirection: '未知',
     defaultTimeHorizon: '短线',
-    style: '轻量'
+    style: '轻量',
+    categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
   }
 }
 
@@ -47,6 +49,7 @@ class AppConfigService {
     }
     const settings = await this.ensureLoaded()
     this.setByPath(settings as unknown as Record<string, unknown>, key, value)
+    settings.notes.categoryConfigs = normalizeNoteCategoryConfigs(settings.notes.categoryConfigs)
     await this.persist(settings)
     return this.clone(settings)
   }
@@ -57,6 +60,7 @@ class AppConfigService {
       settings as unknown as Record<string, unknown>,
       partial as unknown as Record<string, unknown>
     ) as unknown as UserSettings
+    merged.notes.categoryConfigs = normalizeNoteCategoryConfigs(merged.notes.categoryConfigs)
     await this.persist(merged)
     return this.clone(merged)
   }
@@ -79,16 +83,20 @@ class AppConfigService {
     try {
       const content = await fs.readFile(SETTINGS_PATH, 'utf-8')
       const parsed = JSON.parse(content) as Partial<UserSettings>
-      return this.deepMerge(
+      const merged = this.deepMerge(
         DEFAULT_SETTINGS as unknown as Record<string, unknown>,
         parsed as unknown as Record<string, unknown>
       ) as unknown as UserSettings
+      merged.notes.categoryConfigs = normalizeNoteCategoryConfigs(merged.notes.categoryConfigs)
+      return merged
     } catch (error: any) {
       if (error?.code !== 'ENOENT') {
         console.error('[AppConfig] Load failed:', error?.message || String(error))
       }
       await this.persist(DEFAULT_SETTINGS)
-      return this.clone(DEFAULT_SETTINGS)
+      const cloned = this.clone(DEFAULT_SETTINGS)
+      cloned.notes.categoryConfigs = normalizeNoteCategoryConfigs(cloned.notes.categoryConfigs)
+      return cloned
     }
   }
 

@@ -8,6 +8,7 @@ import type {
   ReviewSnapshotResponse,
   UserSettings
 } from '../shared/types'
+import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../shared/note-categories'
 
 interface VoiceCommandResult {
   success: boolean
@@ -39,7 +40,8 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
     defaultCategory: '看盘预测',
     defaultDirection: '未知',
     defaultTimeHorizon: '短线',
-    style: '轻量'
+    style: '轻量',
+    categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
   }
 }
 
@@ -177,12 +179,15 @@ const api = {
     getAll: async (): Promise<UserSettings> => {
       try {
         const settings = await ipcRenderer.invoke('config:getAll')
+        settings.notes.categoryConfigs = normalizeNoteCategoryConfigs(settings.notes.categoryConfigs)
         fallbackSettings = deepClone(settings)
         return settings
       } catch (error) {
         if (isMissingHandlerError(error)) {
           console.warn('[preload] config:getAll handler missing, using default settings')
-          return deepClone(fallbackSettings)
+          const defaults = deepClone(fallbackSettings)
+          defaults.notes.categoryConfigs = normalizeNoteCategoryConfigs(defaults.notes.categoryConfigs)
+          return defaults
         }
         throw error
       }
@@ -198,6 +203,7 @@ const api = {
           const next = deepClone(fallbackSettings) as unknown as Record<string, unknown>
           setByPath(next, key, value)
           fallbackSettings = next as unknown as UserSettings
+          fallbackSettings.notes.categoryConfigs = normalizeNoteCategoryConfigs(fallbackSettings.notes.categoryConfigs)
           return deepClone(fallbackSettings)
         }
         throw error
@@ -215,6 +221,7 @@ const api = {
             fallbackSettings as unknown as Record<string, unknown>,
             partial as unknown as Record<string, unknown>
           ) as unknown as UserSettings
+          fallbackSettings.notes.categoryConfigs = normalizeNoteCategoryConfigs(fallbackSettings.notes.categoryConfigs)
           return deepClone(fallbackSettings)
         }
         throw error

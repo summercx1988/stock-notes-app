@@ -752,13 +752,13 @@ export class NotesService {
       }
 
       const viewpointMatch = trimmed.match(
-        /^>\s*\*\*观点\*\*:\s*(看多|看空|未知|中性|观望)(?:\s*\(信心:\s*([0-9.]+)\))?(?:\s*\|\s*\*\*周期\*\*:\s*(短线|中线|长线))?/
+        /^>\s*\*\*观点\*\*:\s*([^()|]+?)(?:\s*\(信心:\s*([0-9.]+)\))?(?:\s*\|\s*\*\*周期\*\*:\s*(.+))?$/
       )
       if (viewpointMatch) {
         viewpoint = {
-          direction: viewpointMatch[1] as Viewpoint['direction'],
+          direction: viewpointMatch[1].trim(),
           confidence: Number(viewpointMatch[2] || 0),
-          timeHorizon: (viewpointMatch[3] as Viewpoint['timeHorizon']) || '短线'
+          timeHorizon: viewpointMatch[3]?.trim() || '短线'
         }
         continue
       }
@@ -899,16 +899,14 @@ export class NotesService {
   }
 
   private normalizeCategory(value?: string): NoteCategory {
-    if (value === '看盘预测' || value === '操盘打标' || value === '交易札记' || value === '备忘' || value === '资讯备忘') {
-      return value
-    }
+    const normalized = String(value || '').trim()
+    if (normalized) return normalized
     return this.createDefaultCategory()
   }
 
   private normalizeOperationTag(value?: string, action?: Action): OperationTag {
-    if (value === '买入' || value === '卖出' || value === '无') {
-      return value
-    }
+    const normalized = String(value || '').trim()
+    if (normalized) return normalized
     if (action?.type === '买入') return '买入'
     if (action?.type === '卖出') return '卖出'
     return this.createDefaultOperationTag()

@@ -1,9 +1,34 @@
-export type ViewpointDirection = '看多' | '看空' | '未知' | '中性' | '观望'
-export type TimeHorizon = '短线' | '中线' | '长线'
+export type ViewpointDirection = string
+export type TimeHorizon = string
 export type NoteInputType = 'voice' | 'manual'
-export type NoteCategory = '看盘预测' | '操盘打标' | '交易札记' | '备忘' | '资讯备忘'
-export type OperationTag = '无' | '买入' | '卖出'
+export type NoteCategory = string
+export type OperationTag = string
 export type NoteStyle = '轻量' | '结构化'
+
+export interface EnumOptionConfig {
+  code: string
+  label: string
+  enabled: boolean
+  order: number
+}
+
+export interface NoteCategoryFieldConfig {
+  enabled: boolean
+  options: EnumOptionConfig[]
+}
+
+export interface NoteCategoryConfig {
+  code: string
+  label: string
+  enabled: boolean
+  reviewEligible: boolean
+  builtIn?: boolean
+  fields: {
+    viewpoint: NoteCategoryFieldConfig
+    operationTag: NoteCategoryFieldConfig
+    timeHorizon: NoteCategoryFieldConfig
+  }
+}
 
 export interface TimeEntry {
   id: string
@@ -172,6 +197,7 @@ export interface UserSettings {
     defaultDirection: ViewpointDirection
     defaultTimeHorizon: TimeHorizon
     style: NoteStyle
+    categoryConfigs: NoteCategoryConfig[]
   }
 }
 

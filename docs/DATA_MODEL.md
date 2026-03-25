@@ -221,9 +221,33 @@ interface StockNote {
 
 ## 复盘统计约束
 
-- 只有 `看盘预测` 类别进入复盘引擎
+- 只有 `reviewEligible=true` 的类别进入复盘引擎（默认 `看盘预测`）
 - `操盘打标` 通过 `operationTag` 参与操作归因统计（买入/卖出）
 - `交易札记`、`备忘`、`资讯备忘` 只参与检索、展示与经验沉淀
+
+## 类别 Schema 配置（settings）
+
+每个类别独立维护字段枚举，配置保存在 `data/config/settings.json`：
+
+```json
+{
+  "notes": {
+    "defaultCategory": "看盘预测",
+    "categoryConfigs": [
+      {
+        "code": "看盘预测",
+        "label": "看盘预测",
+        "reviewEligible": true,
+        "fields": {
+          "viewpoint": { "enabled": true, "options": [{ "code": "看多", "label": "看多" }] },
+          "operationTag": { "enabled": true, "options": [{ "code": "无", "label": "无" }] },
+          "timeHorizon": { "enabled": true, "options": [{ "code": "短线", "label": "短线" }] }
+        }
+      }
+    ]
+  }
+}
+```
 
 ## SQLite索引设计
 

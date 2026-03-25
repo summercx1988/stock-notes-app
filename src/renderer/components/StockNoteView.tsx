@@ -4,15 +4,8 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import MDEditor from '@uiw/react-md-editor'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { NoteCategory, OperationTag, TimeEntry, Viewpoint } from '../../shared/types'
-
-const NOTE_CATEGORY_OPTIONS: Array<{ label: NoteCategory; value: NoteCategory }> = [
-  { label: '看盘预测', value: '看盘预测' },
-  { label: '操盘打标', value: '操盘打标' },
-  { label: '交易札记', value: '交易札记' },
-  { label: '备忘', value: '备忘' },
-  { label: '资讯备忘', value: '资讯备忘' }
-]
+import type { NoteCategory, NoteCategoryConfig, OperationTag, TimeEntry, UserSettings, Viewpoint } from '../../shared/types'
+import { DEFAULT_NOTE_CATEGORY_CONFIGS, getCategoryConfig, getEnabledOptions, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 
 const StockNoteView: React.FC = () => {
   const {
@@ -37,6 +30,37 @@ const StockNoteView: React.FC = () => {
   const [newEventTime, setNewEventTime] = useState<Dayjs | null>(null)
   const [newCategory, setNewCategory] = useState<NoteCategory>('看盘预测')
   const [newOperationTag, setNewOperationTag] = useState<OperationTag>('无')
+  const [categoryConfigs, setCategoryConfigs] = useState<NoteCategoryConfig[]>(DEFAULT_NOTE_CATEGORY_CONFIGS)
+
+  const categoryOptions = categoryConfigs
+    .filter((item) => item.enabled !== false)
+    .map((item) => ({ label: item.label, value: item.code }))
+  const editCategoryConfig = getCategoryConfig(categoryConfigs, editCategory)
+  const newCategoryConfig = getCategoryConfig(categoryConfigs, newCategory)
+  const editDirectionOptions = getEnabledOptions(editCategoryConfig?.fields.viewpoint.options || [])
+    .map((item) => ({ label: item.label, value: item.code }))
+  const newDirectionOptions = getEnabledOptions(newCategoryConfig?.fields.viewpoint.options || [])
+    .map((item) => ({ label: item.label, value: item.code }))
+  const editHorizonOptions = getEnabledOptions(editCategoryConfig?.fields.timeHorizon.options || [])
+    .map((item) => ({ label: item.label, value: item.code }))
+  const newHorizonOptions = getEnabledOptions(newCategoryConfig?.fields.timeHorizon.options || [])
+    .map((item) => ({ label: item.label, value: item.code }))
+  const editOperationOptions = getEnabledOptions(editCategoryConfig?.fields.operationTag.options || [])
+    .map((item) => ({ label: item.label, value: item.code }))
+  const newOperationOptions = getEnabledOptions(newCategoryConfig?.fields.operationTag.options || [])
+    .map((item) => ({ label: item.label, value: item.code }))
+
+  const createViewpoint = (direction: Viewpoint['direction'], timeHorizon: Viewpoint['timeHorizon']): Viewpoint => ({
+    direction,
+    timeHorizon,
+    confidence: direction === '未知' ? 0 : 0.7
+  })
+
+  const toDayjs = (value?: Date | string) => {
+    if (!value) return null
+    const parsed = dayjs(value)
+    return parsed.isValid() ? parsed : null
+  }
 
   const applyEntryToState = (entry: TimeEntry) => {
     if (!currentStockCode) return
@@ -66,17 +90,55 @@ const StockNoteView: React.FC = () => {
     loadNote()
   }, [currentStockCode, stockNotes])
 
-  const createViewpoint = (direction: Viewpoint['direction'], timeHorizon: Viewpoint['timeHorizon']): Viewpoint => ({
-    direction,
-    timeHorizon,
-    confidence: direction === '未知' ? 0 : 0.7
-  })
+  useEffect(() => {
+    let cancelled = false
+    const loadCategoryConfigs = async () => {
+      try {
+        const settings = await window.api.config.getAll() as UserSettings
+        if (!cancelled) {
+          setCategoryConfigs(normalizeNoteCategoryConfigs(settings?.notes?.categoryConfigs))
+        }
+      } catch {
+        if (!cancelled) {
+          setCategoryConfigs(normalizeNoteCategoryConfigs(DEFAULT_NOTE_CATEGORY_CONFIGS))
+        }
+      }
+    }
+    loadCategoryConfigs()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
-  const toDayjs = (value?: Date | string) => {
-    if (!value) return null
-    const parsed = dayjs(value)
-    return parsed.isValid() ? parsed : null
-  }
+  useEffect(() => {
+    const directionCodes = editDirectionOptions.map((item) => item.value)
+    const horizonCodes = editHorizonOptions.map((item) => item.value)
+    const operationCodes = editOperationOptions.map((item) => item.value)
+    if (directionCodes.length > 0 && !directionCodes.includes(editViewpoint?.direction || '')) {
+      setEditViewpoint(createViewpoint(directionCodes[0], editViewpoint?.timeHorizon || (horizonCodes[0] || '短线')))
+    }
+    if (operationCodes.length > 0 && !operationCodes.includes(editOperationTag)) {
+      setEditOperationTag(operationCodes[0])
+    }
+    if (horizonCodes.length > 0 && editViewpoint && !horizonCodes.includes(editViewpoint.timeHorizon)) {
+      setEditViewpoint(createViewpoint(editViewpoint.direction, horizonCodes[0]))
+    }
+  }, [editCategory, editDirectionOptions, editHorizonOptions, editOperationOptions])
+
+  useEffect(() => {
+    const directionCodes = newDirectionOptions.map((item) => item.value)
+    const horizonCodes = newHorizonOptions.map((item) => item.value)
+    const operationCodes = newOperationOptions.map((item) => item.value)
+    if (directionCodes.length > 0 && !directionCodes.includes(newViewpoint?.direction || '')) {
+      setNewViewpoint(createViewpoint(directionCodes[0], newViewpoint?.timeHorizon || (horizonCodes[0] || '短线')))
+    }
+    if (operationCodes.length > 0 && !operationCodes.includes(newOperationTag)) {
+      setNewOperationTag(operationCodes[0])
+    }
+    if (horizonCodes.length > 0 && newViewpoint && !horizonCodes.includes(newViewpoint.timeHorizon)) {
+      setNewViewpoint(createViewpoint(newViewpoint.direction, horizonCodes[0]))
+    }
+  }, [newCategory, newDirectionOptions, newHorizonOptions, newOperationOptions])
 
   const loadNote = async () => {
     if (!currentStockCode) return
@@ -216,25 +278,26 @@ const StockNoteView: React.FC = () => {
 
   const getViewpointTag = (viewpoint?: Viewpoint) => {
     if (!viewpoint) return null
-    const colorMap: Record<Viewpoint['direction'], string> = {
+    const colorMap: Record<string, string> = {
       看多: 'red',
       看空: 'green',
       未知: 'default',
       中性: 'blue',
       观望: 'default'
     }
-    return <Tag color={colorMap[viewpoint.direction]}>观点: {viewpoint.direction}</Tag>
+    return <Tag color={colorMap[viewpoint.direction] || 'default'}>观点: {viewpoint.direction}</Tag>
   }
 
   const getCategoryTag = (category: NoteCategory) => {
-    const colorMap: Record<NoteCategory, string> = {
+    const colorMap: Record<string, string> = {
       看盘预测: 'magenta',
       操盘打标: 'volcano',
       交易札记: 'gold',
       备忘: 'default',
       资讯备忘: 'cyan'
     }
-    return <Tag color={colorMap[category]}>类别: {category}</Tag>
+    const config = categoryConfigs.find((item) => item.code === category)
+    return <Tag color={colorMap[category] || 'default'}>类别: {config?.label || category}</Tag>
   }
 
   const getOperationTag = (operationTag?: OperationTag) => {
@@ -297,7 +360,7 @@ const StockNoteView: React.FC = () => {
                     onChange={(value) => setNewCategory(value)}
                     style={{ width: 120 }}
                     size="small"
-                    options={NOTE_CATEGORY_OPTIONS}
+                    options={categoryOptions}
                   />
                 </div>
                 <div className="flex items-center gap-1">
@@ -307,12 +370,9 @@ const StockNoteView: React.FC = () => {
                     onChange={(v) => setNewViewpoint(createViewpoint(v as Viewpoint['direction'], newViewpoint?.timeHorizon || '短线'))}
                     style={{ width: 100 }}
                     size="small"
-                  >
-                    <Select.Option value="看多">看多</Select.Option>
-                    <Select.Option value="看空">看空</Select.Option>
-                    <Select.Option value="中性">中性</Select.Option>
-                    <Select.Option value="未知">未知</Select.Option>
-                  </Select>
+                    disabled={!newCategoryConfig?.fields.viewpoint.enabled}
+                    options={newDirectionOptions}
+                  />
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">周期</span>
@@ -321,11 +381,9 @@ const StockNoteView: React.FC = () => {
                     onChange={(v) => setNewViewpoint(createViewpoint(newViewpoint?.direction || '未知', v as Viewpoint['timeHorizon']))}
                     style={{ width: 100 }}
                     size="small"
-                  >
-                    <Select.Option value="短线">短线</Select.Option>
-                    <Select.Option value="中线">中线</Select.Option>
-                    <Select.Option value="长线">长线</Select.Option>
-                  </Select>
+                    disabled={!newCategoryConfig?.fields.timeHorizon.enabled}
+                    options={newHorizonOptions}
+                  />
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">操作</span>
@@ -334,11 +392,8 @@ const StockNoteView: React.FC = () => {
                     onChange={(value) => setNewOperationTag(value)}
                     style={{ width: 120 }}
                     size="small"
-                    options={[
-                      { label: '无', value: '无' },
-                      { label: '买入', value: '买入' },
-                      { label: '卖出', value: '卖出' }
-                    ]}
+                    disabled={!newCategoryConfig?.fields.operationTag.enabled}
+                    options={newOperationOptions}
                   />
                 </div>
                 <div className="flex items-center gap-1">
@@ -383,7 +438,7 @@ const StockNoteView: React.FC = () => {
                             onChange={(value) => setEditCategory(value)}
                             style={{ width: 120 }}
                             size="small"
-                            options={NOTE_CATEGORY_OPTIONS}
+                            options={categoryOptions}
                           />
                         </div>
                         <div className="flex items-center gap-1">
@@ -393,12 +448,9 @@ const StockNoteView: React.FC = () => {
                             onChange={(v) => setEditViewpoint(createViewpoint(v as Viewpoint['direction'], editViewpoint?.timeHorizon || '短线'))}
                             style={{ width: 100 }}
                             size="small"
-                          >
-                            <Select.Option value="看多">看多</Select.Option>
-                            <Select.Option value="看空">看空</Select.Option>
-                            <Select.Option value="中性">中性</Select.Option>
-                            <Select.Option value="未知">未知</Select.Option>
-                          </Select>
+                            disabled={!editCategoryConfig?.fields.viewpoint.enabled}
+                            options={editDirectionOptions}
+                          />
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-xs text-gray-500">周期</span>
@@ -407,11 +459,9 @@ const StockNoteView: React.FC = () => {
                             onChange={(v) => setEditViewpoint(createViewpoint(editViewpoint?.direction || '未知', v as Viewpoint['timeHorizon']))}
                             style={{ width: 100 }}
                             size="small"
-                          >
-                            <Select.Option value="短线">短线</Select.Option>
-                            <Select.Option value="中线">中线</Select.Option>
-                            <Select.Option value="长线">长线</Select.Option>
-                          </Select>
+                            disabled={!editCategoryConfig?.fields.timeHorizon.enabled}
+                            options={editHorizonOptions}
+                          />
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-xs text-gray-500">操作</span>
@@ -420,11 +470,8 @@ const StockNoteView: React.FC = () => {
                             onChange={(value) => setEditOperationTag(value)}
                             style={{ width: 120 }}
                             size="small"
-                            options={[
-                              { label: '无', value: '无' },
-                              { label: '买入', value: '买入' },
-                              { label: '卖出', value: '卖出' }
-                            ]}
+                            disabled={!editCategoryConfig?.fields.operationTag.enabled}
+                            options={editOperationOptions}
                           />
                         </div>
                         <div className="flex items-center gap-1">

@@ -3,7 +3,8 @@ import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, Da
 import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { NoteCategory, OperationTag, UserSettings, Viewpoint } from '../../shared/types'
+import type { NoteCategory, NoteCategoryConfig, OperationTag, UserSettings, Viewpoint } from '../../shared/types'
+import { DEFAULT_NOTE_CATEGORY_CONFIGS, getCategoryConfig, getEnabledOptions, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 import { cleanTranscriptText, normalizeNoteContent } from '../../shared/text-normalizer'
 
 const { Step } = Steps
@@ -33,13 +34,6 @@ interface AIExtractResult {
 type TranscribeEngine = 'local' | 'cloud'
 type RecordingState = 'idle' | 'connecting' | 'recording' | 'transcribing' | 'analyzing' | 'completed'
 type StockSelectOption = { label: string; value: string; name: string }
-const NOTE_CATEGORY_OPTIONS: Array<{ label: NoteCategory; value: NoteCategory }> = [
-  { label: '看盘预测', value: '看盘预测' },
-  { label: '操盘打标', value: '操盘打标' },
-  { label: '交易札记', value: '交易札记' },
-  { label: '备忘', value: '备忘' },
-  { label: '资讯备忘', value: '资讯备忘' }
-]
 
 const DEFAULT_SETTINGS: UserSettings = {
   textAnalysis: {
@@ -57,7 +51,8 @@ const DEFAULT_SETTINGS: UserSettings = {
     defaultCategory: '看盘预测',
     defaultDirection: '未知',
     defaultTimeHorizon: '短线',
-    style: '轻量'
+    style: '轻量',
+    categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
   }
 }
 
@@ -87,6 +82,18 @@ const RecordingControl: React.FC = () => {
   const [noteDirection, setNoteDirection] = useState<Viewpoint['direction']>('未知')
   const [noteOperationTag, setNoteOperationTag] = useState<OperationTag>('无')
   const [settings, setSettings] = useState<UserSettings | null>(null)
+
+  const categoryConfigs: NoteCategoryConfig[] = normalizeNoteCategoryConfigs(
+    settings?.notes?.categoryConfigs || DEFAULT_NOTE_CATEGORY_CONFIGS
+  )
+  const activeCategoryConfig = getCategoryConfig(categoryConfigs, noteCategory)
+  const noteCategoryOptions = categoryConfigs
+    .filter((item) => item.enabled !== false)
+    .map((item) => ({ label: item.label, value: item.code }))
+  const noteDirectionOptions = getEnabledOptions(activeCategoryConfig?.fields.viewpoint.options || [])
+    .map((item) => ({ label: item.label, value: item.code }))
+  const noteOperationOptions = getEnabledOptions(activeCategoryConfig?.fields.operationTag.options || [])
+    .map((item) => ({ label: item.label, value: item.code }))
 
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
   const stockSearchTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -119,9 +126,22 @@ const RecordingControl: React.FC = () => {
         window.api.config.getAll(),
         window.api.watchlist.get()
       ])
-      setSettings(config)
-      setNoteCategory(config.notes.defaultCategory || '看盘预测')
-      setNoteDirection(config.notes.defaultDirection || '未知')
+      const normalizedConfig: UserSettings = {
+        ...config,
+        notes: {
+          ...config.notes,
+          categoryConfigs: normalizeNoteCategoryConfigs(config?.notes?.categoryConfigs)
+        }
+      }
+      setSettings(normalizedConfig)
+      const enabledCategoryCodes = normalizedConfig.notes.categoryConfigs
+        .filter((item) => item.enabled !== false)
+        .map((item) => item.code)
+      const preferredCategory = enabledCategoryCodes.includes(normalizedConfig.notes.defaultCategory)
+        ? normalizedConfig.notes.defaultCategory
+        : (enabledCategoryCodes[0] || '看盘预测')
+      setNoteCategory(preferredCategory)
+      setNoteDirection(normalizedConfig.notes.defaultDirection || '未知')
 
       const options: StockSelectOption[] = (watchlist || []).map((stock: any) => ({
         value: stock.code,
@@ -132,8 +152,15 @@ const RecordingControl: React.FC = () => {
       setStockSearchOptions(options)
     } catch (error) {
       if (isMissingHandlerError(error)) {
-        setSettings(DEFAULT_SETTINGS)
-        setNoteCategory(DEFAULT_SETTINGS.notes.defaultCategory)
+        const fallback = {
+          ...DEFAULT_SETTINGS,
+          notes: {
+            ...DEFAULT_SETTINGS.notes,
+            categoryConfigs: normalizeNoteCategoryConfigs(DEFAULT_SETTINGS.notes.categoryConfigs)
+          }
+        }
+        setSettings(fallback)
+        setNoteCategory(fallback.notes.defaultCategory)
         setNoteDirection(DEFAULT_SETTINGS.notes.defaultDirection)
         setWatchlistOptions([])
         setStockSearchOptions([])
@@ -157,7 +184,12 @@ const RecordingControl: React.FC = () => {
     setStockSearchOptions((prev) => (prev.length > 0 ? prev : watchlistOptions))
     setTranscribeProgress(0)
     setNoteEventTime(dayjs())
-    setNoteCategory(settings?.notes.defaultCategory || '看盘预测')
+    const normalizedCategories = normalizeNoteCategoryConfigs(settings?.notes?.categoryConfigs || DEFAULT_NOTE_CATEGORY_CONFIGS)
+    const enabledCodes = normalizedCategories.filter((item) => item.enabled !== false).map((item) => item.code)
+    const preferredCategory = settings?.notes.defaultCategory && enabledCodes.includes(settings.notes.defaultCategory)
+      ? settings.notes.defaultCategory
+      : (enabledCodes[0] || '看盘预测')
+    setNoteCategory(preferredCategory)
     setNoteDirection(settings?.notes.defaultDirection || '未知')
     setNoteOperationTag('无')
 
@@ -170,7 +202,7 @@ const RecordingControl: React.FC = () => {
       clearTimeout(stockSearchTimerRef.current)
       stockSearchTimerRef.current = null
     }
-  }, [settings?.notes.defaultCategory, settings?.notes.defaultDirection, watchlistOptions])
+  }, [settings, watchlistOptions])
 
   useEffect(() => {
     void loadUserPreferences()
@@ -181,6 +213,17 @@ const RecordingControl: React.FC = () => {
       setTranscribeEngine('local')
     }
   }, [cloudASRReady, transcribeEngine])
+
+  useEffect(() => {
+    const directionCodes = noteDirectionOptions.map((item) => item.value)
+    if (directionCodes.length > 0 && !directionCodes.includes(noteDirection)) {
+      setNoteDirection(directionCodes[0] as Viewpoint['direction'])
+    }
+    const operationCodes = noteOperationOptions.map((item) => item.value)
+    if (operationCodes.length > 0 && !operationCodes.includes(noteOperationTag)) {
+      setNoteOperationTag(operationCodes[0])
+    }
+  }, [noteCategory, noteDirectionOptions, noteOperationOptions, noteDirection, noteOperationTag])
 
   const handleStockSearch = useCallback((query: string) => {
     if (stockSearchTimerRef.current) {
@@ -282,8 +325,9 @@ const RecordingControl: React.FC = () => {
       setNoteDirection(mapAISentimentToDirection(result.note?.sentiment))
       const resolvedOperationTag = mapAIActionToOperationTag(result.note?.operationTag)
       setNoteOperationTag(resolvedOperationTag)
-      if (resolvedOperationTag !== '无') {
-        setNoteCategory((current) => (current === '看盘预测' ? '操盘打标' : current))
+      const operationCategory = categoryConfigs.find((item) => item.code === '操盘打标' && item.enabled !== false)
+      if (resolvedOperationTag !== '无' && operationCategory) {
+        setNoteCategory((current) => (current === '看盘预测' ? operationCategory.code : current))
       }
 
       if (resolvedStock) {
@@ -316,7 +360,7 @@ const RecordingControl: React.FC = () => {
       setRecordingState('transcribing')
       setCurrentStep(2)
     }
-  }, [watchlistOptions])
+  }, [categoryConfigs, watchlistOptions])
 
   const transcribeAudio = useCallback(async (path: string) => {
     if (transcribeEngine === 'cloud') {
@@ -497,10 +541,15 @@ const RecordingControl: React.FC = () => {
     setLoading(true)
 
     try {
+      const horizonOptions = getEnabledOptions(activeCategoryConfig?.fields.timeHorizon.options || [])
+      const preferredHorizon = settings?.notes.defaultTimeHorizon || '短线'
+      const resolvedHorizon = horizonOptions.find((item) => item.code === preferredHorizon)?.code
+        || horizonOptions[0]?.code
+        || preferredHorizon
       const viewpoint: Viewpoint = {
         direction: noteDirection,
         confidence: noteDirection === '未知' ? 0 : noteDirection === '中性' ? 0.6 : 0.7,
-        timeHorizon: settings?.notes.defaultTimeHorizon || '短线'
+        timeHorizon: resolvedHorizon
       }
       const stockInfo = await window.api.stock.getByCode(stockCode)
       const resolvedStockName = selectedStockName || extractResult.stock?.name || stockInfo?.name || stockCode
@@ -817,30 +866,23 @@ const RecordingControl: React.FC = () => {
                     onChange={(value) => setNoteCategory(value)}
                     style={{ width: 140 }}
                     size="small"
-                    options={NOTE_CATEGORY_OPTIONS}
+                    options={noteCategoryOptions}
                   />
                   <Select
                     value={noteDirection}
                     onChange={(value) => setNoteDirection(value)}
                     style={{ width: 120 }}
                     size="small"
-                    options={[
-                      { label: '未知', value: '未知' },
-                      { label: '看多', value: '看多' },
-                      { label: '看空', value: '看空' },
-                      { label: '震荡/中性', value: '中性' }
-                    ]}
+                    disabled={!activeCategoryConfig?.fields.viewpoint.enabled}
+                    options={noteDirectionOptions}
                   />
                   <Select
                     value={noteOperationTag}
                     onChange={(value) => setNoteOperationTag(value)}
                     style={{ width: 120 }}
                     size="small"
-                    options={[
-                      { label: '操作打标: 无', value: '无' },
-                      { label: '操作打标: 买入', value: '买入' },
-                      { label: '操作打标: 卖出', value: '卖出' }
-                    ]}
+                    disabled={!activeCategoryConfig?.fields.operationTag.enabled}
+                    options={noteOperationOptions}
                   />
                   <DatePicker
                     value={noteEventTime}

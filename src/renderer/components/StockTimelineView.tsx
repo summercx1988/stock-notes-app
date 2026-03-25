@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Card, DatePicker, Empty, Select, Space, Spin, Tag, Timeline, Typography, message } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { NoteCategory, TimeEntry, Viewpoint } from '../../shared/types'
+import type { NoteCategory, NoteCategoryConfig, TimeEntry, UserSettings, Viewpoint } from '../../shared/types'
+import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 
 const { RangePicker } = DatePicker
 const { Text } = Typography
@@ -24,6 +25,7 @@ const StockTimelineView: React.FC = () => {
   const [viewpointFilter, setViewpointFilter] = useState<ViewpointFilter>('全部')
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('全部')
   const [timeRange, setTimeRange] = useState<[Dayjs, Dayjs] | null>(null)
+  const [categoryConfigs, setCategoryConfigs] = useState<NoteCategoryConfig[]>(DEFAULT_NOTE_CATEGORY_CONFIGS)
 
   useEffect(() => {
     if (!currentStockCode) {
@@ -61,6 +63,26 @@ const StockTimelineView: React.FC = () => {
       cancelled = true
     }
   }, [currentStockCode, setLoading, setStockNote, stockNotes])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadConfigs = async () => {
+      try {
+        const settings = await window.api.config.getAll() as UserSettings
+        if (!cancelled) {
+          setCategoryConfigs(normalizeNoteCategoryConfigs(settings?.notes?.categoryConfigs))
+        }
+      } catch {
+        if (!cancelled) {
+          setCategoryConfigs(normalizeNoteCategoryConfigs(DEFAULT_NOTE_CATEGORY_CONFIGS))
+        }
+      }
+    }
+    loadConfigs()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const filteredEntries = useMemo(() => {
     return [...entries]
@@ -103,14 +125,16 @@ const StockTimelineView: React.FC = () => {
   }
 
   const getCategoryColor = (category: NoteCategory) => {
-    if (category === '看盘预测') return 'magenta'
-    if (category === '操盘打标') return 'volcano'
-    if (category === '交易札记') return 'gold'
-    if (category === '资讯备忘') return 'cyan'
-    return 'default'
+    const colorMap: Record<string, string> = {
+      看盘预测: 'magenta',
+      操盘打标: 'volcano',
+      交易札记: 'gold',
+      资讯备忘: 'cyan'
+    }
+    return colorMap[category] || 'default'
   }
 
-  const getOperationTagColor = (operationTag?: '无' | '买入' | '卖出') => {
+  const getOperationTagColor = (operationTag?: string) => {
     if (operationTag === '买入') return 'red'
     if (operationTag === '卖出') return 'green'
     return 'default'
@@ -129,6 +153,7 @@ const StockTimelineView: React.FC = () => {
   const stockDisplayName = currentStockName && currentStockName !== currentStockCode
     ? `${currentStockName}${currentStockCode}`
     : currentStockCode
+  const categoryLabelMap = new Map(categoryConfigs.map((item) => [item.code, item.label]))
 
   if (!currentStockCode) {
     return (
@@ -162,11 +187,9 @@ const StockTimelineView: React.FC = () => {
             onChange={(value) => setCategoryFilter(value as CategoryFilter)}
             options={[
               { label: '全部类别', value: '全部' },
-              { label: '看盘预测', value: '看盘预测' },
-              { label: '操盘打标', value: '操盘打标' },
-              { label: '交易札记', value: '交易札记' },
-              { label: '备忘', value: '备忘' },
-              { label: '资讯备忘', value: '资讯备忘' }
+              ...categoryConfigs
+                .filter((item) => item.enabled !== false)
+                .map((item) => ({ label: item.label, value: item.code }))
             ]}
           />
           <Select
@@ -209,7 +232,9 @@ const StockTimelineView: React.FC = () => {
                   <Card size="small" bordered className="mb-3">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2">
-                        <Tag color={getCategoryColor(entry.category)}>{entry.category}</Tag>
+                        <Tag color={getCategoryColor(entry.category)}>
+                          {categoryLabelMap.get(entry.category) || entry.category}
+                        </Tag>
                         <Tag color={getViewpointColor(entry.viewpoint?.direction)}>
                           {entry.viewpoint?.direction || '未知'}
                         </Tag>

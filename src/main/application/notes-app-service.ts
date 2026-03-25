@@ -3,6 +3,7 @@ import { MarketDataService } from '../services/market-data'
 import { evaluateActionEvents, evaluateReviewEvents } from '../core/review-evaluator'
 import { buildReviewSnapshot, filterByRange, normalizeDirection } from '../core/review-snapshot'
 import { createTraceId, logPipelineEvent } from '../services/pipeline-logger'
+import { appConfigService } from '../services/app-config'
 import type {
   Action,
   NoteCategory,
@@ -100,6 +101,7 @@ export class NotesAppService {
     const startDate = this.parseDate(request.startDate)
     const endDate = this.parseDate(request.endDate)
     const interval = this.normalizeInterval(request.interval)
+    const reviewCategories = await this.getReviewEligibleCategories()
 
     if (request.scope === 'single') {
       if (!request.stockCode) {
@@ -107,7 +109,7 @@ export class NotesAppService {
       }
       const entries = await this.notesService.getEntries(request.stockCode)
       const rangedEntries = filterByRange(entries, startDate, endDate)
-        .filter((entry) => entry.category === '看盘预测')
+        .filter((entry) => reviewCategories.has(entry.category))
       const snapshot = buildReviewSnapshot(
         rangedEntries.map((entry) => ({ direction: entry.viewpoint?.direction }))
       )
@@ -125,11 +127,12 @@ export class NotesAppService {
 
     const timelineItems = await this.notesService.getTimeline({
       startDate,
-      endDate,
-      category: '看盘预测'
+      endDate
     })
     const snapshot = buildReviewSnapshot(
-      timelineItems.map((item) => ({ direction: normalizeDirection(item.viewpoint?.direction) }))
+      timelineItems
+        .filter((item) => reviewCategories.has(item.category))
+        .map((item) => ({ direction: normalizeDirection(item.viewpoint?.direction) }))
     )
 
     return {
@@ -255,13 +258,14 @@ export class NotesAppService {
     eventTime: string
     direction: '看多' | '看空' | '未知'
   }>> {
+    const reviewCategories = await this.getReviewEligibleCategories()
     if (params.scope === 'single') {
       if (!params.stockCode) {
         throw new Error('single scope requires stockCode')
       }
       const entries = await this.notesService.getEntries(params.stockCode)
       const rangedEntries = filterByRange(entries, params.startDate, params.endDate)
-        .filter((entry) => entry.category === '看盘预测')
+        .filter((entry) => reviewCategories.has(entry.category))
       return rangedEntries.map((entry) => ({
         entryId: entry.id,
         stockCode: params.stockCode!,
@@ -272,10 +276,11 @@ export class NotesAppService {
 
     const timelineItems = await this.notesService.getTimeline({
       startDate: params.startDate,
-      endDate: params.endDate,
-      category: '看盘预测'
+      endDate: params.endDate
     })
-    return timelineItems.map((item) => ({
+    return timelineItems
+      .filter((item) => reviewCategories.has(item.category))
+      .map((item) => ({
       entryId: item.id,
       stockCode: item.stockCode,
       eventTime: this.toIsoString(item.timestamp),
@@ -295,12 +300,14 @@ export class NotesAppService {
     operationTag: '买入' | '卖出'
     viewpointDirection: '看多' | '看空' | '未知'
   }>> {
+    const reviewCategories = await this.getReviewEligibleCategories()
     if (params.scope === 'single') {
       if (!params.stockCode) {
         throw new Error('single scope requires stockCode')
       }
       const entries = await this.notesService.getEntries(params.stockCode)
       const rangedEntries = filterByRange(entries, params.startDate, params.endDate)
+        .filter((entry) => reviewCategories.has(entry.category))
         .filter((entry) => entry.operationTag === '买入' || entry.operationTag === '卖出')
       return rangedEntries.map((entry) => ({
         entryId: entry.id,
@@ -316,6 +323,7 @@ export class NotesAppService {
       endDate: params.endDate
     })
     return timelineItems
+      .filter((item) => reviewCategories.has(item.category))
       .filter((item) => item.operationTag === '买入' || item.operationTag === '卖出')
       .map((item) => ({
         entryId: item.id,
@@ -324,6 +332,19 @@ export class NotesAppService {
         operationTag: item.operationTag as '买入' | '卖出',
         viewpointDirection: normalizeDirection(item.viewpoint?.direction)
       }))
+  }
+
+  private async getReviewEligibleCategories(): Promise<Set<string>> {
+    const settings = await appConfigService.getAll()
+    const configs = settings.notes.categoryConfigs || []
+    const candidates = configs
+      .filter((item) => item.enabled !== false && item.reviewEligible)
+      .map((item) => item.code)
+      .filter(Boolean)
+    if (candidates.length > 0) {
+      return new Set(candidates)
+    }
+    return new Set(['看盘预测'])
   }
 
   private toIsoString(value: Date | string): string {
