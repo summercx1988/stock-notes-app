@@ -38,6 +38,18 @@ const StockNoteView: React.FC = () => {
   const [newCategory, setNewCategory] = useState<NoteCategory>('看盘预测')
   const [newOperationTag, setNewOperationTag] = useState<OperationTag>('无')
 
+  const applyEntryToState = (entry: TimeEntry) => {
+    if (!currentStockCode) return
+    setEntries((prev) => prev.map((item) => (item.id === entry.id ? entry : item)))
+    const currentNote = stockNotes.get(currentStockCode)
+    if (!currentNote) return
+    const nextEntries = currentNote.entries.map((item) => (item.id === entry.id ? entry : item))
+    setStockNote(currentStockCode, {
+      ...currentNote,
+      entries: nextEntries
+    })
+  }
+
   useEffect(() => {
     if (currentStockCode) {
       const note = stockNotes.get(currentStockCode)
@@ -85,13 +97,14 @@ const StockNoteView: React.FC = () => {
     setLoading(true)
     try {
       if (editingId) {
-        await window.api.notes.updateEntry(currentStockCode, editingId, {
+        const updatedEntry = await window.api.notes.updateEntry(currentStockCode, editingId, {
           content: editContent,
           category: editCategory,
           operationTag: editOperationTag,
           viewpoint: editViewpoint || createViewpoint('未知', '短线'),
           eventTime: (editEventTime || dayjs()).toISOString()
         })
+        applyEntryToState(updatedEntry)
         message.success('笔记已更新')
       } else {
         await window.api.notes.addEntry(currentStockCode, {
@@ -104,7 +117,9 @@ const StockNoteView: React.FC = () => {
         })
         message.success('笔记已保存')
       }
-      await loadNote()
+      if (!editingId) {
+        await loadNote()
+      }
       setEditingId(null)
       setEditContent('')
       setEditViewpoint(null)
@@ -208,7 +223,7 @@ const StockNoteView: React.FC = () => {
       中性: 'blue',
       观望: 'default'
     }
-    return <Tag color={colorMap[viewpoint.direction]}>{viewpoint.direction}</Tag>
+    return <Tag color={colorMap[viewpoint.direction]}>观点: {viewpoint.direction}</Tag>
   }
 
   const getCategoryTag = (category: NoteCategory) => {
@@ -219,14 +234,14 @@ const StockNoteView: React.FC = () => {
       备忘: 'default',
       资讯备忘: 'cyan'
     }
-    return <Tag color={colorMap[category]}>{category}</Tag>
+    return <Tag color={colorMap[category]}>类别: {category}</Tag>
   }
 
   const getOperationTag = (operationTag?: OperationTag) => {
     const tag = operationTag || '无'
-    if (tag === '买入') return <Tag color="red">买入</Tag>
-    if (tag === '卖出') return <Tag color="green">卖出</Tag>
-    return <Tag>无操作</Tag>
+    if (tag === '买入') return <Tag color="red">操作: 买入</Tag>
+    if (tag === '卖出') return <Tag color="green">操作: 卖出</Tag>
+    return <Tag>操作: 无</Tag>
   }
 
   const formatTime = (timestamp: Date | string, eventTime?: Date | string) => {
@@ -275,53 +290,68 @@ const StockNoteView: React.FC = () => {
           {isAdding && (
             <div className="mb-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
               <div className="mb-3 flex items-center gap-4">
-                <Select
-                  value={newCategory}
-                  onChange={(value) => setNewCategory(value)}
-                  style={{ width: 120 }}
-                  size="small"
-                  options={NOTE_CATEGORY_OPTIONS}
-                />
-                <Select
-                  value={newViewpoint?.direction || '未知'}
-                  onChange={(v) => setNewViewpoint(createViewpoint(v as Viewpoint['direction'], newViewpoint?.timeHorizon || '短线'))}
-                  style={{ width: 100 }}
-                  size="small"
-                >
-                  <Select.Option value="看多">看多</Select.Option>
-                  <Select.Option value="看空">看空</Select.Option>
-                  <Select.Option value="中性">中性</Select.Option>
-                  <Select.Option value="未知">未知</Select.Option>
-                </Select>
-                <Select
-                  value={newViewpoint?.timeHorizon || '短线'}
-                  onChange={(v) => setNewViewpoint(createViewpoint(newViewpoint?.direction || '未知', v as Viewpoint['timeHorizon']))}
-                  style={{ width: 100 }}
-                  size="small"
-                >
-                  <Select.Option value="短线">短线</Select.Option>
-                  <Select.Option value="中线">中线</Select.Option>
-                  <Select.Option value="长线">长线</Select.Option>
-                </Select>
-                <Select
-                  value={newOperationTag}
-                  onChange={(value) => setNewOperationTag(value)}
-                  style={{ width: 120 }}
-                  size="small"
-                  options={[
-                    { label: '操作: 无', value: '无' },
-                    { label: '操作: 买入', value: '买入' },
-                    { label: '操作: 卖出', value: '卖出' }
-                  ]}
-                />
-                <DatePicker
-                  value={newEventTime}
-                  onChange={(value) => setNewEventTime(value)}
-                  showTime={{ format: 'HH:mm' }}
-                  format="YYYY-MM-DD HH:mm"
-                  placeholder="事件时间（分钟）"
-                  size="small"
-                />
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">类别</span>
+                  <Select
+                    value={newCategory}
+                    onChange={(value) => setNewCategory(value)}
+                    style={{ width: 120 }}
+                    size="small"
+                    options={NOTE_CATEGORY_OPTIONS}
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">观点</span>
+                  <Select
+                    value={newViewpoint?.direction || '未知'}
+                    onChange={(v) => setNewViewpoint(createViewpoint(v as Viewpoint['direction'], newViewpoint?.timeHorizon || '短线'))}
+                    style={{ width: 100 }}
+                    size="small"
+                  >
+                    <Select.Option value="看多">看多</Select.Option>
+                    <Select.Option value="看空">看空</Select.Option>
+                    <Select.Option value="中性">中性</Select.Option>
+                    <Select.Option value="未知">未知</Select.Option>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">周期</span>
+                  <Select
+                    value={newViewpoint?.timeHorizon || '短线'}
+                    onChange={(v) => setNewViewpoint(createViewpoint(newViewpoint?.direction || '未知', v as Viewpoint['timeHorizon']))}
+                    style={{ width: 100 }}
+                    size="small"
+                  >
+                    <Select.Option value="短线">短线</Select.Option>
+                    <Select.Option value="中线">中线</Select.Option>
+                    <Select.Option value="长线">长线</Select.Option>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">操作</span>
+                  <Select
+                    value={newOperationTag}
+                    onChange={(value) => setNewOperationTag(value)}
+                    style={{ width: 120 }}
+                    size="small"
+                    options={[
+                      { label: '无', value: '无' },
+                      { label: '买入', value: '买入' },
+                      { label: '卖出', value: '卖出' }
+                    ]}
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">时间</span>
+                  <DatePicker
+                    value={newEventTime}
+                    onChange={(value) => setNewEventTime(value)}
+                    showTime={{ format: 'HH:mm' }}
+                    format="YYYY-MM-DD HH:mm"
+                    placeholder="事件时间（分钟）"
+                    size="small"
+                  />
+                </div>
               </div>
               <MDEditor
                 value={newContent}
@@ -346,53 +376,68 @@ const StockNoteView: React.FC = () => {
                   {editingId === entry.id ? (
                     <div className="p-4 bg-gray-50">
                       <div className="mb-3 flex items-center gap-4">
-                        <Select
-                          value={editCategory}
-                          onChange={(value) => setEditCategory(value)}
-                          style={{ width: 120 }}
-                          size="small"
-                          options={NOTE_CATEGORY_OPTIONS}
-                        />
-                        <Select
-                          value={editViewpoint?.direction || '未知'}
-                          onChange={(v) => setEditViewpoint(createViewpoint(v as Viewpoint['direction'], editViewpoint?.timeHorizon || '短线'))}
-                          style={{ width: 100 }}
-                          size="small"
-                        >
-                          <Select.Option value="看多">看多</Select.Option>
-                          <Select.Option value="看空">看空</Select.Option>
-                          <Select.Option value="中性">中性</Select.Option>
-                          <Select.Option value="未知">未知</Select.Option>
-                        </Select>
-                        <Select
-                          value={editViewpoint?.timeHorizon || '短线'}
-                          onChange={(v) => setEditViewpoint(createViewpoint(editViewpoint?.direction || '未知', v as Viewpoint['timeHorizon']))}
-                          style={{ width: 100 }}
-                          size="small"
-                        >
-                          <Select.Option value="短线">短线</Select.Option>
-                          <Select.Option value="中线">中线</Select.Option>
-                          <Select.Option value="长线">长线</Select.Option>
-                        </Select>
-                        <Select
-                          value={editOperationTag}
-                          onChange={(value) => setEditOperationTag(value)}
-                          style={{ width: 120 }}
-                          size="small"
-                          options={[
-                            { label: '操作: 无', value: '无' },
-                            { label: '操作: 买入', value: '买入' },
-                            { label: '操作: 卖出', value: '卖出' }
-                          ]}
-                        />
-                        <DatePicker
-                          value={editEventTime}
-                          onChange={(value) => setEditEventTime(value)}
-                          showTime={{ format: 'HH:mm' }}
-                          format="YYYY-MM-DD HH:mm"
-                          placeholder="事件时间（分钟）"
-                          size="small"
-                        />
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">类别</span>
+                          <Select
+                            value={editCategory}
+                            onChange={(value) => setEditCategory(value)}
+                            style={{ width: 120 }}
+                            size="small"
+                            options={NOTE_CATEGORY_OPTIONS}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">观点</span>
+                          <Select
+                            value={editViewpoint?.direction || '未知'}
+                            onChange={(v) => setEditViewpoint(createViewpoint(v as Viewpoint['direction'], editViewpoint?.timeHorizon || '短线'))}
+                            style={{ width: 100 }}
+                            size="small"
+                          >
+                            <Select.Option value="看多">看多</Select.Option>
+                            <Select.Option value="看空">看空</Select.Option>
+                            <Select.Option value="中性">中性</Select.Option>
+                            <Select.Option value="未知">未知</Select.Option>
+                          </Select>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">周期</span>
+                          <Select
+                            value={editViewpoint?.timeHorizon || '短线'}
+                            onChange={(v) => setEditViewpoint(createViewpoint(editViewpoint?.direction || '未知', v as Viewpoint['timeHorizon']))}
+                            style={{ width: 100 }}
+                            size="small"
+                          >
+                            <Select.Option value="短线">短线</Select.Option>
+                            <Select.Option value="中线">中线</Select.Option>
+                            <Select.Option value="长线">长线</Select.Option>
+                          </Select>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">操作</span>
+                          <Select
+                            value={editOperationTag}
+                            onChange={(value) => setEditOperationTag(value)}
+                            style={{ width: 120 }}
+                            size="small"
+                            options={[
+                              { label: '无', value: '无' },
+                              { label: '买入', value: '买入' },
+                              { label: '卖出', value: '卖出' }
+                            ]}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">时间</span>
+                          <DatePicker
+                            value={editEventTime}
+                            onChange={(value) => setEditEventTime(value)}
+                            showTime={{ format: 'HH:mm' }}
+                            format="YYYY-MM-DD HH:mm"
+                            placeholder="事件时间（分钟）"
+                            size="small"
+                          />
+                        </div>
                       </div>
                       <MDEditor
                         value={editContent}
