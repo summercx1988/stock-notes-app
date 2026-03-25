@@ -6,6 +6,7 @@ import fs from 'fs'
 import { app, BrowserWindow } from 'electron'
 import { createTraceId, logPipelineEvent } from './pipeline-logger'
 import { cleanTranscriptText } from '../../shared/text-normalizer'
+import { resolveProjectRoot } from './data-paths'
 
 interface ServerMessage {
   type: 'transcript' | 'audio_saved' | 'error' | 'pong' | 'status'
@@ -52,17 +53,18 @@ export class VoiceTranscriberClient extends EventEmitter {
   }
 
   private resolveDevServicePath(): string {
-    const candidates = [
-      path.join(process.cwd(), 'voice-transcriber-service/voice-transcriber-service'),
-      path.join(process.cwd(), 'voice-transcriber-service/.build/debug/voice-transcriber-service'),
-      path.join(process.cwd(), 'voice-transcriber-service/.build/release/voice-transcriber-service'),
-      path.join(process.cwd(), '../voice-transcriber-service/voice-transcriber-service'),
-      path.join(process.cwd(), '../voice-transcriber-service/.build/debug/voice-transcriber-service'),
-      path.join(process.cwd(), '../voice-transcriber-service/.build/release/voice-transcriber-service')
-    ]
+    const projectRoot = resolveProjectRoot()
+    const rootCandidates = [projectRoot, process.cwd(), path.resolve(process.cwd(), '..')].filter(Boolean) as string[]
+    const candidates: string[] = []
+    for (const root of rootCandidates) {
+      candidates.push(path.join(root, 'voice-transcriber-service/voice-transcriber-service'))
+      candidates.push(path.join(root, 'voice-transcriber-service/.build/debug/voice-transcriber-service'))
+      candidates.push(path.join(root, 'voice-transcriber-service/.build/release/voice-transcriber-service'))
+    }
 
-    const matched = candidates.find((candidate) => fs.existsSync(candidate))
-    return matched || candidates[0]
+    const uniqueCandidates = Array.from(new Set(candidates))
+    const matched = uniqueCandidates.find((candidate) => fs.existsSync(candidate))
+    return matched || uniqueCandidates[0] || path.join(process.cwd(), 'voice-transcriber-service/voice-transcriber-service')
   }
 
   setMainWindow(window: BrowserWindow) {

@@ -17,6 +17,7 @@ import type {
 import { stockDatabase } from './stock-db'
 import { createTraceId, logPipelineEvent } from './pipeline-logger'
 import { normalizeNoteContent, normalizeStockNameText } from '../../shared/text-normalizer'
+import { getDataPath } from './data-paths'
 
 interface EntryMeta {
   id?: string
@@ -36,8 +37,9 @@ export class NotesService {
   private fileIndexPromise: Promise<void> | null = null
 
   constructor(notesDir?: string) {
-    this.notesDir = notesDir || path.join(process.cwd(), 'data', 'stocks')
-    this.audioDir = path.join(process.cwd(), 'data', 'audio')
+    const defaultNotesDir = getDataPath('stocks')
+    this.notesDir = notesDir || defaultNotesDir
+    this.audioDir = path.join(path.dirname(this.notesDir), 'audio')
   }
 
   async addEntry(

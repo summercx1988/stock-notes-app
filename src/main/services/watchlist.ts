@@ -2,13 +2,14 @@ import fs from 'fs/promises'
 import path from 'path'
 import { stockDatabase, type StockInfo } from './stock-db'
 import type { WatchlistImportResult } from '../../shared/types'
+import { getDataPath } from './data-paths'
 
 interface WatchlistPayload {
   codes: string[]
   updatedAt: string
 }
 
-const WATCHLIST_PATH = path.join(process.cwd(), 'data', 'watchlist.json')
+const WATCHLIST_PATH = getDataPath('watchlist.json')
 
 class WatchlistService {
   private cache: WatchlistPayload | null = null

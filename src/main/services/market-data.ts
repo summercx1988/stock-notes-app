@@ -1,6 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import type { KlineInterval, MarketCandle } from '../../shared/types'
+import { getDataPath } from './data-paths'
 
 interface MarketCachePayload {
   stockCode: string
@@ -13,7 +14,7 @@ export class MarketDataService {
   private readonly cacheDir: string
 
   constructor(cacheDir?: string) {
-    this.cacheDir = cacheDir || path.join(process.cwd(), 'data', 'market')
+    this.cacheDir = cacheDir || getDataPath('market')
   }
 
   async getCandles(

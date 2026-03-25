@@ -2,8 +2,9 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { UserSettings } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
+import { getDataPath } from './data-paths'
 
-const SETTINGS_PATH = path.join(process.cwd(), 'data', 'config', 'settings.json')
+const SETTINGS_PATH = getDataPath('config', 'settings.json')
 
 const DEFAULT_SETTINGS: UserSettings = {
   textAnalysis: {

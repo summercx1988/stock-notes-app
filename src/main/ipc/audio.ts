@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { AudioService } from '../services/audio'
 import fs from 'fs/promises'
 import path from 'path'
+import { getDataPath } from '../services/data-paths'
 
 const audioService = new AudioService()
 
@@ -22,7 +23,7 @@ ipcMain.handle('audio:convert', async (_, inputPath: string, format: string) => 
 })
 
 ipcMain.handle('audio:saveRecording', async (_, buffer: ArrayBuffer, filename: string) => {
-  const audioDir = path.join(process.cwd(), 'data', 'audio', 'temp')
+  const audioDir = getDataPath('audio', 'temp')
   await fs.mkdir(audioDir, { recursive: true })
   const filePath = path.join(audioDir, filename)
   await fs.writeFile(filePath, Buffer.from(buffer))

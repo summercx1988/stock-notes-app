@@ -1,18 +1,13 @@
 import path from 'path'
 import fs from 'fs/promises'
+import { getDataPath } from './data-paths'
 
 export class AudioService {
   private outputPath: string = ''
   
   async startRecording(): Promise<string> {
     const timestamp = Date.now()
-    this.outputPath = path.join(
-      process.cwd(), 
-      'data', 
-      'audio', 
-      'temp',
-      `recording_${timestamp}.wav`
-    )
+    this.outputPath = path.join(getDataPath('audio', 'temp'), `recording_${timestamp}.wav`)
     
     await fs.mkdir(path.dirname(this.outputPath), { recursive: true })
     

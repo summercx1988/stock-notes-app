@@ -94,7 +94,11 @@ const Sidebar: React.FC = () => {
             })
           }
         }
-        setStocks(Array.from(uniqueByCode.values()))
+        const nextStocks = Array.from(uniqueByCode.values())
+        setStocks(nextStocks)
+        if (!currentStockCode && nextStocks.length > 0) {
+          setCurrentStock(nextStocks[0].code, nextStocks[0].name)
+        }
       }
     }
 
@@ -105,7 +109,7 @@ const Sidebar: React.FC = () => {
     return () => {
       cancelled = true
     }
-  }, [setStocks, timeline])
+  }, [currentStockCode, setCurrentStock, setStocks, timeline])
 
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) {

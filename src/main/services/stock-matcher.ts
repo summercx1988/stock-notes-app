@@ -1,7 +1,7 @@
 import { distance } from 'fastest-levenshtein'
 import fs from 'fs'
-import path from 'path'
 import { normalizeStockNameText, normalizeToSimplifiedChinese, toHalfWidthText } from '../../shared/text-normalizer'
+import { getDataPath } from './data-paths'
 
 interface Stock {
   code: string
@@ -31,7 +31,7 @@ class StockNameMatcher {
   async load(): Promise<void> {
     if (this.loaded) return
 
-    const dbPath = path.join(process.cwd(), 'data', 'stocks-database.json')
+    const dbPath = getDataPath('stocks-database.json')
     
     try {
       const data = fs.readFileSync(dbPath, 'utf-8')

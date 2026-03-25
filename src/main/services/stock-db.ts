@@ -1,6 +1,6 @@
 import fs from 'fs/promises'
-import path from 'path'
 import { normalizeStockNameText, normalizeToSimplifiedChinese, toHalfWidthText } from '../../shared/text-normalizer'
+import { getDataPath } from './data-paths'
 
 export interface StockInfo {
   code: string
@@ -18,7 +18,7 @@ export interface SearchResult {
   score: number
 }
 
-const DATABASE_PATH = path.join(process.cwd(), 'data', 'stocks-database.json')
+const DATABASE_PATH = getDataPath('stocks-database.json')
 
 class StockDatabase {
   private stocks: Map<string, StockInfo> = new Map()
