@@ -3,19 +3,19 @@ import {
   Alert,
   Button,
   Card,
-  Col,
+  Descriptions,
   DatePicker,
   Empty,
+  InputNumber,
   Radio,
-  Row,
   Select,
   Space,
-  Statistic,
   Table,
   Tag,
   Tooltip,
   message
 } from 'antd'
+import { InfoCircleOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
 import type { KlineInterval, ReviewActionResult, ReviewEvaluateResponse, ReviewEventResult, ReviewScope } from '../../shared/types'
@@ -41,6 +41,8 @@ const ReviewAnalysisView: React.FC = () => {
 
   const [scope, setScope] = useState<ReviewScope>('single')
   const [interval, setInterval] = useState<KlineInterval>('5m')
+  const [ruleWindowDays, setRuleWindowDays] = useState<number>(3)
+  const [ruleThresholdPct, setRuleThresholdPct] = useState<number>(3)
   const [timeRange, setTimeRange] = useState<[Dayjs, Dayjs] | null>([
     dayjs().subtract(30, 'day').startOf('day'),
     dayjs().endOf('day')
@@ -70,8 +72,8 @@ const ReviewAnalysisView: React.FC = () => {
         endDate: timeRange?.[1]?.toISOString(),
         interval,
         rule: {
-          windowDays: 3,
-          thresholdPct: 3,
+          windowDays: ruleWindowDays,
+          thresholdPct: ruleThresholdPct,
           excludeUnknown: true
         }
       })
@@ -105,7 +107,9 @@ const ReviewAnalysisView: React.FC = () => {
       dataIndex: 'direction',
       width: 88,
       render: (value: ReviewEventResult['direction']) => (
-        <Tag color={value === '看多' ? 'red' : 'green'}>{value}</Tag>
+        <Tooltip title={value === '看多' ? '看多：预期窗口内上涨达到阈值' : '看空：预期窗口内下跌达到阈值'}>
+          <Tag color={value === '看多' ? 'red' : 'green'}>{value}</Tag>
+        </Tooltip>
       )
     },
     {
@@ -264,7 +268,26 @@ const ReviewAnalysisView: React.FC = () => {
             ]}
           />
 
-          <Tag color="processing">规则: 3D / 3%</Tag>
+          <InputNumber
+            min={1}
+            max={30}
+            value={ruleWindowDays}
+            onChange={(value) => setRuleWindowDays(Number(value) || 3)}
+            addonAfter="D"
+            style={{ width: 110 }}
+          />
+
+          <InputNumber
+            min={0.1}
+            max={20}
+            step={0.1}
+            value={ruleThresholdPct}
+            onChange={(value) => setRuleThresholdPct(Number(value) || 3)}
+            addonAfter="%"
+            style={{ width: 120 }}
+          />
+
+          <Tag color="processing">规则: {ruleWindowDays}D / {ruleThresholdPct}%</Tag>
 
           <Button type="primary" loading={running} onClick={handleRunReview}>
             开始复盘
@@ -284,95 +307,63 @@ const ReviewAnalysisView: React.FC = () => {
           <Empty description="设置范围后点击“开始复盘”" />
         ) : (
           <Space direction="vertical" size="middle" className="w-full">
-            <Row gutter={12}>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="总笔记" value={evaluation.summary.totalNotes} />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="未知观点" value={evaluation.summary.unknownNotes} />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="可评估样本" value={evaluation.summary.actionableNotes} />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="成功对齐样本" value={evaluation.summary.evaluatedSamples} />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="命中数" value={evaluation.summary.hits} />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="综合胜率" value={evaluation.summary.accuracy} suffix="%" />
-                </Card>
-              </Col>
-            </Row>
+            <Card
+              size="small"
+              title={(
+                <Space size={6}>
+                  <span>预测统计（看盘预测）</span>
+                  <Tooltip title="标签说明：看多=预期上涨；看空=预期下跌；未知/中性不计入胜率">
+                    <InfoCircleOutlined />
+                  </Tooltip>
+                </Space>
+              )}
+            >
+              <Descriptions
+                size="small"
+                column={3}
+                items={[
+                  { key: 'totalNotes', label: '总笔记', children: evaluation.summary.totalNotes },
+                  { key: 'unknownNotes', label: '未知观点', children: evaluation.summary.unknownNotes },
+                  { key: 'actionableNotes', label: '可评估样本', children: evaluation.summary.actionableNotes },
+                  { key: 'evaluatedSamples', label: '成功对齐样本', children: evaluation.summary.evaluatedSamples },
+                  { key: 'hits', label: '命中数', children: evaluation.summary.hits },
+                  { key: 'accuracy', label: '综合胜率', children: `${evaluation.summary.accuracy}%` },
+                  {
+                    key: 'bullish',
+                    label: '看多胜率',
+                    children: `${evaluation.summary.bullish.accuracy}% (${evaluation.summary.bullish.hits}/${evaluation.summary.bullish.samples})`
+                  },
+                  {
+                    key: 'bearish',
+                    label: '看空胜率',
+                    children: `${evaluation.summary.bearish.accuracy}% (${evaluation.summary.bearish.hits}/${evaluation.summary.bearish.samples})`
+                  },
+                  { key: 'insufficientData', label: '数据不足样本', children: evaluation.summary.insufficientData }
+                ]}
+              />
+            </Card>
 
-            <Row gutter={12}>
-              <Col span={8}>
-                <Card>
-                  <Statistic title="看多胜率" value={evaluation.summary.bullish.accuracy} suffix="%" />
-                  <div className="mt-2 text-xs text-gray-500">
-                    {evaluation.summary.bullish.hits} / {evaluation.summary.bullish.samples}
-                  </div>
-                </Card>
-              </Col>
-              <Col span={8}>
-                <Card>
-                  <Statistic title="看空胜率" value={evaluation.summary.bearish.accuracy} suffix="%" />
-                  <div className="mt-2 text-xs text-gray-500">
-                    {evaluation.summary.bearish.hits} / {evaluation.summary.bearish.samples}
-                  </div>
-                </Card>
-              </Col>
-              <Col span={8}>
-                <Card>
-                  <Statistic title="数据不足样本" value={evaluation.summary.insufficientData} />
-                </Card>
-              </Col>
-            </Row>
-
-            <Row gutter={12}>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="操作总数" value={actionSummary.totalActions} />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="买入次数" value={actionSummary.buyActions} />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="卖出次数" value={actionSummary.sellActions} />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="操作胜率" value={actionSummary.accuracy} suffix="%" />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="买入胜率" value={actionSummary.buyAccuracy} suffix="%" />
-                </Card>
-              </Col>
-              <Col span={4}>
-                <Card>
-                  <Statistic title="知行一致率" value={actionSummary.alignmentRate} suffix="%" />
-                </Card>
-              </Col>
-            </Row>
+            <Card size="small" title="操作归因统计（买入/卖出）">
+              <Descriptions
+                size="small"
+                column={3}
+                items={[
+                  { key: 'totalActions', label: '操作总数', children: actionSummary.totalActions },
+                  { key: 'buyActions', label: '买入次数', children: actionSummary.buyActions },
+                  { key: 'sellActions', label: '卖出次数', children: actionSummary.sellActions },
+                  { key: 'evaluatedActionSamples', label: '成功对齐样本', children: actionSummary.evaluatedSamples },
+                  { key: 'actionAccuracy', label: '操作胜率', children: `${actionSummary.accuracy}%` },
+                  { key: 'buyAccuracy', label: '买入胜率', children: `${actionSummary.buyAccuracy}%` },
+                  { key: 'sellAccuracy', label: '卖出胜率', children: `${actionSummary.sellAccuracy}%` },
+                  {
+                    key: 'alignmentRate',
+                    label: '知行一致率',
+                    children: `${actionSummary.alignmentRate}% (${actionSummary.alignedWithViewpoint}/${actionSummary.viewpointLinkedActions})`
+                  },
+                  { key: 'actionInsufficientData', label: '数据不足样本', children: actionSummary.insufficientData }
+                ]}
+              />
+            </Card>
 
             <Card title={`事件判定明细（${evaluation.results.length} 条）`} size="small">
               <Table<ReviewEventResult>
