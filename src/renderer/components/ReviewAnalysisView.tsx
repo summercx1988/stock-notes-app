@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react'
 import {
-  Alert,
   Button,
   Card,
   Descriptions,
@@ -276,6 +275,9 @@ const ReviewAnalysisView: React.FC = () => {
             addonAfter="D"
             style={{ width: 110 }}
           />
+          <Tooltip title="D 表示判定窗口天数。示例：3D=从事件时间开始，向后观察 3 天内是否达到阈值。">
+            <InfoCircleOutlined className="text-gray-400 cursor-help" />
+          </Tooltip>
 
           <InputNumber
             min={0.1}
@@ -286,6 +288,9 @@ const ReviewAnalysisView: React.FC = () => {
             addonAfter="%"
             style={{ width: 120 }}
           />
+          <Tooltip title="% 表示命中阈值。示例：3%=3 天窗口内涨跌幅达到正负 3% 记为命中。">
+            <InfoCircleOutlined className="text-gray-400 cursor-help" />
+          </Tooltip>
 
           <Tag color="processing">规则: {ruleWindowDays}D / {ruleThresholdPct}%</Tag>
 
@@ -293,15 +298,15 @@ const ReviewAnalysisView: React.FC = () => {
             开始复盘
           </Button>
         </Space>
+        <div className="mt-2 text-xs text-gray-500">
+          参数说明：D 为观察窗口天数，% 为命中阈值百分比。默认 3D / 3%。
+        </div>
       </div>
 
       <div className="p-4 overflow-auto">
-        <Alert
-          type="info"
-          showIcon
-          className="mb-4"
-          message="预测复盘统计“看盘预测”类别；操作归因统计所有“买入/卖出”打标事件。两者都按事件时间对齐 K 线，默认规则为 3D / 3%。"
-        />
+        <div className="mb-3 text-xs text-gray-500">
+          预测复盘统计“看盘预测”类别；操作归因统计“买入/卖出”打标事件。
+        </div>
 
         {!evaluation ? (
           <Empty description="设置范围后点击“开始复盘”" />
