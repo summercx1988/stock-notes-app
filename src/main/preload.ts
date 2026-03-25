@@ -46,6 +46,48 @@ const DEFAULT_USER_SETTINGS: UserSettings = {
 const isMissingHandlerError = (error: unknown) =>
   String((error as { message?: string })?.message || error).includes('No handler registered')
 
+const deepClone = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+let fallbackSettings: UserSettings = deepClone(DEFAULT_USER_SETTINGS)
+
+const deepMerge = (base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> => {
+  const result: Record<string, unknown> = { ...base }
+  for (const [key, value] of Object.entries(patch || {})) {
+    if (value === undefined) continue
+    const baseValue = result[key]
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      baseValue &&
+      typeof baseValue === 'object' &&
+      !Array.isArray(baseValue)
+    ) {
+      result[key] = deepMerge(baseValue as Record<string, unknown>, value as Record<string, unknown>)
+    } else {
+      result[key] = value
+    }
+  }
+  return result
+}
+
+const setByPath = (target: Record<string, unknown>, key: string, value: unknown): void => {
+  const segments = key.split('.').filter(Boolean)
+  let current: Record<string, unknown> = target
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index]
+    const isLeaf = index === segments.length - 1
+    if (isLeaf) {
+      current[segment] = value
+      return
+    }
+    const existing = current[segment]
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+      current[segment] = {}
+    }
+    current = current[segment] as Record<string, unknown>
+  }
+}
+
 const api = {
   notes: {
     addEntry: (stockCode: string, data: any) => 
@@ -113,20 +155,71 @@ const api = {
   },
   
   config: {
-    get: (key: string) => ipcRenderer.invoke('config:get', key),
-    getAll: async (): Promise<UserSettings> => {
+    get: async (key: string) => {
       try {
-        return await ipcRenderer.invoke('config:getAll')
+        return await ipcRenderer.invoke('config:get', key)
       } catch (error) {
         if (isMissingHandlerError(error)) {
-          console.warn('[preload] config:getAll handler missing, using default settings')
-          return JSON.parse(JSON.stringify(DEFAULT_USER_SETTINGS))
+          console.warn('[preload] config:get handler missing, reading fallback settings')
+          if (!key || !key.trim()) {
+            return deepClone(fallbackSettings)
+          }
+          return key.split('.').reduce<unknown>((value, segment) => {
+            if (value && typeof value === 'object') {
+              return (value as Record<string, unknown>)[segment]
+            }
+            return undefined
+          }, fallbackSettings as unknown as Record<string, unknown>)
         }
         throw error
       }
     },
-    set: (key: string, value: any) => ipcRenderer.invoke('config:set', key, value),
-    update: (partial: Partial<UserSettings>) => ipcRenderer.invoke('config:update', partial) as Promise<UserSettings>,
+    getAll: async (): Promise<UserSettings> => {
+      try {
+        const settings = await ipcRenderer.invoke('config:getAll')
+        fallbackSettings = deepClone(settings)
+        return settings
+      } catch (error) {
+        if (isMissingHandlerError(error)) {
+          console.warn('[preload] config:getAll handler missing, using default settings')
+          return deepClone(fallbackSettings)
+        }
+        throw error
+      }
+    },
+    set: async (key: string, value: any): Promise<UserSettings> => {
+      try {
+        const settings = await ipcRenderer.invoke('config:set', key, value)
+        fallbackSettings = deepClone(settings)
+        return settings
+      } catch (error) {
+        if (isMissingHandlerError(error)) {
+          console.warn('[preload] config:set handler missing, writing fallback settings only')
+          const next = deepClone(fallbackSettings) as unknown as Record<string, unknown>
+          setByPath(next, key, value)
+          fallbackSettings = next as unknown as UserSettings
+          return deepClone(fallbackSettings)
+        }
+        throw error
+      }
+    },
+    update: async (partial: Partial<UserSettings>): Promise<UserSettings> => {
+      try {
+        const settings = await ipcRenderer.invoke('config:update', partial)
+        fallbackSettings = deepClone(settings)
+        return settings
+      } catch (error) {
+        if (isMissingHandlerError(error)) {
+          console.warn('[preload] config:update handler missing, writing fallback settings only')
+          fallbackSettings = deepMerge(
+            fallbackSettings as unknown as Record<string, unknown>,
+            partial as unknown as Record<string, unknown>
+          ) as unknown as UserSettings
+          return deepClone(fallbackSettings)
+        }
+        throw error
+      }
+    },
   },
 
   watchlist: {
