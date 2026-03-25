@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Divider, Form, Input, Modal, Select, Space, Tabs, Tag, Typography, message } from 'antd'
 import type { NoteCategoryConfig, UserSettings } from '../../shared/types'
-import { DEFAULT_NOTE_CATEGORY_CONFIGS, getEnabledOptions, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
+import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
-  initialTab?: 'text-ai' | 'asr' | 'note-style' | 'category-schema' | 'watchlist'
+  initialTab?: 'text-ai' | 'asr' | 'category-schema' | 'watchlist'
 }
 
 interface WatchlistStock {
@@ -41,11 +41,10 @@ const isMissingHandlerError = (error: unknown) =>
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab = 'text-ai' }) => {
   const [form] = Form.useForm<UserSettings>()
-  const watchedDefaultCategory = Form.useWatch(['notes', 'defaultCategory'], form)
   const [loading, setLoading] = useState(false)
   const [watchlistInput, setWatchlistInput] = useState('')
   const [watchlist, setWatchlist] = useState<WatchlistStock[]>([])
-  const [activeTab, setActiveTab] = useState<'text-ai' | 'asr' | 'note-style' | 'category-schema' | 'watchlist'>(initialTab)
+  const [activeTab, setActiveTab] = useState<'text-ai' | 'asr' | 'category-schema' | 'watchlist'>(initialTab)
   const [categoryConfigs, setCategoryConfigs] = useState<NoteCategoryConfig[]>(DEFAULT_NOTE_CATEGORY_CONFIGS)
 
   const watchlistHint = useMemo(() => {
@@ -56,25 +55,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
     }
     return `已导入 ${watchlist.length} 个代码，ASR 会优先匹配这些股票。`
   }, [watchlist])
-
-  const categoryOptions = useMemo(
-    () => categoryConfigs
-      .filter((item) => item.enabled !== false)
-      .map((item) => ({ label: item.label, value: item.code })),
-    [categoryConfigs]
-  )
-  const defaultCategoryConfig = useMemo(
-    () => normalizeNoteCategoryConfigs(categoryConfigs).find((item) => item.code === watchedDefaultCategory) || categoryConfigs[0],
-    [categoryConfigs, watchedDefaultCategory]
-  )
-  const defaultDirectionOptions = useMemo(
-    () => getEnabledOptions(defaultCategoryConfig?.fields.viewpoint.options || []).map((item) => ({ label: item.label, value: item.code })),
-    [defaultCategoryConfig]
-  )
-  const defaultHorizonOptions = useMemo(
-    () => getEnabledOptions(defaultCategoryConfig?.fields.timeHorizon.options || []).map((item) => ({ label: item.label, value: item.code })),
-    [defaultCategoryConfig]
-  )
 
   const loadData = async () => {
     setLoading(true)
@@ -121,39 +101,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
     void loadData()
   }, [initialTab, open])
 
-  useEffect(() => {
-    const directionValues = new Set(defaultDirectionOptions.map((item) => item.value))
-    const horizonValues = new Set(defaultHorizonOptions.map((item) => item.value))
-    const currentDirection = form.getFieldValue(['notes', 'defaultDirection'])
-    const currentHorizon = form.getFieldValue(['notes', 'defaultTimeHorizon'])
-    if (defaultDirectionOptions.length > 0 && !directionValues.has(currentDirection)) {
-      form.setFieldValue(['notes', 'defaultDirection'], defaultDirectionOptions[0].value)
-    }
-    if (defaultHorizonOptions.length > 0 && !horizonValues.has(currentHorizon)) {
-      form.setFieldValue(['notes', 'defaultTimeHorizon'], defaultHorizonOptions[0].value)
-    }
-  }, [defaultDirectionOptions, defaultHorizonOptions, form, watchedDefaultCategory])
-
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
       const normalizedCategories = normalizeNoteCategoryConfigs(categoryConfigs)
-      const enabledCodes = new Set(
-        normalizedCategories.filter((item) => item.enabled !== false).map((item) => item.code)
-      )
-      const defaultCategory = enabledCodes.has(values.notes.defaultCategory)
-        ? values.notes.defaultCategory
-        : (normalizedCategories.find((item) => item.enabled !== false)?.code || '看盘预测')
-      const fallbackCategory = normalizedCategories.find((item) => item.code === defaultCategory) || normalizedCategories[0]
-      const fallbackDirection = getEnabledOptions(fallbackCategory?.fields.viewpoint.options || [])[0]?.code || '未知'
-      const fallbackHorizon = getEnabledOptions(fallbackCategory?.fields.timeHorizon.options || [])[0]?.code || '短线'
       const nextSettings: UserSettings = {
         ...values,
         notes: {
           ...values.notes,
-          defaultCategory,
-          defaultDirection: values.notes.defaultDirection || fallbackDirection,
-          defaultTimeHorizon: values.notes.defaultTimeHorizon || fallbackHorizon,
+          defaultCategory: '看盘预测',
+          defaultDirection: '未知',
+          defaultTimeHorizon: '短线',
+          style: '轻量',
           categoryConfigs: normalizedCategories
         }
       }
@@ -220,7 +179,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
       <Form form={form} layout="vertical">
         <Tabs
           activeKey={activeTab}
-          onChange={(key) => setActiveTab(key as 'text-ai' | 'asr' | 'note-style' | 'category-schema' | 'watchlist')}
+          onChange={(key) => setActiveTab(key as 'text-ai' | 'asr' | 'category-schema' | 'watchlist')}
           items={[
             {
               key: 'text-ai',
@@ -258,31 +217,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
                       options={[
                         { label: '简体中文优先 (zh-CN)', value: 'zh-CN' },
                         { label: '中文 (zh)', value: 'zh' }
-                      ]}
-                    />
-                  </Form.Item>
-                </>
-              )
-            },
-            {
-              key: 'note-style',
-              label: '笔记偏好',
-              children: (
-                <>
-                  <Form.Item label="默认笔记类别" name={['notes', 'defaultCategory']}>
-                    <Select options={categoryOptions} />
-                  </Form.Item>
-                  <Form.Item label="默认观点" name={['notes', 'defaultDirection']}>
-                    <Select options={defaultDirectionOptions} />
-                  </Form.Item>
-                  <Form.Item label="默认周期" name={['notes', 'defaultTimeHorizon']}>
-                    <Select options={defaultHorizonOptions} />
-                  </Form.Item>
-                  <Form.Item label="笔记风格" name={['notes', 'style']}>
-                    <Select
-                      options={[
-                        { label: '轻量（推荐）', value: '轻量' },
-                        { label: '结构化', value: '结构化' }
                       ]}
                     />
                   </Form.Item>

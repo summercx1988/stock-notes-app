@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
-import { Button, Select, Badge, Space, Segmented, Dropdown } from 'antd'
+import { Button, Segmented, Dropdown } from 'antd'
 import type { MenuProps } from 'antd'
-import { AppstoreOutlined, CloudOutlined, DownOutlined, LaptopOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, DownOutlined } from '@ant-design/icons'
 import { useAppStore } from '../stores/app'
 import type { AppModule } from '../stores/app'
 import RecordingControl from './RecordingControl'
@@ -9,9 +9,9 @@ import SettingsModal from './SettingsModal'
 import DataTransferModal, { type TransferMode } from './DataTransferModal'
 
 const Header: React.FC = () => {
-  const { aiMode, aiHealth, activeModule, setAIMode, setActiveModule } = useAppStore()
+  const { activeModule, setActiveModule } = useAppStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsTab, setSettingsTab] = useState<'text-ai' | 'asr' | 'note-style' | 'watchlist'>('text-ai')
+  const [settingsTab, setSettingsTab] = useState<'text-ai' | 'asr' | 'category-schema' | 'watchlist'>('text-ai')
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferMode, setTransferMode] = useState<TransferMode>('export-all')
 
@@ -67,32 +67,6 @@ const Header: React.FC = () => {
             { label: '复盘分析', value: 'review' }
           ]}
         />
-
-        <Select
-          value={aiMode.current}
-          onChange={(value) => setAIMode({ current: value, forced: true })}
-          style={{ width: 132 }}
-          options={[
-            { value: 'local', label: '💻 本地模式' },
-            { value: 'cloud', label: '☁️ 云端模式' },
-            { value: 'auto', label: '🤖 智能模式' }
-          ]}
-        />
-
-        <Space>
-          {aiMode.current !== 'cloud' && (
-            <Badge
-              status={aiHealth?.local?.available ? 'success' : 'error'}
-              text={<LaptopOutlined />}
-            />
-          )}
-          {aiMode.current !== 'local' && (
-            <Badge
-              status={aiHealth?.cloud?.available ? 'success' : 'error'}
-              text={<CloudOutlined />}
-            />
-          )}
-        </Space>
       </div>
 
       <div className="flex items-center gap-2 no-drag">

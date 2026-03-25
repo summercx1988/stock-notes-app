@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { AIService } from '../services/ai'
-import type { TranscribeResult, OptimizeResult, ViewpointResult, HealthStatus } from '../../shared/types'
+import type { TranscribeResult, OptimizeResult, ViewpointResult } from '../../shared/types'
 
 const aiService = new AIService()
 
@@ -18,16 +18,4 @@ ipcMain.handle('ai:extractViewpoint', async (_, text: string): Promise<Viewpoint
 
 ipcMain.handle('ai:summarize', async (_, text: string): Promise<string> => {
   return aiService.summarize(text)
-})
-
-ipcMain.handle('ai:getMode', async () => {
-  return aiService.getMode()
-})
-
-ipcMain.handle('ai:setMode', async (_, mode: 'local' | 'cloud' | 'auto') => {
-  return aiService.setMode(mode)
-})
-
-ipcMain.handle('ai:getHealth', async (): Promise<{ local: HealthStatus; cloud: HealthStatus }> => {
-  return aiService.getHealth()
 })

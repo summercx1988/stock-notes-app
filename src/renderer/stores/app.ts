@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { StockNote, TimeEntry, Stock, AIMode, HealthStatus, TimelineItem, SearchResult } from '../../shared/types'
+import type { StockNote, TimeEntry, Stock, TimelineItem, SearchResult } from '../../shared/types'
 
 export type RecordingStatus = 'idle' | 'requesting' | 'recording' | 'processing' | 'error'
 export type AppModule = 'notes' | 'timeline' | 'review'
@@ -19,8 +19,6 @@ interface AppState {
   currentEntry: TimeEntry | null
   timeline: TimelineItem[]
   stocks: Stock[]
-  aiMode: AIMode
-  aiHealth: { local: HealthStatus; cloud: HealthStatus } | null
   darkMode: boolean
   loading: boolean
   activeModule: AppModule
@@ -35,8 +33,6 @@ interface AppState {
   setCurrentEntry: (entry: TimeEntry | null) => void
   setTimeline: (items: TimelineItem[]) => void
   setStocks: (stocks: Stock[]) => void
-  setAIMode: (mode: AIMode) => void
-  setAIHealth: (health: { local: HealthStatus; cloud: HealthStatus }) => void
   setDarkMode: (dark: boolean) => void
   setLoading: (loading: boolean) => void
   setActiveModule: (module: AppModule) => void
@@ -64,8 +60,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentEntry: null,
   timeline: [],
   stocks: [],
-  aiMode: { current: 'cloud', forced: false },
-  aiHealth: null,
   darkMode: false,
   loading: false,
   activeModule: 'notes',
@@ -92,10 +86,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTimeline: (items) => set({ timeline: items }),
 
   setStocks: (stocks) => set({ stocks }),
-
-  setAIMode: (mode) => set({ aiMode: mode }),
-
-  setAIHealth: (health) => set({ aiHealth: health }),
 
   setDarkMode: (dark) => set({ darkMode: dark }),
 
