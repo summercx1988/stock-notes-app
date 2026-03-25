@@ -7,6 +7,13 @@ const toOption = (code: string, label: string, order: number): EnumOptionConfig 
   order
 })
 
+const DEFAULT_VIEWPOINT_FALLBACK = toOption('未知', '未知', 1)
+const DEFAULT_OPERATION_FALLBACK = toOption('无', '无', 1)
+const DEFAULT_HORIZON_FALLBACK = toOption('短线', '短线', 1)
+
+export const BUILTIN_CATEGORY_CODES = ['看盘预测', '操盘打标'] as const
+const BUILTIN_CATEGORY_CODE_SET = new Set<string>(BUILTIN_CATEGORY_CODES)
+
 export const DEFAULT_NOTE_CATEGORY_CONFIGS: NoteCategoryConfig[] = [
   {
     code: '看盘预测',
@@ -70,95 +77,17 @@ export const DEFAULT_NOTE_CATEGORY_CONFIGS: NoteCategoryConfig[] = [
         ]
       }
     }
-  },
-  {
-    code: '交易札记',
-    label: '交易札记',
-    enabled: true,
-    reviewEligible: false,
-    builtIn: true,
-    fields: {
-      viewpoint: {
-        enabled: false,
-        options: [
-          toOption('未知', '未知', 1)
-        ]
-      },
-      operationTag: {
-        enabled: false,
-        options: [
-          toOption('无', '无', 1)
-        ]
-      },
-      timeHorizon: {
-        enabled: false,
-        options: [
-          toOption('短线', '短线', 1)
-        ]
-      }
-    }
-  },
-  {
-    code: '备忘',
-    label: '备忘',
-    enabled: true,
-    reviewEligible: false,
-    builtIn: true,
-    fields: {
-      viewpoint: {
-        enabled: false,
-        options: [
-          toOption('未知', '未知', 1)
-        ]
-      },
-      operationTag: {
-        enabled: false,
-        options: [
-          toOption('无', '无', 1)
-        ]
-      },
-      timeHorizon: {
-        enabled: false,
-        options: [
-          toOption('短线', '短线', 1)
-        ]
-      }
-    }
-  },
-  {
-    code: '资讯备忘',
-    label: '资讯备忘',
-    enabled: true,
-    reviewEligible: false,
-    builtIn: true,
-    fields: {
-      viewpoint: {
-        enabled: false,
-        options: [
-          toOption('未知', '未知', 1)
-        ]
-      },
-      operationTag: {
-        enabled: false,
-        options: [
-          toOption('无', '无', 1)
-        ]
-      },
-      timeHorizon: {
-        enabled: false,
-        options: [
-          toOption('短线', '短线', 1)
-        ]
-      }
-    }
   }
 ]
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 
+export const isBuiltInCategoryCode = (code?: string): boolean =>
+  Boolean(code && BUILTIN_CATEGORY_CODE_SET.has(code))
+
 const normalizeOptions = (options: EnumOptionConfig[] | undefined, fallback: EnumOptionConfig[]): EnumOptionConfig[] => {
   const source = Array.isArray(options) && options.length > 0 ? options : fallback
-  return source
+  const normalized = source
     .map((item, index) => ({
       code: String(item?.code || '').trim(),
       label: String(item?.label || item?.code || '').trim(),
@@ -167,6 +96,21 @@ const normalizeOptions = (options: EnumOptionConfig[] | undefined, fallback: Enu
     }))
     .filter((item) => item.code.length > 0)
     .sort((left, right) => left.order - right.order)
+  return normalized.filter((item, index, array) => array.findIndex((other) => other.code === item.code) === index)
+}
+
+const normalizeField = (params: {
+  input: NoteCategoryConfig['fields']['viewpoint'] | NoteCategoryConfig['fields']['operationTag'] | NoteCategoryConfig['fields']['timeHorizon'] | undefined
+  fallback: NoteCategoryConfig['fields']['viewpoint'] | NoteCategoryConfig['fields']['operationTag'] | NoteCategoryConfig['fields']['timeHorizon'] | undefined
+  defaultOption: EnumOptionConfig
+}) => {
+  const { input, fallback, defaultOption } = params
+  const enabled = input?.enabled ?? fallback?.enabled ?? false
+  const options = normalizeOptions(input?.options, fallback?.options || [])
+  return {
+    enabled,
+    options: options.length > 0 ? options : [clone(defaultOption)]
+  }
 }
 
 export const normalizeNoteCategoryConfigs = (configs?: NoteCategoryConfig[]): NoteCategoryConfig[] => {
@@ -178,25 +122,31 @@ export const normalizeNoteCategoryConfigs = (configs?: NoteCategoryConfig[]): No
       const code = String(item?.code || '').trim()
       if (!code) return null
       const fallback = fallbackByCode.get(code)
+      if (fallback) {
+        return clone(fallback)
+      }
       return {
         code,
         label: String(item?.label || code).trim() || code,
         enabled: item?.enabled !== false,
         reviewEligible: Boolean(item?.reviewEligible),
-        builtIn: item?.builtIn ?? fallback?.builtIn ?? false,
+        builtIn: false,
         fields: {
-          viewpoint: {
-            enabled: item?.fields?.viewpoint?.enabled ?? fallback?.fields.viewpoint.enabled ?? false,
-            options: normalizeOptions(item?.fields?.viewpoint?.options, fallback?.fields.viewpoint.options || [])
-          },
-          operationTag: {
-            enabled: item?.fields?.operationTag?.enabled ?? fallback?.fields.operationTag.enabled ?? false,
-            options: normalizeOptions(item?.fields?.operationTag?.options, fallback?.fields.operationTag.options || [])
-          },
-          timeHorizon: {
-            enabled: item?.fields?.timeHorizon?.enabled ?? fallback?.fields.timeHorizon.enabled ?? false,
-            options: normalizeOptions(item?.fields?.timeHorizon?.options, fallback?.fields.timeHorizon.options || [])
-          }
+          viewpoint: normalizeField({
+            input: item?.fields?.viewpoint,
+            fallback: fallback?.fields.viewpoint,
+            defaultOption: DEFAULT_VIEWPOINT_FALLBACK
+          }),
+          operationTag: normalizeField({
+            input: item?.fields?.operationTag,
+            fallback: fallback?.fields.operationTag,
+            defaultOption: DEFAULT_OPERATION_FALLBACK
+          }),
+          timeHorizon: normalizeField({
+            input: item?.fields?.timeHorizon,
+            fallback: fallback?.fields.timeHorizon,
+            defaultOption: DEFAULT_HORIZON_FALLBACK
+          })
         }
       } as NoteCategoryConfig
     })
@@ -209,7 +159,11 @@ export const normalizeNoteCategoryConfigs = (configs?: NoteCategoryConfig[]): No
     }
   }
 
-  return normalized
+  const builtins = DEFAULT_NOTE_CATEGORY_CONFIGS.map((builtin) =>
+    normalized.find((item) => item.code === builtin.code) || clone(builtin)
+  )
+  const custom = normalized.filter((item) => !BUILTIN_CATEGORY_CODE_SET.has(item.code))
+  return [...builtins, ...custom]
 }
 
 export const getCategoryConfig = (configs: NoteCategoryConfig[], code?: string): NoteCategoryConfig | null => {
