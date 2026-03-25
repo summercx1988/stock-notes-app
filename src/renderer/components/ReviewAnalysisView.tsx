@@ -21,6 +21,20 @@ import { useAppStore } from '../stores/app'
 import type { KlineInterval, ReviewActionResult, ReviewEvaluateResponse, ReviewEventResult, ReviewScope } from '../../shared/types'
 
 const { RangePicker } = DatePicker
+const DEFAULT_ACTION_SUMMARY: ReviewEvaluateResponse['actionSummary'] = {
+  totalActions: 0,
+  buyActions: 0,
+  sellActions: 0,
+  evaluatedSamples: 0,
+  insufficientData: 0,
+  hits: 0,
+  accuracy: 0,
+  buyAccuracy: 0,
+  sellAccuracy: 0,
+  alignedWithViewpoint: 0,
+  viewpointLinkedActions: 0,
+  alignmentRate: 0
+}
 
 const ReviewAnalysisView: React.FC = () => {
   const { currentStockCode, currentStockName } = useAppStore()
@@ -61,7 +75,12 @@ const ReviewAnalysisView: React.FC = () => {
           excludeUnknown: true
         }
       })
-      setEvaluation(result)
+      const normalizedResult: ReviewEvaluateResponse = {
+        ...result,
+        actionSummary: (result as Partial<ReviewEvaluateResponse>).actionSummary || DEFAULT_ACTION_SUMMARY,
+        actionResults: (result as Partial<ReviewEvaluateResponse>).actionResults || []
+      }
+      setEvaluation(normalizedResult)
     } catch (error: any) {
       message.error(`复盘计算失败: ${error.message}`)
     } finally {
@@ -127,6 +146,9 @@ const ReviewAnalysisView: React.FC = () => {
       )
     }
   ]
+
+  const actionSummary = evaluation?.actionSummary || DEFAULT_ACTION_SUMMARY
+  const actionResults = evaluation?.actionResults || []
 
   const actionColumns = [
     {
@@ -322,32 +344,32 @@ const ReviewAnalysisView: React.FC = () => {
             <Row gutter={12}>
               <Col span={4}>
                 <Card>
-                  <Statistic title="操作总数" value={evaluation.actionSummary.totalActions} />
+                  <Statistic title="操作总数" value={actionSummary.totalActions} />
                 </Card>
               </Col>
               <Col span={4}>
                 <Card>
-                  <Statistic title="买入次数" value={evaluation.actionSummary.buyActions} />
+                  <Statistic title="买入次数" value={actionSummary.buyActions} />
                 </Card>
               </Col>
               <Col span={4}>
                 <Card>
-                  <Statistic title="卖出次数" value={evaluation.actionSummary.sellActions} />
+                  <Statistic title="卖出次数" value={actionSummary.sellActions} />
                 </Card>
               </Col>
               <Col span={4}>
                 <Card>
-                  <Statistic title="操作胜率" value={evaluation.actionSummary.accuracy} suffix="%" />
+                  <Statistic title="操作胜率" value={actionSummary.accuracy} suffix="%" />
                 </Card>
               </Col>
               <Col span={4}>
                 <Card>
-                  <Statistic title="买入胜率" value={evaluation.actionSummary.buyAccuracy} suffix="%" />
+                  <Statistic title="买入胜率" value={actionSummary.buyAccuracy} suffix="%" />
                 </Card>
               </Col>
               <Col span={4}>
                 <Card>
-                  <Statistic title="知行一致率" value={evaluation.actionSummary.alignmentRate} suffix="%" />
+                  <Statistic title="知行一致率" value={actionSummary.alignmentRate} suffix="%" />
                 </Card>
               </Col>
             </Row>
@@ -363,11 +385,11 @@ const ReviewAnalysisView: React.FC = () => {
               />
             </Card>
 
-            <Card title={`操作归因明细（${evaluation.actionResults.length} 条）`} size="small">
+            <Card title={`操作归因明细（${actionResults.length} 条）`} size="small">
               <Table<ReviewActionResult>
                 rowKey={(record) => `${record.stockCode}-${record.entryId}-${record.eventTime}`}
                 columns={actionColumns}
-                dataSource={evaluation.actionResults}
+                dataSource={actionResults}
                 pagination={{ pageSize: 10 }}
                 scroll={{ x: 1050 }}
                 size="small"
