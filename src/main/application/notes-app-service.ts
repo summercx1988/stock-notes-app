@@ -16,7 +16,9 @@ import type {
   StockNote,
   TimeEntry,
   TimelineItem,
-  Viewpoint
+  Viewpoint,
+  NotesExportResult,
+  NotesImportResult
 } from '../../shared/types'
 
 interface AddEntryPayload {
@@ -78,6 +80,18 @@ export class NotesAppService {
 
   getTimeline(filters?: TimelineFilters): Promise<TimelineItem[]> {
     return this.notesService.getTimeline(filters)
+  }
+
+  exportStockNote(stockCode: string, outputDir: string): Promise<NotesExportResult> {
+    return this.notesService.exportStockNote(stockCode, outputDir)
+  }
+
+  exportAllNotes(outputDir: string): Promise<NotesExportResult> {
+    return this.notesService.exportAllNotes(outputDir)
+  }
+
+  importNotesFromDirectory(sourceDir: string, mode: 'skip' | 'replace' = 'skip'): Promise<NotesImportResult> {
+    return this.notesService.importNotesFromDirectory(sourceDir, mode)
   }
 
   async getReviewSnapshot(request: ReviewSnapshotRequest): Promise<ReviewSnapshotResponse> {

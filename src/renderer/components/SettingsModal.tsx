@@ -12,6 +12,7 @@ const NOTE_CATEGORY_OPTIONS = [
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
+  initialTab?: 'text-ai' | 'asr' | 'note-style' | 'watchlist'
 }
 
 interface WatchlistStock {
@@ -20,11 +21,12 @@ interface WatchlistStock {
   inDatabase: boolean
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab = 'text-ai' }) => {
   const [form] = Form.useForm<UserSettings>()
   const [loading, setLoading] = useState(false)
   const [watchlistInput, setWatchlistInput] = useState('')
   const [watchlist, setWatchlist] = useState<WatchlistStock[]>([])
+  const [activeTab, setActiveTab] = useState<'text-ai' | 'asr' | 'note-style' | 'watchlist'>(initialTab)
 
   const watchlistHint = useMemo(() => {
     if (watchlist.length === 0) return '当前没有自选股，ASR 将按全库匹配。'
@@ -53,8 +55,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
 
   useEffect(() => {
     if (!open) return
+    setActiveTab(initialTab)
     void loadData()
-  }, [open])
+  }, [initialTab, open])
 
   const handleSave = async () => {
     try {
@@ -121,6 +124,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
     >
       <Form form={form} layout="vertical">
         <Tabs
+          activeKey={activeTab}
+          onChange={(key) => setActiveTab(key as 'text-ai' | 'asr' | 'note-style' | 'watchlist')}
           items={[
             {
               key: 'text-ai',

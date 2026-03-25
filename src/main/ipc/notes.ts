@@ -1,6 +1,16 @@
 import { ipcMain } from 'electron'
 import { notesAppService } from '../application/container'
-import type { TimeEntry, StockNote, TimelineItem, Viewpoint, Action, NoteInputType, NoteCategory } from '../../shared/types'
+import type {
+  TimeEntry,
+  StockNote,
+  TimelineItem,
+  Viewpoint,
+  Action,
+  NoteInputType,
+  NoteCategory,
+  NotesExportResult,
+  NotesImportResult
+} from '../../shared/types'
 
 ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   content: string
@@ -44,4 +54,16 @@ ipcMain.handle('notes:getTimeline', async (_, filters?: {
   category?: NoteCategory
 }): Promise<TimelineItem[]> => {
   return notesAppService.getTimeline(filters)
+})
+
+ipcMain.handle('notes:exportStock', async (_, stockCode: string, outputDir: string): Promise<NotesExportResult> => {
+  return notesAppService.exportStockNote(stockCode, outputDir)
+})
+
+ipcMain.handle('notes:exportAll', async (_, outputDir: string): Promise<NotesExportResult> => {
+  return notesAppService.exportAllNotes(outputDir)
+})
+
+ipcMain.handle('notes:importFromDirectory', async (_, sourceDir: string, mode: 'skip' | 'replace' = 'skip'): Promise<NotesImportResult> => {
+  return notesAppService.importNotesFromDirectory(sourceDir, mode)
 })

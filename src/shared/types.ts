@@ -182,6 +182,28 @@ export interface WatchlistImportResult {
   knownStocks: number
 }
 
+export interface NotesExportResult {
+  scope: 'single' | 'all'
+  stockCode?: string
+  outputDir: string
+  exportDir: string
+  exportedStocks: string[]
+  exportedFiles: number
+  copiedAudioDirs: number
+  manifestPath: string
+}
+
+export interface NotesImportResult {
+  sourceDir: string
+  mode: 'skip' | 'replace'
+  imported: number
+  skipped: number
+  failed: number
+  importedStocks: string[]
+  skippedStocks: string[]
+  failedFiles: Array<{ fileName: string; reason: string }>
+}
+
 export interface TimelineItem {
   id: string
   stockCode: string

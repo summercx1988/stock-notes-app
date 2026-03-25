@@ -1,28 +1,28 @@
-# 盯盘笔记系统 - 使用与开发说明 v3.2
+# 盯盘笔记系统 - 使用与开发说明 v3.3
 
-**版本：** v3.2
-**更新日期：** 2026-03-24
+**版本：** v3.3  
+**更新日期：** 2026-03-24  
 **适用范围：** 当前主仓库 `stock-notes-app`
 
 ---
 
 ## 一、当前实现概览
 
-当前版本聚焦于一条稳定、简单的链路：
+当前版本聚焦于一条稳定、轻量、可扩展的链路：
 
 ```text
 录音 / 上传音频
   -> 本地 whisper.cpp 转写
-  -> 文本纠错 + 股票名称匹配
-  -> 保存到股票 Markdown 笔记
+  -> 文本纠错 + 股票名称匹配（优先自选股）
+  -> 保存到单股票 Markdown 文件
 ```
 
 说明：
 
-- 录音能力由仓库内子模块 `voice-transcriber-service` 提供
-- 转写优先使用本地 `whisper.cpp`
-- AI 不再做观点提炼和长文本分析
-- 云端能力主要用于纠错和股票名修正
+- 录音能力由子模块 `voice-transcriber-service` 提供
+- 转写优先本地 `whisper.cpp`
+- AI 负责纠错与股票定位，不写入“思考内容”
+- 每只股票只有一个主笔记文件（文件即数据库）
 
 ---
 
@@ -31,41 +31,20 @@
 - macOS 13+
 - Node.js 18+ 与 npm
 - Swift 5.9+
-- 已编译好的 `whisper.cpp`
-- `ggml-medium.bin` 模型文件
+- 可执行的 `whisper.cpp/main`
+- 模型 `ggml-medium.bin`
 
 ---
 
 ## 三、开发环境启动
 
-### 3.1 前端与 Electron
+### 3.1 Electron 应用
 
 ```bash
 cd stock-notes-app
 npm install
 npm run electron:dev
 ```
-
-### 3.1.1 复盘 CLI（Agent/脚本可调用）
-
-```bash
-npm run cli:review -- --mode evaluate --scope overall --start 2026-03-01T00:00:00+08:00 --end 2026-03-24T23:59:59+08:00 --interval 5m
-```
-
-### 3.1.2 回归 CLI（Sprint1 稳定性）
-
-```bash
-# 默认使用离线回退路径（不调用真实 AI 接口）
-npm run cli:regression
-
-# 使用真实 AI 接口（需配置 API Key）
-npm run cli:regression -- --use-real-ai
-
-# 保留回归运行临时数据目录（便于排查）
-npm run cli:regression -- --keep-data
-```
-
-回归样例文件：`docs/regression-cases.json`（当前 24 条）。
 
 ### 3.2 Swift 语音服务
 
@@ -77,127 +56,140 @@ swift build
 cp .build/debug/voice-transcriber-service ./voice-transcriber-service
 ```
 
-默认开发环境会从以下相对路径启动语音服务：
+默认开发路径：
 
 ```text
 voice-transcriber-service/voice-transcriber-service
 ```
 
-### 3.3 Whisper 模型
+### 3.3 CLI（复盘与回归）
 
-确认以下文件存在：
+```bash
+# 复盘评估（示例）
+npm run cli:review -- --mode evaluate --scope overall --start 2026-03-01T00:00:00+08:00 --end 2026-03-24T23:59:59+08:00 --interval 5m
 
-```text
-voice-transcriber-service/whisper.cpp/main
-voice-transcriber-service/whisper.cpp/models/ggml-medium.bin
+# 回归测试（默认离线）
+npm run cli:regression
 ```
 
 ---
 
-## 四、使用流程
+## 四、UI 与交互入口
 
-### 4.1 录音录入
+### 4.1 顶部核心入口
 
-1. 点击主界面右上角的 `录音` 按钮。
-2. 弹窗打开后，应用按需检查并启动语音服务。
-3. 点击 `开始录音`。
-4. 说完后点击 `停止录音`。
-5. 应用等待最终转写结果返回。
-6. 进行纠错和股票匹配。
-7. 点击 `保存笔记`，写入对应股票的 Markdown 文件。
+- `录音`：看盘时快速录入（高频功能）
 
-### 4.2 上传音频
+### 4.2 顶部 `工具` 下拉入口
 
-支持以下格式：
+- `偏好设置`
+- `自选股设置`
+- `笔记导入导出`
+  - 导出当前股票
+  - 导出全部笔记
+  - 导入笔记（跳过重复）
+  - 导入笔记（覆盖重复）
 
-- WAV
-- MP3
-- M4A
-- AAC
-
-上传后会直接触发整文件转写，再进入纠错和股票匹配。
+这样做的目标是只暴露高频按钮，低频配置收敛到多层级菜单，减少主界面负担。
 
 ---
 
-## 五、当前 UI 状态
+## 五、数据落盘与命名规范
 
-录音弹窗当前分为四步：
+### 5.1 文件命名
 
-1. 录音
-2. 转写
-3. 处理
-4. 保存
+统一为：
 
-其中“处理”表示：
+```text
+股票名称(股票代码).md
+```
 
-- 纠错错别字和同音字
-- 根据候选股票列表修正常见股票名称
-- 给出最可能的股票匹配结果
-- 关键链路会输出统一的 `[Pipeline]` 结构化日志，便于定位失败阶段
+示例：
 
----
+```text
+中远海能(600026).md
+```
 
-## 六、数据落盘位置
+### 5.2 数据目录
 
 ```text
 data/
 ├── stocks/
-│   ├── 600519.md
-│   ├── 000544.md
+│   ├── 中远海能(600026).md
+│   ├── 贵州茅台(600519).md
 │   └── ...
-└── audio/
-    └── temp/
+├── audio/
+│   ├── temp/
+│   └── 600026/
+└── stocks-database.json
 ```
 
-笔记以 Markdown 文件保存，音频临时文件保存在 `data/audio/temp/`。
+### 5.3 兼容策略
+
+- 历史命名（如 `600026.md`）仍可读取
+- 当文件被更新写回时，会自动迁移到新命名格式
+
+---
+
+## 六、导入导出说明（GUI）
+
+### 6.1 导出结构
+
+导出目录内会生成：
+
+```text
+stock-notes-export-.../
+├── manifest.json
+├── stocks/
+└── audio/
+```
+
+`manifest.json` 包含导出范围、股票列表、命名规范版本等元信息。
+
+### 6.2 导入模式
+
+- `跳过重复`：目标中已有同股票代码则跳过
+- `覆盖重复`：目标中已有同股票代码则覆盖
+
+导入时支持两种来源目录：
+
+- 直接选择包含 `stocks/` 的导出包根目录
+- 直接选择仅含 `.md` 的股票目录
 
 ---
 
 ## 七、常见问题
 
-### Q1：点开录音弹窗后无法开始录音
+### Q1：录音弹窗无法开始录音
 
 优先检查：
 
-- Swift 语音服务是否已编译
-- 麦克风权限是否已授予
-- 端口 `8765` 是否被其他进程占用
+- Swift 服务是否编译完成
+- 麦克风权限是否授予
+- `8765` 端口是否被占用
 
-### Q2：录音能保存，但一直没有转写结果
+### Q2：可以录音但无转写结果
 
 优先检查：
 
 - `whisper.cpp/main` 是否可执行
-- 模型 `ggml-medium.bin` 是否存在
-- 音频文件是否实际包含语音
+- `ggml-medium.bin` 是否存在
+- 音频是否含有效语音
 
-### Q3：股票名称识别不准
+### Q3：股票识别命中率不稳定
 
-当前策略是：
+当前策略：
 
-- 先做本地候选匹配
-- 再把候选列表交给纠错环节辅助修正
-
-专有名词仍可能识别错误，后续可继续优化股票匹配策略。
+- 先本地候选匹配
+- 再结合纠错与候选修正
+- 自选股列表会作为优先匹配上下文
 
 ---
 
 ## 八、文档地图
 
-当前实现基线：
-
-- `docs/TECHNICAL_SPEC.md`
-- `docs/README.md`
-- `docs/RECORDING_TRANSCRIBE_SPEC.md`
-- `docs/MODULAR_ARCHITECTURE.md`（模块化解耦现状与演进路线）
-
-下一阶段规划：
-
-- `docs/PRD.md`（盯盘笔记系统需求）
-- `docs/UI_UX_TECH_PLAN.md`（UI/UX 与技术实施方案）
-- `docs/ROADMAP_STOCK_ANALYSIS.md`（Debug 与股票分析执行路线图）
-
-历史资料（参考）：
-
-- `docs/DATA_MODEL.md`
-- `docs/TEST_GUIDE.md`
+- `docs/PRD.md`：产品需求（6 个核心诉求 + 类别与复盘口径）
+- `docs/TECHNICAL_SPEC.md`：技术架构与数据流程（当前实现）
+- `docs/MODULAR_ARCHITECTURE.md`：模块化解耦与复用路线
+- `docs/UI_UX_TECH_PLAN.md`：UI/UX 与技术实施计划
+- `docs/ROADMAP_STOCK_ANALYSIS.md`：后续股票分析路线图

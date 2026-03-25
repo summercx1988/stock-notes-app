@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  NotesExportResult,
+  NotesImportResult,
   ReviewEvaluateRequest,
   ReviewEvaluateResponse,
   ReviewSnapshotRequest,
@@ -37,6 +39,12 @@ const api = {
       ipcRenderer.invoke('notes:deleteEntry', stockCode, entryId),
     getTimeline: (filters?: any) => 
       ipcRenderer.invoke('notes:getTimeline', filters),
+    exportStock: (stockCode: string, outputDir: string): Promise<NotesExportResult> =>
+      ipcRenderer.invoke('notes:exportStock', stockCode, outputDir),
+    exportAll: (outputDir: string): Promise<NotesExportResult> =>
+      ipcRenderer.invoke('notes:exportAll', outputDir),
+    importFromDirectory: (sourceDir: string, mode: 'skip' | 'replace' = 'skip'): Promise<NotesImportResult> =>
+      ipcRenderer.invoke('notes:importFromDirectory', sourceDir, mode),
   },
   
   ai: {
@@ -109,6 +117,11 @@ const api = {
     evaluate: (request: ReviewEvaluateRequest): Promise<ReviewEvaluateResponse> =>
       ipcRenderer.invoke('review:evaluate', request),
   },
+
+  system: {
+    pickDirectory: (defaultPath?: string): Promise<string | null> =>
+      ipcRenderer.invoke('system:pickDirectory', defaultPath)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

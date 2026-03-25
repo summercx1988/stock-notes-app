@@ -2,7 +2,17 @@ import { v4 as uuidv4 } from 'uuid'
 import yaml from 'js-yaml'
 import fs from 'fs/promises'
 import path from 'path'
-import type { StockNote, TimeEntry, TimelineItem, Viewpoint, Action, NoteInputType, NoteCategory } from '../../shared/types'
+import type {
+  StockNote,
+  TimeEntry,
+  TimelineItem,
+  Viewpoint,
+  Action,
+  NoteInputType,
+  NoteCategory,
+  NotesExportResult,
+  NotesImportResult
+} from '../../shared/types'
 import { stockDatabase } from './stock-db'
 import { createTraceId, logPipelineEvent } from './pipeline-logger'
 import { normalizeNoteContent, normalizeStockNameText } from '../../shared/text-normalizer'
@@ -17,10 +27,15 @@ interface EntryMeta {
 
 export class NotesService {
   private notesDir: string
+  private audioDir: string
   private cache: Map<string, StockNote> = new Map()
+  private filePathIndex: Map<string, string> = new Map()
+  private fileIndexLoaded: boolean = false
+  private fileIndexPromise: Promise<void> | null = null
 
   constructor(notesDir?: string) {
     this.notesDir = notesDir || path.join(process.cwd(), 'data', 'stocks')
+    this.audioDir = path.join(process.cwd(), 'data', 'audio')
   }
 
   async addEntry(
@@ -102,8 +117,8 @@ export class NotesService {
     const cached = this.cache.get(stockCode)
     if (cached) return cached
 
-    const filePath = this.getStockFilePath(stockCode)
     try {
+      const filePath = await this.resolveStockFilePath(stockCode)
       const content = await fs.readFile(filePath, 'utf-8')
       const parsed = await this.parseStockNote(content)
       if (parsed.needsBackfill) {
@@ -112,7 +127,20 @@ export class NotesService {
       const note = parsed.note
       this.cache.set(stockCode, note)
       return note
-    } catch {
+    } catch (error: any) {
+      if (error?.code === 'ENOENT') {
+        await this.ensureFilePathIndex(true)
+        try {
+          const fallbackPath = await this.resolveStockFilePath(stockCode)
+          const content = await fs.readFile(fallbackPath, 'utf-8')
+          const parsed = await this.parseStockNote(content)
+          const note = parsed.note
+          this.cache.set(stockCode, note)
+          return note
+        } catch {
+          return null
+        }
+      }
       return null
     }
   }
@@ -251,6 +279,164 @@ export class NotesService {
     return sorted
   }
 
+  async exportStockNote(stockCode: string, outputDir: string): Promise<NotesExportResult> {
+    const note = await this.getStockNote(stockCode)
+    if (!note) {
+      throw new Error(`Stock note not found: ${stockCode}`)
+    }
+
+    await fs.mkdir(outputDir, { recursive: true })
+    const exportDir = path.join(outputDir, this.createExportFolderName('single', stockCode))
+    const stocksDir = path.join(exportDir, 'stocks')
+    const audioDir = path.join(exportDir, 'audio')
+    await fs.mkdir(stocksDir, { recursive: true })
+    await fs.mkdir(audioDir, { recursive: true })
+
+    const sourceNotePath = await this.resolveStockFilePath(stockCode)
+    const targetNotePath = path.join(stocksDir, path.basename(sourceNotePath))
+    await fs.copyFile(sourceNotePath, targetNotePath)
+
+    let copiedAudioDirs = 0
+    const sourceAudioDir = path.join(this.audioDir, stockCode)
+    if (await this.pathExists(sourceAudioDir)) {
+      await fs.cp(sourceAudioDir, path.join(audioDir, stockCode), { recursive: true, force: true })
+      copiedAudioDirs = 1
+    }
+
+    const manifestPath = path.join(exportDir, 'manifest.json')
+    await fs.writeFile(manifestPath, JSON.stringify({
+      schema_version: '1.0.0',
+      exported_at: new Date().toISOString(),
+      scope: 'single',
+      stock_codes: [stockCode],
+      file_naming: '股票名称(股票代码).md'
+    }, null, 2), 'utf-8')
+
+    return {
+      scope: 'single',
+      stockCode,
+      outputDir,
+      exportDir,
+      exportedStocks: [stockCode],
+      exportedFiles: 1,
+      copiedAudioDirs,
+      manifestPath
+    }
+  }
+
+  async exportAllNotes(outputDir: string): Promise<NotesExportResult> {
+    await fs.mkdir(outputDir, { recursive: true })
+    const exportDir = path.join(outputDir, this.createExportFolderName('all'))
+    const stocksDir = path.join(exportDir, 'stocks')
+    const audioDir = path.join(exportDir, 'audio')
+    await fs.mkdir(stocksDir, { recursive: true })
+    await fs.mkdir(audioDir, { recursive: true })
+
+    const stockCodes = await this.getAllStockCodes()
+    let exportedFiles = 0
+    let copiedAudioDirs = 0
+
+    for (const stockCode of stockCodes) {
+      const sourceNotePath = await this.resolveStockFilePath(stockCode)
+      if (!(await this.pathExists(sourceNotePath))) continue
+
+      const targetNotePath = path.join(stocksDir, path.basename(sourceNotePath))
+      await fs.copyFile(sourceNotePath, targetNotePath)
+      exportedFiles += 1
+
+      const sourceAudioDir = path.join(this.audioDir, stockCode)
+      if (await this.pathExists(sourceAudioDir)) {
+        await fs.cp(sourceAudioDir, path.join(audioDir, stockCode), { recursive: true, force: true })
+        copiedAudioDirs += 1
+      }
+    }
+
+    const manifestPath = path.join(exportDir, 'manifest.json')
+    await fs.writeFile(manifestPath, JSON.stringify({
+      schema_version: '1.0.0',
+      exported_at: new Date().toISOString(),
+      scope: 'all',
+      stock_codes: stockCodes,
+      file_naming: '股票名称(股票代码).md'
+    }, null, 2), 'utf-8')
+
+    return {
+      scope: 'all',
+      outputDir,
+      exportDir,
+      exportedStocks: stockCodes,
+      exportedFiles,
+      copiedAudioDirs,
+      manifestPath
+    }
+  }
+
+  async importNotesFromDirectory(sourceDir: string, mode: 'skip' | 'replace' = 'skip'): Promise<NotesImportResult> {
+    const stocksSourceDir = await this.resolveStocksSourceDir(sourceDir)
+    const files = await fs.readdir(stocksSourceDir)
+    const mdFiles = files.filter((fileName) => fileName.endsWith('.md'))
+
+    const result: NotesImportResult = {
+      sourceDir,
+      mode,
+      imported: 0,
+      skipped: 0,
+      failed: 0,
+      importedStocks: [],
+      skippedStocks: [],
+      failedFiles: []
+    }
+
+    for (const fileName of mdFiles) {
+      const sourceFilePath = path.join(stocksSourceDir, fileName)
+      try {
+        const rawContent = await fs.readFile(sourceFilePath, 'utf-8')
+        const frontMatterInfo = this.extractStockMetaFromFrontMatter(rawContent)
+        const stockCode = this.resolveStockCodeForImport(fileName, frontMatterInfo.stockCode)
+        if (!stockCode) {
+          result.failed += 1
+          result.failedFiles.push({ fileName, reason: '无法识别股票代码' })
+          continue
+        }
+
+        const stockName = frontMatterInfo.stockName || (await this.getStockInfo(stockCode))?.name || stockCode
+        const targetPath = this.getPreferredStockFilePath(stockCode, stockName)
+        const existingPath = await this.resolveStockFilePath(stockCode)
+        const hasExisting = await this.pathExists(existingPath)
+
+        if (hasExisting && mode === 'skip') {
+          result.skipped += 1
+          result.skippedStocks.push(stockCode)
+          continue
+        }
+
+        await fs.mkdir(path.dirname(targetPath), { recursive: true })
+        await fs.copyFile(sourceFilePath, targetPath)
+
+        if (hasExisting && existingPath !== targetPath && mode === 'replace' && await this.pathExists(existingPath)) {
+          await fs.unlink(existingPath).catch(() => undefined)
+        }
+
+        const sourceAudioDir = path.join(sourceDir, 'audio', stockCode)
+        if (await this.pathExists(sourceAudioDir)) {
+          await fs.mkdir(this.audioDir, { recursive: true })
+          await fs.cp(sourceAudioDir, path.join(this.audioDir, stockCode), { recursive: true, force: mode === 'replace' })
+        }
+
+        this.filePathIndex.set(stockCode, targetPath)
+        this.cache.delete(stockCode)
+        result.imported += 1
+        result.importedStocks.push(stockCode)
+      } catch (error: any) {
+        result.failed += 1
+        result.failedFiles.push({ fileName, reason: error?.message || String(error) })
+      }
+    }
+
+    await this.ensureFilePathIndex(true)
+    return result
+  }
+
   private generateTitle(content: string): string {
     const firstLine = content.trim().split('\n')[0] || ''
     return firstLine.slice(0, 50) || '无标题'
@@ -276,15 +462,16 @@ export class NotesService {
   }
 
   private async createStockFile(stockCode: string, entry?: TimeEntry): Promise<void> {
-    const filePath = this.getStockFilePath(stockCode)
+    const stockInfo = await this.getStockInfo(stockCode)
+    const resolvedStockName = stockInfo?.name || stockCode
+    const filePath = this.getPreferredStockFilePath(stockCode, resolvedStockName)
     await fs.mkdir(path.dirname(filePath), { recursive: true })
 
-    const stockInfo = await this.getStockInfo(stockCode)
     const createdAt = new Date()
 
     const frontMatter = {
       stock_code: stockCode,
-      stock_name: stockInfo?.name || stockCode,
+      stock_name: resolvedStockName,
       market: stockInfo?.market || 'SH',
       industry: stockInfo?.industry,
       sector: stockInfo?.sector,
@@ -302,13 +489,16 @@ export class NotesService {
     }
 
     await fs.writeFile(filePath, content, 'utf-8')
+    this.filePathIndex.set(stockCode, filePath)
+    this.fileIndexLoaded = true
+    this.cache.delete(stockCode)
   }
 
   private async rewriteStockFile(stockCode: string, stockNote?: StockNote): Promise<void> {
     const note = stockNote ?? await this.getStockNote(stockCode)
     if (!note) return
 
-    const filePath = this.getStockFilePath(stockCode)
+    const currentPath = await this.resolveStockFilePath(stockCode)
     const sortedEntries = [...note.entries].sort(
       (a, b) => this.getEntryEventTime(b).getTime() - this.getEntryEventTime(a).getTime()
     )
@@ -316,6 +506,7 @@ export class NotesService {
     const resolvedStockName = note.stockName && note.stockName !== note.stockCode
       ? note.stockName
       : (stockInfo?.name || note.stockCode)
+    const preferredPath = this.getPreferredStockFilePath(note.stockCode, resolvedStockName)
 
     const frontMatter = {
       stock_code: note.stockCode,
@@ -343,7 +534,13 @@ export class NotesService {
       content += this.entryToMarkdown(entry, note.stockCode)
     }
 
-    await fs.writeFile(filePath, content, 'utf-8')
+    await fs.mkdir(path.dirname(preferredPath), { recursive: true })
+    await fs.writeFile(preferredPath, content, 'utf-8')
+    if (preferredPath !== currentPath && await this.pathExists(currentPath)) {
+      await fs.unlink(currentPath).catch(() => undefined)
+    }
+    this.filePathIndex.set(note.stockCode, preferredPath)
+    this.fileIndexLoaded = true
     this.cache.delete(note.stockCode)
   }
 
@@ -730,18 +927,155 @@ export class NotesService {
   }
 
   private async getAllStockCodes(): Promise<string[]> {
+    await this.ensureFilePathIndex()
+    return Array.from(this.filePathIndex.keys())
+  }
+
+  private async resolveStockFilePath(stockCode: string): Promise<string> {
+    await this.ensureFilePathIndex()
+    const indexedPath = this.filePathIndex.get(stockCode)
+    if (indexedPath) {
+      return indexedPath
+    }
+    return this.getPreferredStockFilePath(stockCode, stockCode)
+  }
+
+  private getPreferredStockFilePath(stockCode: string, stockName: string): string {
+    const safeName = this.sanitizeStockFileSegment(stockName || stockCode)
+    return path.join(this.notesDir, `${safeName}(${stockCode}).md`)
+  }
+
+  private sanitizeStockFileSegment(input: string): string {
+    const sanitized = normalizeStockNameText(input)
+      .replace(/[\\/:*?"<>|]/g, '')
+      .replace(/[()]/g, '')
+      .trim()
+
+    if (!sanitized) {
+      return '未命名股票'
+    }
+    if (sanitized.length > 48) {
+      return sanitized.slice(0, 48)
+    }
+    return sanitized
+  }
+
+  private async ensureFilePathIndex(force: boolean = false): Promise<void> {
+    if (!force && this.fileIndexLoaded) {
+      return
+    }
+    if (!force && this.fileIndexPromise) {
+      return this.fileIndexPromise
+    }
+
+    this.fileIndexPromise = this.rebuildFilePathIndex().finally(() => {
+      this.fileIndexPromise = null
+    })
+    await this.fileIndexPromise
+  }
+
+  private async rebuildFilePathIndex(): Promise<void> {
+    const latestByCode = new Map<string, { filePath: string; mtimeMs: number }>()
+
     try {
+      await fs.mkdir(this.notesDir, { recursive: true })
       const files = await fs.readdir(this.notesDir)
-      return files
-        .filter((fileName) => fileName.endsWith('.md'))
-        .map((fileName) => fileName.replace('.md', ''))
+      for (const fileName of files) {
+        if (!fileName.endsWith('.md')) continue
+
+        const stockCode = this.parseStockCodeFromFileName(fileName)
+        if (!stockCode) continue
+
+        const fullPath = path.join(this.notesDir, fileName)
+        const stat = await fs.stat(fullPath)
+        const mtimeMs = stat.mtimeMs
+        const previous = latestByCode.get(stockCode)
+        if (!previous || mtimeMs >= previous.mtimeMs) {
+          latestByCode.set(stockCode, { filePath: fullPath, mtimeMs })
+        }
+      }
     } catch {
-      return []
+      // ignore, leave empty index
+    }
+
+    this.filePathIndex.clear()
+    for (const [stockCode, info] of latestByCode.entries()) {
+      this.filePathIndex.set(stockCode, info.filePath)
+    }
+    this.fileIndexLoaded = true
+  }
+
+  private parseStockCodeFromFileName(fileName: string): string | null {
+    const basename = fileName.replace(/\.md$/i, '')
+    const directCode = basename.match(/^(\d{6})$/)
+    if (directCode) return directCode[1]
+
+    const newStyleCode = basename.match(/\((\d{6})\)$/)
+    if (newStyleCode) return newStyleCode[1]
+
+    const legacyCode = basename.match(/^(\d{6})[-_]/)
+    if (legacyCode) return legacyCode[1]
+
+    const anyCode = basename.match(/(\d{6})/)
+    if (anyCode) return anyCode[1]
+
+    return null
+  }
+
+  private createExportFolderName(scope: 'single' | 'all', stockCode?: string): string {
+    const now = new Date()
+    const text = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0'),
+      '-',
+      String(now.getHours()).padStart(2, '0'),
+      String(now.getMinutes()).padStart(2, '0'),
+      String(now.getSeconds()).padStart(2, '0')
+    ].join('')
+    return scope === 'single'
+      ? `stock-notes-export-${stockCode || 'unknown'}-${text}`
+      : `stock-notes-export-all-${text}`
+  }
+
+  private async resolveStocksSourceDir(sourceDir: string): Promise<string> {
+    const stocksDir = path.join(sourceDir, 'stocks')
+    if (await this.pathExists(stocksDir)) {
+      return stocksDir
+    }
+    return sourceDir
+  }
+
+  private extractStockMetaFromFrontMatter(content: string): { stockCode?: string; stockName?: string } {
+    const normalized = content.replace(/\r\n/g, '\n')
+    const match = normalized.match(/^---\n([\s\S]*?)\n---/)
+    if (!match) {
+      return {}
+    }
+    try {
+      const meta = yaml.load(match[1]) as Record<string, unknown>
+      const stockCode = typeof meta?.stock_code === 'string' ? meta.stock_code.trim() : undefined
+      const stockName = typeof meta?.stock_name === 'string' ? meta.stock_name.trim() : undefined
+      return { stockCode, stockName }
+    } catch {
+      return {}
     }
   }
 
-  private getStockFilePath(stockCode: string): string {
-    return path.join(this.notesDir, `${stockCode}.md`)
+  private resolveStockCodeForImport(fileName: string, stockCodeFromMeta?: string): string | null {
+    if (stockCodeFromMeta && /^\d{6}$/.test(stockCodeFromMeta)) {
+      return stockCodeFromMeta
+    }
+    return this.parseStockCodeFromFileName(fileName)
+  }
+
+  private async pathExists(targetPath: string): Promise<boolean> {
+    try {
+      await fs.access(targetPath)
+      return true
+    } catch {
+      return false
+    }
   }
 
   private async getStockInfo(stockCode: string): Promise<{
