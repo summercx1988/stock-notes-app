@@ -522,9 +522,29 @@ const RecordingControl: React.FC = () => {
   const handleSaveNote = async () => {
     if (!extractResult) return
 
-    const stockCode = selectedStockCode || extractResult.stock?.code
+    const normalizeStockCode = (value?: string) => String(value || '').replace(/\D/g, '').slice(0, 6)
+    let stockCode = normalizeStockCode(selectedStockCode) || normalizeStockCode(extractResult.stock?.code)
     if (!stockCode) {
-      message.warning('请选择股票')
+      try {
+        const sourceText = [editableNoteContent, extractResult.optimizedText, extractResult.originalText, transcribedText]
+          .filter(Boolean)
+          .join('\n')
+        const matched = await window.api.stock.match(sourceText)
+        const matchedCode = normalizeStockCode(matched?.stock?.code)
+        if (matchedCode) {
+          stockCode = matchedCode
+          setSelectedStockCode(matchedCode)
+          if (matched?.stock?.name) {
+            setSelectedStockName(matched.stock.name)
+          }
+        }
+      } catch (error) {
+        console.warn('[RecordingControl] stock.match fallback failed during save:', error)
+      }
+    }
+
+    if (!stockCode || stockCode.length !== 6) {
+      message.warning('请先选择或输入6位股票代码')
       return
     }
 
@@ -573,6 +593,13 @@ const RecordingControl: React.FC = () => {
       resetState()
 
     } catch (error: any) {
+      console.error('[RecordingControl] Save failed:', {
+        error,
+        selectedStockCode,
+        extractStockCode: extractResult.stock?.code,
+        noteCategory,
+        noteOperationTag
+      })
       message.error('保存失败: ' + error.message)
     } finally {
       setLoading(false)
