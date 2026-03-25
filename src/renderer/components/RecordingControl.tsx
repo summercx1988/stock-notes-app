@@ -3,7 +3,7 @@ import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, Da
 import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { NoteCategory, UserSettings, Viewpoint } from '../../shared/types'
+import type { NoteCategory, OperationTag, UserSettings, Viewpoint } from '../../shared/types'
 import { cleanTranscriptText, normalizeNoteContent } from '../../shared/text-normalizer'
 
 const { Step } = Steps
@@ -19,6 +19,7 @@ interface AIExtractResult {
     keyPoints: string[]
     sentiment?: '看多' | '看空' | '震荡' | '未知' | string
     timeHorizon?: string
+    operationTag?: OperationTag | string
   }
   timestamp: {
     type: 'absolute' | 'relative' | 'none'
@@ -34,6 +35,7 @@ type RecordingState = 'idle' | 'connecting' | 'recording' | 'transcribing' | 'an
 type StockSelectOption = { label: string; value: string; name: string }
 const NOTE_CATEGORY_OPTIONS: Array<{ label: NoteCategory; value: NoteCategory }> = [
   { label: '看盘预测', value: '看盘预测' },
+  { label: '操盘打标', value: '操盘打标' },
   { label: '交易札记', value: '交易札记' },
   { label: '备忘', value: '备忘' },
   { label: '资讯备忘', value: '资讯备忘' }
@@ -83,6 +85,7 @@ const RecordingControl: React.FC = () => {
   const [noteEventTime, setNoteEventTime] = useState<Dayjs | null>(dayjs())
   const [noteCategory, setNoteCategory] = useState<NoteCategory>('看盘预测')
   const [noteDirection, setNoteDirection] = useState<Viewpoint['direction']>('未知')
+  const [noteOperationTag, setNoteOperationTag] = useState<OperationTag>('无')
   const [settings, setSettings] = useState<UserSettings | null>(null)
 
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -101,6 +104,13 @@ const RecordingControl: React.FC = () => {
     if (sentiment.includes('看空') || sentiment === 'bearish') return '看空'
     if (sentiment.includes('震荡') || sentiment.includes('中性')) return '中性'
     return '未知'
+  }
+
+  const mapAIActionToOperationTag = (operationTag?: string): OperationTag => {
+    if (!operationTag) return '无'
+    if (operationTag.includes('买')) return '买入'
+    if (operationTag.includes('卖')) return '卖出'
+    return '无'
   }
 
   const loadUserPreferences = useCallback(async () => {
@@ -149,6 +159,7 @@ const RecordingControl: React.FC = () => {
     setNoteEventTime(dayjs())
     setNoteCategory(settings?.notes.defaultCategory || '看盘预测')
     setNoteDirection(settings?.notes.defaultDirection || '未知')
+    setNoteOperationTag('无')
 
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current)
@@ -269,6 +280,11 @@ const RecordingControl: React.FC = () => {
       setRecordingState('completed')
       setCurrentStep(4)
       setNoteDirection(mapAISentimentToDirection(result.note?.sentiment))
+      const resolvedOperationTag = mapAIActionToOperationTag(result.note?.operationTag)
+      setNoteOperationTag(resolvedOperationTag)
+      if (resolvedOperationTag !== '无') {
+        setNoteCategory((current) => (current === '看盘预测' ? '操盘打标' : current))
+      }
 
       if (resolvedStock) {
         message.success(`处理完成: ${resolvedStock.name}${resolvedStock.code}`)
@@ -493,6 +509,7 @@ const RecordingControl: React.FC = () => {
         content: finalContent,
         eventTime: (noteEventTime || dayjs()).toISOString(),
         category: noteCategory,
+        operationTag: noteOperationTag,
         viewpoint,
         inputType: 'voice',
         audioFile: audioPath,
@@ -700,6 +717,9 @@ const RecordingControl: React.FC = () => {
                 {!!extractResult.note?.sentiment && (
                   <div className="mt-2">
                     <Tag color="purple">AI观点: {extractResult.note.sentiment}</Tag>
+                    <Tag color={mapAIActionToOperationTag(extractResult.note?.operationTag) === '无' ? 'default' : 'gold'}>
+                      AI操作打标: {mapAIActionToOperationTag(extractResult.note?.operationTag)}
+                    </Tag>
                   </div>
                 )}
               </div>
@@ -809,6 +829,17 @@ const RecordingControl: React.FC = () => {
                       { label: '看多', value: '看多' },
                       { label: '看空', value: '看空' },
                       { label: '震荡/中性', value: '中性' }
+                    ]}
+                  />
+                  <Select
+                    value={noteOperationTag}
+                    onChange={(value) => setNoteOperationTag(value)}
+                    style={{ width: 120 }}
+                    size="small"
+                    options={[
+                      { label: '操作打标: 无', value: '无' },
+                      { label: '操作打标: 买入', value: '买入' },
+                      { label: '操作打标: 卖出', value: '卖出' }
                     ]}
                   />
                   <DatePicker

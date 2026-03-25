@@ -16,8 +16,8 @@
 ```
 stock-notes/
 ├── stocks/                          # 股票笔记目录
-│   ├── 600519-贵州茅台.md            # 一只股票一个文件
-│   ├── 000858-五粮液.md
+│   ├── 贵州茅台（600519）.md         # 一只股票一个文件
+│   ├── 五粮液（000858）.md
 │   └── ...
 ├── audio/                           # 音频文件目录
 │   ├── 600519/                      # 按股票代码组织
@@ -160,12 +160,14 @@ tags:
 ## 时间节点数据结构
 
 ```typescript
-type NoteCategory = '看盘预测' | '交易札记' | '备忘' | '资讯备忘'
+type NoteCategory = '看盘预测' | '操盘打标' | '交易札记' | '备忘' | '资讯备忘'
+type OperationTag = '无' | '买入' | '卖出'
 
 interface TimeEntry {
   id: string                    // UUID
   timestamp: Date               // 精确时间戳（精确到分钟）
   category: NoteCategory        // 笔记类别
+  operationTag: OperationTag    // 操作打标（用于归因）
   title: string                 // 时间节点标题
   content: string               // 内容正文
   
@@ -220,6 +222,7 @@ interface StockNote {
 ## 复盘统计约束
 
 - 只有 `看盘预测` 类别进入复盘引擎
+- `操盘打标` 通过 `operationTag` 参与操作归因统计（买入/卖出）
 - `交易札记`、`备忘`、`资讯备忘` 只参与检索、展示与经验沉淀
 
 ## SQLite索引设计

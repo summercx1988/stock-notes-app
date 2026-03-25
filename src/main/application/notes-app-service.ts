@@ -1,11 +1,12 @@
 import { NotesService } from '../services/notes'
 import { MarketDataService } from '../services/market-data'
-import { evaluateReviewEvents } from '../core/review-evaluator'
+import { evaluateActionEvents, evaluateReviewEvents } from '../core/review-evaluator'
 import { buildReviewSnapshot, filterByRange, normalizeDirection } from '../core/review-snapshot'
 import { createTraceId, logPipelineEvent } from '../services/pipeline-logger'
 import type {
   Action,
   NoteCategory,
+  OperationTag,
   KlineInterval,
   NoteInputType,
   ReviewEvaluateRequest,
@@ -26,6 +27,7 @@ interface AddEntryPayload {
   title?: string
   eventTime?: Date | string
   category?: NoteCategory
+  operationTag?: OperationTag
   viewpoint?: Viewpoint
   action?: Action
   inputType?: NoteInputType
@@ -161,12 +163,28 @@ export class NotesAppService {
         startDate,
         endDate
       })
+      const actionEvents = await this.collectActionEvents({
+        scope: request.scope,
+        stockCode: request.stockCode,
+        startDate,
+        endDate
+      })
 
       const actionableEvents = events.filter((event) => event.direction === '看多' || event.direction === '看空')
+      const marketLinkedEvents = [
+        ...actionableEvents.map((event) => ({
+          stockCode: event.stockCode,
+          eventTime: event.eventTime
+        })),
+        ...actionEvents.map((event) => ({
+          stockCode: event.stockCode,
+          eventTime: event.eventTime
+        }))
+      ]
       const candlesByStock: Record<string, { timestamp: string; close: number }[]> = {}
-      const eventsByStock = new Map<string, typeof actionableEvents>()
+      const eventsByStock = new Map<string, Array<{ stockCode: string; eventTime: string }>>()
 
-      for (const event of actionableEvents) {
+      for (const event of marketLinkedEvents) {
         const current = eventsByStock.get(event.stockCode) || []
         current.push(event)
         eventsByStock.set(event.stockCode, current)
@@ -186,6 +204,7 @@ export class NotesAppService {
       }
 
       const evaluation = evaluateReviewEvents(events, candlesByStock, rule)
+      const actionEvaluation = evaluateActionEvents(actionEvents, candlesByStock, rule)
       logPipelineEvent({
         traceId,
         stage: 'review',
@@ -194,7 +213,8 @@ export class NotesAppService {
         durationMs: Date.now() - startedAt,
         extra: {
           total_notes: evaluation.summary.totalNotes,
-          evaluated_samples: evaluation.summary.evaluatedSamples
+          evaluated_samples: evaluation.summary.evaluatedSamples,
+          action_samples: actionEvaluation.summary.evaluatedSamples
         }
       })
       return {
@@ -206,6 +226,8 @@ export class NotesAppService {
         rule,
         summary: evaluation.summary,
         results: evaluation.results,
+        actionSummary: actionEvaluation.summary,
+        actionResults: actionEvaluation.results,
         generatedAt: new Date().toISOString()
       }
     } catch (error: any) {
@@ -259,6 +281,49 @@ export class NotesAppService {
       eventTime: this.toIsoString(item.timestamp),
       direction: normalizeDirection(item.viewpoint?.direction)
     }))
+  }
+
+  private async collectActionEvents(params: {
+    scope: 'single' | 'overall'
+    stockCode?: string
+    startDate?: Date
+    endDate?: Date
+  }): Promise<Array<{
+    entryId: string
+    stockCode: string
+    eventTime: string
+    operationTag: '买入' | '卖出'
+    viewpointDirection: '看多' | '看空' | '未知'
+  }>> {
+    if (params.scope === 'single') {
+      if (!params.stockCode) {
+        throw new Error('single scope requires stockCode')
+      }
+      const entries = await this.notesService.getEntries(params.stockCode)
+      const rangedEntries = filterByRange(entries, params.startDate, params.endDate)
+        .filter((entry) => entry.operationTag === '买入' || entry.operationTag === '卖出')
+      return rangedEntries.map((entry) => ({
+        entryId: entry.id,
+        stockCode: params.stockCode!,
+        eventTime: this.toIsoString(entry.eventTime || entry.timestamp),
+        operationTag: entry.operationTag as '买入' | '卖出',
+        viewpointDirection: normalizeDirection(entry.viewpoint?.direction)
+      }))
+    }
+
+    const timelineItems = await this.notesService.getTimeline({
+      startDate: params.startDate,
+      endDate: params.endDate
+    })
+    return timelineItems
+      .filter((item) => item.operationTag === '买入' || item.operationTag === '卖出')
+      .map((item) => ({
+        entryId: item.id,
+        stockCode: item.stockCode,
+        eventTime: this.toIsoString(item.timestamp),
+        operationTag: item.operationTag as '买入' | '卖出',
+        viewpointDirection: normalizeDirection(item.viewpoint?.direction)
+      }))
   }
 
   private toIsoString(value: Date | string): string {

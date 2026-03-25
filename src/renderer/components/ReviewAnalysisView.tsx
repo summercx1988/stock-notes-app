@@ -18,7 +18,7 @@ import {
 } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { KlineInterval, ReviewEvaluateResponse, ReviewEventResult, ReviewScope } from '../../shared/types'
+import type { KlineInterval, ReviewActionResult, ReviewEvaluateResponse, ReviewEventResult, ReviewScope } from '../../shared/types'
 
 const { RangePicker } = DatePicker
 
@@ -128,6 +128,75 @@ const ReviewAnalysisView: React.FC = () => {
     }
   ]
 
+  const actionColumns = [
+    {
+      title: '股票',
+      dataIndex: 'stockCode',
+      width: 92
+    },
+    {
+      title: '事件时间',
+      dataIndex: 'eventTime',
+      render: (value: string) => dayjs(value).format('YYYY-MM-DD HH:mm'),
+      width: 150
+    },
+    {
+      title: '操作',
+      dataIndex: 'operationTag',
+      width: 88,
+      render: (value: ReviewActionResult['operationTag']) => (
+        <Tag color={value === '买入' ? 'red' : 'green'}>{value}</Tag>
+      )
+    },
+    {
+      title: '观点一致性',
+      dataIndex: 'viewpointDirection',
+      width: 108,
+      render: (value: ReviewActionResult['viewpointDirection'], record: ReviewActionResult) => {
+        if (value === '未知') return <Tag>未知</Tag>
+        const aligned = (value === '看多' && record.operationTag === '买入') || (value === '看空' && record.operationTag === '卖出')
+        return <Tag color={aligned ? 'success' : 'warning'}>{aligned ? '一致' : '不一致'}</Tag>
+      }
+    },
+    {
+      title: '入场价',
+      dataIndex: 'entryPrice',
+      width: 92
+    },
+    {
+      title: '目标价',
+      dataIndex: 'targetPrice',
+      width: 92
+    },
+    {
+      title: '涨跌幅',
+      dataIndex: 'changePct',
+      width: 102,
+      render: (value: number) => {
+        const color = value >= 0 ? '#ef4444' : '#22c55e'
+        return <span style={{ color }}>{value.toFixed(2)}%</span>
+      }
+    },
+    {
+      title: '结果',
+      dataIndex: 'hit',
+      width: 84,
+      render: (value: boolean) => (
+        <Tag color={value ? 'success' : 'error'}>{value ? '命中' : '未命中'}</Tag>
+      )
+    },
+    {
+      title: '说明',
+      dataIndex: 'reason',
+      ellipsis: true,
+      render: (value: string) => (
+        <Tooltip title={value}>
+          <span>{value}</span>
+        </Tooltip>
+      )
+    }
+  ]
+
   return (
     <div className="h-full flex flex-col bg-white">
       <div className="p-4 border-b border-gray-200">
@@ -186,7 +255,7 @@ const ReviewAnalysisView: React.FC = () => {
           type="info"
           showIcon
           className="mb-4"
-          message="复盘只统计“看盘预测”类别事件：系统会按事件时间对齐K线，默认规则为 3D / 3%，未知观点不计入胜率。"
+          message="预测复盘统计“看盘预测”类别；操作归因统计所有“买入/卖出”打标事件。两者都按事件时间对齐 K 线，默认规则为 3D / 3%。"
         />
 
         {!evaluation ? (
@@ -250,6 +319,39 @@ const ReviewAnalysisView: React.FC = () => {
               </Col>
             </Row>
 
+            <Row gutter={12}>
+              <Col span={4}>
+                <Card>
+                  <Statistic title="操作总数" value={evaluation.actionSummary.totalActions} />
+                </Card>
+              </Col>
+              <Col span={4}>
+                <Card>
+                  <Statistic title="买入次数" value={evaluation.actionSummary.buyActions} />
+                </Card>
+              </Col>
+              <Col span={4}>
+                <Card>
+                  <Statistic title="卖出次数" value={evaluation.actionSummary.sellActions} />
+                </Card>
+              </Col>
+              <Col span={4}>
+                <Card>
+                  <Statistic title="操作胜率" value={evaluation.actionSummary.accuracy} suffix="%" />
+                </Card>
+              </Col>
+              <Col span={4}>
+                <Card>
+                  <Statistic title="买入胜率" value={evaluation.actionSummary.buyAccuracy} suffix="%" />
+                </Card>
+              </Col>
+              <Col span={4}>
+                <Card>
+                  <Statistic title="知行一致率" value={evaluation.actionSummary.alignmentRate} suffix="%" />
+                </Card>
+              </Col>
+            </Row>
+
             <Card title={`事件判定明细（${evaluation.results.length} 条）`} size="small">
               <Table<ReviewEventResult>
                 rowKey={(record) => `${record.stockCode}-${record.entryId}-${record.eventTime}`}
@@ -257,6 +359,17 @@ const ReviewAnalysisView: React.FC = () => {
                 dataSource={evaluation.results}
                 pagination={{ pageSize: 10 }}
                 scroll={{ x: 980 }}
+                size="small"
+              />
+            </Card>
+
+            <Card title={`操作归因明细（${evaluation.actionResults.length} 条）`} size="small">
+              <Table<ReviewActionResult>
+                rowKey={(record) => `${record.stockCode}-${record.entryId}-${record.eventTime}`}
+                columns={actionColumns}
+                dataSource={evaluation.actionResults}
+                pagination={{ pageSize: 10 }}
+                scroll={{ x: 1050 }}
                 size="small"
               />
             </Card>

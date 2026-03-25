@@ -1,7 +1,8 @@
 export type ViewpointDirection = '看多' | '看空' | '未知' | '中性' | '观望'
 export type TimeHorizon = '短线' | '中线' | '长线'
 export type NoteInputType = 'voice' | 'manual'
-export type NoteCategory = '看盘预测' | '交易札记' | '备忘' | '资讯备忘'
+export type NoteCategory = '看盘预测' | '操盘打标' | '交易札记' | '备忘' | '资讯备忘'
+export type OperationTag = '无' | '买入' | '卖出'
 export type NoteStyle = '轻量' | '结构化'
 
 export interface TimeEntry {
@@ -11,6 +12,7 @@ export interface TimeEntry {
   createdAt: Date
   inputType?: NoteInputType
   category: NoteCategory
+  operationTag: OperationTag
   title: string
   content: string
   
@@ -210,6 +212,7 @@ export interface TimelineItem {
   stockName: string
   timestamp: Date
   category: NoteCategory
+  operationTag: OperationTag
   title: string
   viewpoint?: Viewpoint
   hasAudio: boolean
@@ -272,6 +275,19 @@ export interface ReviewEventResult {
   reason: string
 }
 
+export interface ReviewActionResult {
+  entryId: string
+  stockCode: string
+  eventTime: string
+  operationTag: '买入' | '卖出'
+  viewpointDirection: '看多' | '看空' | '未知'
+  entryPrice: number
+  targetPrice: number
+  changePct: number
+  hit: boolean
+  reason: string
+}
+
 export interface ReviewDirectionStats {
   samples: number
   hits: number
@@ -288,6 +304,21 @@ export interface ReviewEvaluateSummary {
   accuracy: number
   bullish: ReviewDirectionStats
   bearish: ReviewDirectionStats
+}
+
+export interface ReviewActionSummary {
+  totalActions: number
+  buyActions: number
+  sellActions: number
+  evaluatedSamples: number
+  insufficientData: number
+  hits: number
+  accuracy: number
+  buyAccuracy: number
+  sellAccuracy: number
+  alignedWithViewpoint: number
+  viewpointLinkedActions: number
+  alignmentRate: number
 }
 
 export interface ReviewEvaluateRequest {
@@ -308,6 +339,8 @@ export interface ReviewEvaluateResponse {
   rule: ReviewRuleConfig
   summary: ReviewEvaluateSummary
   results: ReviewEventResult[]
+  actionSummary: ReviewActionSummary
+  actionResults: ReviewActionResult[]
   generatedAt: string
 }
 

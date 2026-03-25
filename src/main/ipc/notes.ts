@@ -8,6 +8,7 @@ import type {
   Action,
   NoteInputType,
   NoteCategory,
+  OperationTag,
   NotesExportResult,
   NotesImportResult
 } from '../../shared/types'
@@ -17,6 +18,7 @@ ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   title?: string
   eventTime?: Date | string
   category?: NoteCategory
+  operationTag?: OperationTag
   viewpoint?: Viewpoint
   action?: Action
   inputType?: NoteInputType

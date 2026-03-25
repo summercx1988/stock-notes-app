@@ -104,8 +104,15 @@ const StockTimelineView: React.FC = () => {
 
   const getCategoryColor = (category: NoteCategory) => {
     if (category === '看盘预测') return 'magenta'
+    if (category === '操盘打标') return 'volcano'
     if (category === '交易札记') return 'gold'
     if (category === '资讯备忘') return 'cyan'
+    return 'default'
+  }
+
+  const getOperationTagColor = (operationTag?: '无' | '买入' | '卖出') => {
+    if (operationTag === '买入') return 'red'
+    if (operationTag === '卖出') return 'green'
     return 'default'
   }
 
@@ -156,6 +163,7 @@ const StockTimelineView: React.FC = () => {
             options={[
               { label: '全部类别', value: '全部' },
               { label: '看盘预测', value: '看盘预测' },
+              { label: '操盘打标', value: '操盘打标' },
               { label: '交易札记', value: '交易札记' },
               { label: '备忘', value: '备忘' },
               { label: '资讯备忘', value: '资讯备忘' }
@@ -204,6 +212,9 @@ const StockTimelineView: React.FC = () => {
                         <Tag color={getCategoryColor(entry.category)}>{entry.category}</Tag>
                         <Tag color={getViewpointColor(entry.viewpoint?.direction)}>
                           {entry.viewpoint?.direction || '未知'}
+                        </Tag>
+                        <Tag color={getOperationTagColor(entry.operationTag)}>
+                          操作: {entry.operationTag || '无'}
                         </Tag>
                         <Tag>{entry.inputType === 'voice' ? '语音' : '手动'}</Tag>
                       </div>

@@ -4,6 +4,7 @@ import type { UserSettings } from '../../shared/types'
 
 const NOTE_CATEGORY_OPTIONS = [
   { label: '看盘预测', value: '看盘预测' },
+  { label: '操盘打标', value: '操盘打标' },
   { label: '交易札记', value: '交易札记' },
   { label: '备忘', value: '备忘' },
   { label: '资讯备忘', value: '资讯备忘' }

@@ -10,6 +10,7 @@ import type {
   Action,
   NoteInputType,
   NoteCategory,
+  OperationTag,
   NotesExportResult,
   NotesImportResult
 } from '../../shared/types'
@@ -23,6 +24,7 @@ interface EntryMeta {
   createdAt?: string
   inputType?: string
   category?: string
+  operationTag?: string
 }
 
 export class NotesService {
@@ -45,6 +47,7 @@ export class NotesService {
       title?: string
       eventTime?: Date | string
       category?: NoteCategory
+      operationTag?: OperationTag
       viewpoint?: Viewpoint
       action?: Action
       inputType?: NoteInputType
@@ -76,6 +79,7 @@ export class NotesService {
       createdAt: now,
       inputType: this.normalizeInputType(data.inputType) ?? this.detectInputType(data.audioFile),
       category: data.category ?? this.createDefaultCategory(),
+      operationTag: this.normalizeOperationTag(data.operationTag, data.action),
       title,
       content: normalizedContent,
       viewpoint: data.viewpoint ?? this.createDefaultViewpoint(),
@@ -188,7 +192,10 @@ export class NotesService {
     const updatedTitle = data.title ?? this.buildEventTitle(updatedEventTime)
     const normalizedPatch = {
       ...data,
-      content: normalizedContent
+      content: normalizedContent,
+      operationTag: data.operationTag !== undefined || data.action !== undefined
+        ? this.normalizeOperationTag(data.operationTag, data.action ?? current.action)
+        : (current.operationTag ?? this.normalizeOperationTag(undefined, current.action))
     }
 
     const updated: TimeEntry = {
@@ -259,6 +266,7 @@ export class NotesService {
           stockName: note.stockName,
           timestamp: eventTime,
           category: entry.category,
+          operationTag: entry.operationTag ?? this.createDefaultOperationTag(),
           title: entry.title,
           viewpoint: entry.viewpoint,
           hasAudio: !!entry.audioFile
@@ -531,17 +539,20 @@ export class NotesService {
     const createdAt = this.getEntryCreatedAt(entry)
     const inputType = entry.inputType ?? this.detectInputType(entry.audioFile)
     const title = this.buildEventTitle(eventTime)
+    const operationTag = this.normalizeOperationTag(entry.operationTag, entry.action)
 
     let md = `\n<!-- entry-id: ${entry.id} -->\n`
     md += `<!-- event-time: ${eventTime.toISOString()} -->\n`
     md += `<!-- created-at: ${createdAt.toISOString()} -->\n`
     md += `<!-- input-type: ${inputType} -->\n`
     md += `<!-- category: ${entry.category} -->\n`
+    md += `<!-- operation-tag: ${operationTag} -->\n`
     md += `### 🕐 ${title}\n\n`
     md += `> **事件时间**: ${this.toLocalMinuteText(eventTime)}\n`
     md += `> **记录时间**: ${this.toLocalMinuteText(createdAt)}\n`
     md += `> **记录来源**: ${inputType}\n`
     md += `> **笔记类别**: ${entry.category}\n`
+    md += `> **操作打标**: ${operationTag}\n`
 
     const viewpoint = entry.viewpoint ?? this.createDefaultViewpoint()
     md += `> **观点**: ${viewpoint.direction} (信心: ${viewpoint.confidence}) | **周期**: ${viewpoint.timeHorizon}\n`
@@ -618,7 +629,7 @@ export class NotesService {
         continue
       }
 
-      const metaMatch = line.match(/^<!--\s*(entry-id|event-time|created-at|input-type|category):\s*(.+?)\s*-->$/)
+      const metaMatch = line.match(/^<!--\s*(entry-id|event-time|created-at|input-type|category|operation-tag):\s*(.+?)\s*-->$/)
       if (metaMatch) {
         const key = metaMatch[1]
         const value = metaMatch[2].trim()
@@ -627,6 +638,7 @@ export class NotesService {
         if (key === 'created-at') pendingMeta.createdAt = value
         if (key === 'input-type') pendingMeta.inputType = value
         if (key === 'category') pendingMeta.category = value
+        if (key === 'operation-tag') pendingMeta.operationTag = value
         continue
       }
 
@@ -701,6 +713,7 @@ export class NotesService {
     let createdAtLabel: string | undefined
     let inputTypeLabel: string | undefined
     let categoryLabel: string | undefined
+    let operationTagLabel: string | undefined
 
     let inActionSection = false
 
@@ -729,6 +742,12 @@ export class NotesService {
       const categoryMatch = trimmed.match(/^>\s*\*\*笔记类别\*\*:\s*(.+)$/)
       if (categoryMatch) {
         categoryLabel = categoryMatch[1].trim()
+        continue
+      }
+
+      const operationTagMatch = trimmed.match(/^>\s*\*\*操作打标\*\*:\s*(.+)$/)
+      if (operationTagMatch) {
+        operationTagLabel = operationTagMatch[1].trim()
         continue
       }
 
@@ -814,6 +833,7 @@ export class NotesService {
       createdAt,
       inputType,
       category: this.normalizeCategory(meta.category ?? categoryLabel),
+      operationTag: this.normalizeOperationTag(meta.operationTag ?? operationTagLabel, action),
       title,
       content: normalizedContent || title,
       viewpoint: viewpoint ?? this.createDefaultViewpoint(),
@@ -860,6 +880,10 @@ export class NotesService {
     return '看盘预测'
   }
 
+  private createDefaultOperationTag(): OperationTag {
+    return '无'
+  }
+
   private getEntryEventTime(entry: TimeEntry): Date {
     return this.normalizeDate(entry.eventTime ?? entry.timestamp, new Date())
   }
@@ -875,10 +899,19 @@ export class NotesService {
   }
 
   private normalizeCategory(value?: string): NoteCategory {
-    if (value === '看盘预测' || value === '交易札记' || value === '备忘' || value === '资讯备忘') {
+    if (value === '看盘预测' || value === '操盘打标' || value === '交易札记' || value === '备忘' || value === '资讯备忘') {
       return value
     }
     return this.createDefaultCategory()
+  }
+
+  private normalizeOperationTag(value?: string, action?: Action): OperationTag {
+    if (value === '买入' || value === '卖出' || value === '无') {
+      return value
+    }
+    if (action?.type === '买入') return '买入'
+    if (action?.type === '卖出') return '卖出'
+    return this.createDefaultOperationTag()
   }
 
   private detectInputType(audioFile?: string): NoteInputType {

@@ -1,4 +1,6 @@
 import type {
+  ReviewActionResult,
+  ReviewActionSummary,
   ReviewDirectionStats,
   ReviewEvaluateSummary,
   ReviewEventResult,
@@ -20,6 +22,19 @@ export interface CandleInput {
 export interface ReviewEvaluationResult {
   summary: ReviewEvaluateSummary
   results: ReviewEventResult[]
+}
+
+export interface ReviewActionInput {
+  entryId: string
+  stockCode: string
+  eventTime: string
+  operationTag: '买入' | '卖出'
+  viewpointDirection: '看多' | '看空' | '未知'
+}
+
+export interface ReviewActionEvaluationResult {
+  summary: ReviewActionSummary
+  results: ReviewActionResult[]
 }
 
 export function evaluateReviewEvents(
@@ -100,6 +115,93 @@ export function evaluateReviewEvents(
 
   return {
     summary,
+    results: results.sort((left, right) => toMs(right.eventTime) - toMs(left.eventTime))
+  }
+}
+
+export function evaluateActionEvents(
+  events: ReviewActionInput[],
+  candlesByStock: Record<string, CandleInput[]>,
+  rule: ReviewRuleConfig
+): ReviewActionEvaluationResult {
+  const results: ReviewActionResult[] = []
+
+  for (const event of events) {
+    const stockCandles = [...(candlesByStock[event.stockCode] || [])]
+      .filter((candle) => Number.isFinite(candle.close))
+      .sort((left, right) => toMs(left.timestamp) - toMs(right.timestamp))
+    if (stockCandles.length === 0) continue
+
+    const eventMs = toMs(event.eventTime)
+    if (!Number.isFinite(eventMs)) continue
+
+    const entryIndex = stockCandles.findIndex((candle) => toMs(candle.timestamp) >= eventMs)
+    if (entryIndex < 0) continue
+
+    const entryCandle = stockCandles[entryIndex]
+    if (entryCandle.close <= 0) continue
+
+    const targetMs = eventMs + (rule.windowDays * 24 * 60 * 60 * 1000)
+    let targetIndex = -1
+    for (let i = entryIndex; i < stockCandles.length; i += 1) {
+      const candleMs = toMs(stockCandles[i].timestamp)
+      if (candleMs <= targetMs) {
+        targetIndex = i
+      } else {
+        break
+      }
+    }
+    if (targetIndex <= entryIndex) continue
+
+    const targetCandle = stockCandles[targetIndex]
+    const change = (targetCandle.close - entryCandle.close) / entryCandle.close
+    const hit = event.operationTag === '买入'
+      ? change >= (rule.thresholdPct / 100)
+      : change <= -(rule.thresholdPct / 100)
+
+    results.push({
+      entryId: event.entryId,
+      stockCode: event.stockCode,
+      eventTime: event.eventTime,
+      operationTag: event.operationTag,
+      viewpointDirection: event.viewpointDirection,
+      entryPrice: round(entryCandle.close, 4),
+      targetPrice: round(targetCandle.close, 4),
+      changePct: round(change * 100, 4),
+      hit,
+      reason: hit
+        ? `${event.operationTag}后在${rule.windowDays}天窗口内达到${rule.thresholdPct}%阈值`
+        : `${event.operationTag}后在${rule.windowDays}天窗口内未达到${rule.thresholdPct}%阈值`
+    })
+  }
+
+  const hits = results.filter((item) => item.hit).length
+  const buyResults = results.filter((item) => item.operationTag === '买入')
+  const sellResults = results.filter((item) => item.operationTag === '卖出')
+  const alignedWithViewpoint = events.filter((event) => {
+    if (event.viewpointDirection === '未知') return false
+    return (
+      (event.operationTag === '买入' && event.viewpointDirection === '看多') ||
+      (event.operationTag === '卖出' && event.viewpointDirection === '看空')
+    )
+  }).length
+  const viewpointLinkedActions = events.filter((event) => event.viewpointDirection !== '未知').length
+
+  return {
+    summary: {
+      totalActions: events.length,
+      buyActions: events.filter((event) => event.operationTag === '买入').length,
+      sellActions: events.filter((event) => event.operationTag === '卖出').length,
+      evaluatedSamples: results.length,
+      insufficientData: Math.max(0, events.length - results.length),
+      hits,
+      accuracy: computeAccuracy(hits, results.length),
+      buyAccuracy: computeAccuracy(buyResults.filter((item) => item.hit).length, buyResults.length),
+      sellAccuracy: computeAccuracy(sellResults.filter((item) => item.hit).length, sellResults.length),
+      alignedWithViewpoint,
+      viewpointLinkedActions,
+      alignmentRate: computeAccuracy(alignedWithViewpoint, viewpointLinkedActions)
+    },
     results: results.sort((left, right) => toMs(right.eventTime) - toMs(left.eventTime))
   }
 }
