@@ -67,7 +67,7 @@ export class NotesService {
     const now = new Date()
     const eventTime = this.normalizeDate(data.eventTime, now)
     const normalizedContent = normalizeNoteContent(data.content)
-    const title = data.title?.trim() || this.generateDefaultTitle(normalizedContent)
+    const title = data.title?.trim() || this.buildEventTitle(eventTime)
 
     const entry: TimeEntry = {
       id,
@@ -185,7 +185,7 @@ export class NotesService {
       data.eventTime ?? data.timestamp,
       this.getEntryEventTime(current)
     )
-    const updatedTitle = data.title ?? (data.content ? this.generateTitle(normalizedContent) : current.title)
+    const updatedTitle = data.title ?? this.buildEventTitle(updatedEventTime)
     const normalizedPatch = {
       ...data,
       content: normalizedContent
@@ -437,13 +437,8 @@ export class NotesService {
     return result
   }
 
-  private generateTitle(content: string): string {
-    const firstLine = content.trim().split('\n')[0] || ''
-    return firstLine.slice(0, 50) || '无标题'
-  }
-
-  private generateDefaultTitle(content?: string): string {
-    return this.generateTitle(content || '')
+  private buildEventTitle(eventTime: Date): string {
+    return this.toLocalMinuteText(eventTime)
   }
 
   private async appendEntryToStockFile(stockCode: string, entry: TimeEntry): Promise<void> {
@@ -548,14 +543,14 @@ export class NotesService {
     const eventTime = this.getEntryEventTime(entry)
     const createdAt = this.getEntryCreatedAt(entry)
     const inputType = entry.inputType ?? this.detectInputType(entry.audioFile)
-    const title = entry.title || this.generateTitle(entry.content)
+    const title = this.buildEventTitle(eventTime)
 
     let md = `\n<!-- entry-id: ${entry.id} -->\n`
     md += `<!-- event-time: ${eventTime.toISOString()} -->\n`
     md += `<!-- created-at: ${createdAt.toISOString()} -->\n`
     md += `<!-- input-type: ${inputType} -->\n`
     md += `<!-- category: ${entry.category} -->\n`
-    md += `### 🕐 ${eventTime.toTimeString().slice(0, 5)} ${title}\n\n`
+    md += `### 🕐 ${title}\n\n`
     md += `> **事件时间**: ${this.toLocalMinuteText(eventTime)}\n`
     md += `> **记录时间**: ${this.toLocalMinuteText(createdAt)}\n`
     md += `> **记录来源**: ${inputType}\n`
@@ -648,11 +643,24 @@ export class NotesService {
         continue
       }
 
-      const headerMatch = line.match(/^### 🕐\s+(\d{2}:\d{2})\s+(.+)$/)
-      if (!headerMatch) continue
+      let headingTime = ''
+      let title = ''
 
-      const headingTime = headerMatch[1]
-      const title = headerMatch[2].trim()
+      const datetimeHeaderMatch = line.match(/^### 🕐\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*$/)
+      if (datetimeHeaderMatch) {
+        const fullDateTime = datetimeHeaderMatch[1]
+        headingTime = fullDateTime.slice(11, 16)
+        title = fullDateTime
+        if (!pendingMeta.eventTime) {
+          pendingMeta.eventTime = fullDateTime
+        }
+      } else {
+        const legacyHeaderMatch = line.match(/^### 🕐\s+(\d{2}:\d{2})\s+(.+)$/)
+        if (!legacyHeaderMatch) continue
+        headingTime = legacyHeaderMatch[1]
+        title = legacyHeaderMatch[2].trim()
+      }
+
       const blockLines: string[] = []
       let cursor = i + 1
       while (cursor < lines.length) {

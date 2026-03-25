@@ -207,10 +207,10 @@ const StockTimelineView: React.FC = () => {
                         </Tag>
                         <Tag>{entry.inputType === 'voice' ? '语音' : '手动'}</Tag>
                       </div>
-                      <Text type="secondary">{formatMinuteTime(entry.eventTime || entry.timestamp)}</Text>
+                      <Text type="secondary">记录时间：{formatMinuteTime(entry.createdAt)}</Text>
                     </div>
                     <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                      <Text strong>{entry.title}</Text>
+                      <Text strong>{formatMinuteTime(entry.eventTime || entry.timestamp)}</Text>
                       <div className="mt-2">{summarizeContent(entry.content)}</div>
                     </div>
                     <div className="mt-2 text-xs text-gray-400">

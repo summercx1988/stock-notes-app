@@ -209,9 +209,8 @@ const StockNoteView: React.FC = () => {
   }
 
   const formatTime = (timestamp: Date | string, eventTime?: Date | string) => {
-    const date = new Date(timestamp)
-    const sourceDate = eventTime ? new Date(eventTime) : date
-    return `${sourceDate.getMonth() + 1}-${sourceDate.getDate()} ${sourceDate.getHours()}:${String(sourceDate.getMinutes()).padStart(2, '0')}`
+    const sourceDate = dayjs(eventTime || timestamp)
+    return sourceDate.isValid() ? sourceDate.format('YYYY-MM-DD HH:mm') : '-'
   }
 
   const stockDisplayName = currentStockName && currentStockName !== currentStockCode
