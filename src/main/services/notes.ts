@@ -288,20 +288,13 @@ export class NotesService {
     await fs.mkdir(outputDir, { recursive: true })
     const exportDir = path.join(outputDir, this.createExportFolderName('single', stockCode))
     const stocksDir = path.join(exportDir, 'stocks')
-    const audioDir = path.join(exportDir, 'audio')
     await fs.mkdir(stocksDir, { recursive: true })
-    await fs.mkdir(audioDir, { recursive: true })
 
     const sourceNotePath = await this.resolveStockFilePath(stockCode)
     const targetNotePath = path.join(stocksDir, path.basename(sourceNotePath))
     await fs.copyFile(sourceNotePath, targetNotePath)
 
-    let copiedAudioDirs = 0
-    const sourceAudioDir = path.join(this.audioDir, stockCode)
-    if (await this.pathExists(sourceAudioDir)) {
-      await fs.cp(sourceAudioDir, path.join(audioDir, stockCode), { recursive: true, force: true })
-      copiedAudioDirs = 1
-    }
+    const copiedAudioDirs = 0
 
     const manifestPath = path.join(exportDir, 'manifest.json')
     await fs.writeFile(manifestPath, JSON.stringify({
@@ -309,6 +302,7 @@ export class NotesService {
       exported_at: new Date().toISOString(),
       scope: 'single',
       stock_codes: [stockCode],
+      includes_audio: false,
       file_naming: '股票名称（股票代码）.md'
     }, null, 2), 'utf-8')
 
@@ -328,13 +322,11 @@ export class NotesService {
     await fs.mkdir(outputDir, { recursive: true })
     const exportDir = path.join(outputDir, this.createExportFolderName('all'))
     const stocksDir = path.join(exportDir, 'stocks')
-    const audioDir = path.join(exportDir, 'audio')
     await fs.mkdir(stocksDir, { recursive: true })
-    await fs.mkdir(audioDir, { recursive: true })
 
     const stockCodes = await this.getAllStockCodes()
     let exportedFiles = 0
-    let copiedAudioDirs = 0
+    const copiedAudioDirs = 0
 
     for (const stockCode of stockCodes) {
       const sourceNotePath = await this.resolveStockFilePath(stockCode)
@@ -343,12 +335,6 @@ export class NotesService {
       const targetNotePath = path.join(stocksDir, path.basename(sourceNotePath))
       await fs.copyFile(sourceNotePath, targetNotePath)
       exportedFiles += 1
-
-      const sourceAudioDir = path.join(this.audioDir, stockCode)
-      if (await this.pathExists(sourceAudioDir)) {
-        await fs.cp(sourceAudioDir, path.join(audioDir, stockCode), { recursive: true, force: true })
-        copiedAudioDirs += 1
-      }
     }
 
     const manifestPath = path.join(exportDir, 'manifest.json')
@@ -357,6 +343,7 @@ export class NotesService {
       exported_at: new Date().toISOString(),
       scope: 'all',
       stock_codes: stockCodes,
+      includes_audio: false,
       file_naming: '股票名称（股票代码）.md'
     }, null, 2), 'utf-8')
 

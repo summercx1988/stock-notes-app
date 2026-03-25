@@ -122,7 +122,7 @@ const DataTransferModal: React.FC<DataTransferModalProps> = ({ open, mode, onClo
         className="mb-3"
         message={mode.startsWith('import')
           ? (mode === 'import-replace' ? '覆盖模式：同代码笔记会被覆盖。' : '跳过模式：同代码笔记会被跳过。')
-          : '会按应用内部格式导出（包含 manifest、stocks、audio 目录）。'}
+          : '会按应用内部格式导出（仅包含 manifest 与 stocks 目录）。'}
         icon={mode.startsWith('import') ? <ImportOutlined /> : <ExportOutlined />}
       />
 
@@ -142,8 +142,7 @@ const renderExportResult = (result: NotesExportResult): string => {
     `exportDir: ${result.exportDir}`,
     `manifest: ${result.manifestPath}`,
     `exportedStocks: ${result.exportedStocks.length}`,
-    `exportedFiles: ${result.exportedFiles}`,
-    `copiedAudioDirs: ${result.copiedAudioDirs}`
+    `exportedFiles: ${result.exportedFiles}`
   ].join('\n')
 }
 

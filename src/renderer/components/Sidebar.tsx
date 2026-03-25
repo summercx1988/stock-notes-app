@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Input, List, Tag, Empty, Spin, message } from 'antd'
+import { Input, List, Empty, Spin, message } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { useAppStore } from '../stores/app'
 
@@ -221,11 +221,6 @@ const Sidebar: React.FC = () => {
                   <div className="mt-1 text-xs text-slate-500">
                     共 {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
                   </div>
-                  {!item.isFromSearch && (
-                    <Tag color={getNoteCount(item.code) > 0 ? 'blue' : 'default'} className="mt-2 text-xs">
-                      {getNoteCount(item.code)}
-                    </Tag>
-                  )}
                 </div>
               </List.Item>
             )}
