@@ -22,10 +22,9 @@ import type {
   ReviewActionResult,
   ReviewEvaluateResponse,
   ReviewEventResult,
-  ReviewScope,
-  ReviewVisualResponse
+  ReviewScope
 } from '../../shared/types'
-import ReviewKlinePanel from './ReviewKlinePanel'
+import ReviewKlineWorkbench from './review/ReviewKlineWorkbench'
 
 const { RangePicker } = DatePicker
 const DEFAULT_ACTION_SUMMARY: ReviewEvaluateResponse['actionSummary'] = {
@@ -55,8 +54,6 @@ const ReviewAnalysisView: React.FC = () => {
     dayjs().endOf('day')
   ])
   const [evaluation, setEvaluation] = useState<ReviewEvaluateResponse | null>(null)
-  const [visualData, setVisualData] = useState<ReviewVisualResponse | null>(null)
-  const [visualLoading, setVisualLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [predictionPage, setPredictionPage] = useState(1)
@@ -64,30 +61,6 @@ const ReviewAnalysisView: React.FC = () => {
   const predictionTableRef = useRef<HTMLDivElement | null>(null)
   const actionTableRef = useRef<HTMLDivElement | null>(null)
   const PAGE_SIZE = 10
-
-  const buildVisualPayload = () => ({
-    scope,
-    stockCode: scope === 'single' ? currentStockCode || undefined : undefined,
-    startDate: timeRange?.[0]?.toISOString(),
-    endDate: timeRange?.[1]?.toISOString(),
-    interval
-  })
-
-  const loadVisualData = async () => {
-    if (scope === 'single' && !currentStockCode) {
-      return
-    }
-    setVisualLoading(true)
-    try {
-      const result = await window.api.review.getVisualData(buildVisualPayload())
-      setVisualData(result)
-    } catch (error: any) {
-      setVisualData(null)
-      message.warning(`K线对齐数据加载失败: ${error?.message || String(error)}`)
-    } finally {
-      setVisualLoading(false)
-    }
-  }
 
   const selectedScopeLabel = useMemo(() => {
     if (scope === 'single') {
@@ -146,52 +119,32 @@ const ReviewAnalysisView: React.FC = () => {
     }
 
     setRunning(true)
-    setVisualLoading(true)
     setActiveEntryId(null)
     setPredictionPage(1)
     setActionPage(1)
     try {
-      const [evaluationResult, visualResult] = await Promise.allSettled([
-        window.api.review.evaluate({
-          scope,
-          stockCode: scope === 'single' ? currentStockCode || undefined : undefined,
-          startDate: timeRange?.[0]?.toISOString(),
-          endDate: timeRange?.[1]?.toISOString(),
-          interval,
-          rule: {
-            windowDays: ruleWindowDays,
-            thresholdPct: ruleThresholdPct,
-            excludeUnknown: true
-          }
-        }),
-        window.api.review.getVisualData(buildVisualPayload())
-      ])
-
-      if (evaluationResult.status === 'fulfilled') {
-        const result = evaluationResult.value
-        const normalizedResult: ReviewEvaluateResponse = {
-          ...result,
-          actionSummary: (result as Partial<ReviewEvaluateResponse>).actionSummary || DEFAULT_ACTION_SUMMARY,
-          actionResults: (result as Partial<ReviewEvaluateResponse>).actionResults || []
+      const result = await window.api.review.evaluate({
+        scope,
+        stockCode: scope === 'single' ? currentStockCode || undefined : undefined,
+        startDate: timeRange?.[0]?.toISOString(),
+        endDate: timeRange?.[1]?.toISOString(),
+        interval,
+        rule: {
+          windowDays: ruleWindowDays,
+          thresholdPct: ruleThresholdPct,
+          excludeUnknown: true
         }
-        setEvaluation(normalizedResult)
-      } else {
-        const reason = evaluationResult.reason as { message?: string }
-        throw new Error(reason?.message || String(evaluationResult.reason))
+      })
+      const normalizedResult: ReviewEvaluateResponse = {
+        ...result,
+        actionSummary: (result as Partial<ReviewEvaluateResponse>).actionSummary || DEFAULT_ACTION_SUMMARY,
+        actionResults: (result as Partial<ReviewEvaluateResponse>).actionResults || []
       }
-
-      if (visualResult.status === 'fulfilled') {
-        setVisualData(visualResult.value)
-      } else {
-        setVisualData(null)
-        const reason = visualResult.reason as { message?: string }
-        message.warning(`K线对齐数据加载失败: ${reason?.message || String(visualResult.reason)}`)
-      }
+      setEvaluation(normalizedResult)
     } catch (error: any) {
       message.error(`复盘计算失败: ${error.message}`)
     } finally {
       setRunning(false)
-      setVisualLoading(false)
     }
   }
 
@@ -414,6 +367,23 @@ const ReviewAnalysisView: React.FC = () => {
           预测复盘统计“看盘预测”类别；操作归因统计“买入/卖出”打标事件。
         </div>
 
+        <Card title="K线与笔记对齐验证（独立模块）" size="small" className="mb-4">
+          <ReviewKlineWorkbench
+            scope={scope}
+            stockCode={scope === 'single' ? currentStockCode || undefined : undefined}
+            stockName={scope === 'single' ? currentStockName || undefined : undefined}
+            startDate={timeRange?.[0]?.toISOString()}
+            endDate={timeRange?.[1]?.toISOString()}
+            selectedEntryId={activeEntryId}
+            onMarkerSelect={(entryId) => selectEntry(entryId, 'chart')}
+            onNoteSaved={() => {
+              if (evaluation) {
+                void handleRunReview()
+              }
+            }}
+          />
+        </Card>
+
         {!evaluation ? (
           <Empty description="设置范围后点击“开始复盘”" />
         ) : (
@@ -473,16 +443,6 @@ const ReviewAnalysisView: React.FC = () => {
                   },
                   { key: 'actionInsufficientData', label: '数据不足样本', children: actionSummary.insufficientData }
                 ]}
-              />
-            </Card>
-
-            <Card title="K线与笔记对齐验证" size="small">
-              <ReviewKlinePanel
-                data={visualData}
-                loading={visualLoading}
-                selectedEntryId={activeEntryId}
-                onMarkerSelect={(entryId) => selectEntry(entryId, 'chart')}
-                onRetry={() => { void loadVisualData() }}
               />
             </Card>
 
