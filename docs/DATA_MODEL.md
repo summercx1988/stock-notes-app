@@ -160,8 +160,8 @@ tags:
 ## 时间节点数据结构
 
 ```typescript
-type NoteCategory = string
-type OperationTag = string
+type NoteCategory = '看盘预测' | '操盘打标' | '交易札记' | '备忘' | '资讯备忘'
+type OperationTag = '无' | '买入' | '卖出'
 
 interface TimeEntry {
   id: string                    // UUID
@@ -223,13 +223,11 @@ interface StockNote {
 
 - 只有 `reviewEligible=true` 的类别进入复盘引擎（默认 `看盘预测`）
 - `操盘打标` 通过 `operationTag` 参与操作归因统计（买入/卖出）
-- 其他自定义类别只参与检索、展示与经验沉淀
+- `交易札记`、`备忘`、`资讯备忘` 只参与检索、展示与经验沉淀
 
 ## 类别 Schema 配置（settings）
 
 每个类别独立维护字段枚举，配置保存在 `data/config/settings.json`：
-- 内置且锁定：`看盘预测`、`操盘打标`
-- 自定义类别通过 JSON 草稿配置（支持增删和字段差异化）
 
 ```json
 {

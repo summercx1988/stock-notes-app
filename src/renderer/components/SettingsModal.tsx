@@ -1,13 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Divider, Form, Input, Modal, Select, Space, Tabs, Tag, Typography, message } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+import { Alert, Button, Divider, Form, Input, Modal, Select, Space, Switch, Tabs, Tag, Typography, message } from 'antd'
+import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import type { NoteCategoryConfig, UserSettings } from '../../shared/types'
-import {
-  DEFAULT_NOTE_CATEGORY_CONFIGS,
-  getEnabledOptions,
-  isBuiltInCategoryCode,
-  normalizeNoteCategoryConfigs
-} from '../../shared/note-categories'
+import { DEFAULT_NOTE_CATEGORY_CONFIGS, getEnabledOptions, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 
 interface SettingsModalProps {
   open: boolean
@@ -45,34 +40,6 @@ const DEFAULT_SETTINGS: UserSettings = {
 const isMissingHandlerError = (error: unknown) =>
   String((error as { message?: string })?.message || error).includes('No handler registered')
 
-const serializeCustomCategoryConfigs = (configs: NoteCategoryConfig[]) =>
-  JSON.stringify(
-    normalizeNoteCategoryConfigs(configs).filter((item) => !isBuiltInCategoryCode(item.code)),
-    null,
-    2
-  )
-
-const createCustomTemplate = (existingCodes: Set<string>): NoteCategoryConfig => {
-  let suffix = 1
-  let code = `自定义类别${suffix}`
-  while (existingCodes.has(code)) {
-    suffix += 1
-    code = `自定义类别${suffix}`
-  }
-  return {
-    code,
-    label: code,
-    enabled: true,
-    reviewEligible: false,
-    builtIn: false,
-    fields: {
-      viewpoint: { enabled: false, options: [{ code: '未知', label: '未知', enabled: true, order: 1 }] },
-      operationTag: { enabled: false, options: [{ code: '无', label: '无', enabled: true, order: 1 }] },
-      timeHorizon: { enabled: false, options: [{ code: '短线', label: '短线', enabled: true, order: 1 }] }
-    }
-  }
-}
-
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab = 'text-ai' }) => {
   const [form] = Form.useForm<UserSettings>()
   const watchedDefaultCategory = Form.useWatch(['notes', 'defaultCategory'], form)
@@ -81,21 +48,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
   const [watchlist, setWatchlist] = useState<WatchlistStock[]>([])
   const [activeTab, setActiveTab] = useState<'text-ai' | 'asr' | 'note-style' | 'category-schema' | 'watchlist'>(initialTab)
   const [categoryConfigs, setCategoryConfigs] = useState<NoteCategoryConfig[]>(DEFAULT_NOTE_CATEGORY_CONFIGS)
-  const [customCategoryDraft, setCustomCategoryDraft] = useState('[]')
-  const [customCategoryDraftError, setCustomCategoryDraftError] = useState<string | null>(null)
-
-  const normalizedCategoryConfigs = useMemo(
-    () => normalizeNoteCategoryConfigs(categoryConfigs),
-    [categoryConfigs]
-  )
-  const builtInCategoryConfigs = useMemo(
-    () => normalizedCategoryConfigs.filter((item) => isBuiltInCategoryCode(item.code)),
-    [normalizedCategoryConfigs]
-  )
-  const customCategoryConfigs = useMemo(
-    () => normalizedCategoryConfigs.filter((item) => !isBuiltInCategoryCode(item.code)),
-    [normalizedCategoryConfigs]
-  )
 
   const watchlistHint = useMemo(() => {
     if (watchlist.length === 0) return '当前没有自选股，ASR 将按全库匹配。'
@@ -107,14 +59,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
   }, [watchlist])
 
   const categoryOptions = useMemo(
-    () => normalizedCategoryConfigs
+    () => categoryConfigs
       .filter((item) => item.enabled !== false)
       .map((item) => ({ label: item.label, value: item.code })),
-    [normalizedCategoryConfigs]
+    [categoryConfigs]
   )
   const defaultCategoryConfig = useMemo(
-    () => normalizedCategoryConfigs.find((item) => item.code === watchedDefaultCategory) || normalizedCategoryConfigs[0],
-    [normalizedCategoryConfigs, watchedDefaultCategory]
+    () => normalizeNoteCategoryConfigs(categoryConfigs).find((item) => item.code === watchedDefaultCategory) || categoryConfigs[0],
+    [categoryConfigs, watchedDefaultCategory]
   )
   const defaultDirectionOptions = useMemo(
     () => getEnabledOptions(defaultCategoryConfig?.fields.viewpoint.options || []).map((item) => ({ label: item.label, value: item.code })),
@@ -124,20 +76,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
     () => getEnabledOptions(defaultCategoryConfig?.fields.timeHorizon.options || []).map((item) => ({ label: item.label, value: item.code })),
     [defaultCategoryConfig]
   )
-
-  const parseCustomCategoryDraft = (draft: string): NoteCategoryConfig[] => {
-    const text = draft.trim()
-    if (!text) return []
-    const parsed = JSON.parse(text)
-    if (!Array.isArray(parsed)) {
-      throw new Error('JSON 必须是数组，例如: [{...}]')
-    }
-    const reserved = parsed.some((item: any) => isBuiltInCategoryCode(String(item?.code || '').trim()))
-    if (reserved) {
-      throw new Error('JSON 中不能包含内置类别 code（看盘预测、操盘打标）')
-    }
-    return normalizeNoteCategoryConfigs(parsed as NoteCategoryConfig[]).filter((item) => !isBuiltInCategoryCode(item.code))
-  }
 
   const loadData = async () => {
     setLoading(true)
@@ -156,8 +94,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
       }
       form.setFieldsValue(nextSettings)
       setCategoryConfigs(normalizedCategories)
-      setCustomCategoryDraft(serializeCustomCategoryConfigs(normalizedCategories))
-      setCustomCategoryDraftError(null)
       setWatchlist(watchlistStocks || [])
     } catch (error: any) {
       if (isMissingHandlerError(error)) {
@@ -170,8 +106,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
           }
         })
         setCategoryConfigs(fallbackCategories)
-        setCustomCategoryDraft(serializeCustomCategoryConfigs(fallbackCategories))
-        setCustomCategoryDraftError(null)
         setWatchlist([])
         message.warning('主进程配置模块未就绪，已使用默认设置。请重启应用后重试。')
         return
@@ -203,19 +137,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
 
   const handleSave = async () => {
     try {
-      let parsedCustomCategories: NoteCategoryConfig[] = []
-      try {
-        parsedCustomCategories = parseCustomCategoryDraft(customCategoryDraft)
-        setCustomCategoryDraftError(null)
-      } catch (error: any) {
-        setActiveTab('category-schema')
-        setCustomCategoryDraftError(error?.message || String(error))
-        message.error(`类别 Schema 校验失败: ${error?.message || String(error)}`)
-        return
-      }
-
       const values = await form.validateFields()
-      const normalizedCategories = normalizeNoteCategoryConfigs(parsedCustomCategories)
+      const normalizedCategories = normalizeNoteCategoryConfigs(categoryConfigs)
       const enabledCodes = new Set(
         normalizedCategories.filter((item) => item.enabled !== false).map((item) => item.code)
       )
@@ -237,9 +160,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
       }
       setLoading(true)
       await window.api.config.update(nextSettings)
-      setCategoryConfigs(normalizedCategories)
-      setCustomCategoryDraft(serializeCustomCategoryConfigs(normalizedCategories))
-      setCustomCategoryDraftError(null)
       message.success('设置已保存')
       onClose()
     } catch (error: any) {
@@ -286,53 +206,68 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
     }
   }
 
-  const handleFormatDraft = () => {
-    try {
-      const parsed = parseCustomCategoryDraft(customCategoryDraft)
-      const merged = normalizeNoteCategoryConfigs(parsed)
-      setCategoryConfigs(merged)
-      setCustomCategoryDraft(JSON.stringify(parsed, null, 2))
-      setCustomCategoryDraftError(null)
-      message.success('类别 Schema 校验通过，已格式化')
-    } catch (error: any) {
-      setCustomCategoryDraftError(error?.message || String(error))
-      message.error(`格式化失败: ${error?.message || String(error)}`)
+  const updateCategoryConfig = (index: number, updater: (current: NoteCategoryConfig) => NoteCategoryConfig) => {
+    setCategoryConfigs((prev) => prev.map((item, currentIndex) => (currentIndex === index ? updater(item) : item)))
+  }
+
+  const parseOptionsInput = (input: string) => {
+    return input
+      .split(/[\n,，]/g)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((token, index) => {
+        const separator = token.includes('|') ? '|' : (token.includes(':') ? ':' : null)
+        const [rawCode, rawLabel] = separator ? token.split(separator) : [token, token]
+        const code = String(rawCode || '').trim()
+        const label = String(rawLabel || rawCode || '').trim()
+        return {
+          code,
+          label: label || code,
+          enabled: true,
+          order: index + 1
+        }
+      })
+      .filter((item) => item.code.length > 0)
+  }
+
+  const optionsToInput = (category: NoteCategoryConfig, field: 'viewpoint' | 'operationTag' | 'timeHorizon') =>
+    getEnabledOptions(category.fields[field].options)
+      .map((item) => (item.label && item.label !== item.code ? `${item.code}:${item.label}` : item.code))
+      .join(', ')
+
+  const optionsHintText = '支持“代码”或“代码:显示名”，如：bullish:看多, bearish:看空'
+
+  const handleAddCategory = () => {
+    const existingCodes = new Set(categoryConfigs.map((item) => item.code))
+    let suffix = 1
+    let code = `自定义类别${suffix}`
+    while (existingCodes.has(code)) {
+      suffix += 1
+      code = `自定义类别${suffix}`
     }
+    setCategoryConfigs((prev) => [
+      ...prev,
+      {
+        code,
+        label: code,
+        enabled: true,
+        reviewEligible: false,
+        builtIn: false,
+        fields: {
+          viewpoint: { enabled: false, options: [{ code: '未知', label: '未知', enabled: true, order: 1 }] },
+          operationTag: { enabled: false, options: [{ code: '无', label: '无', enabled: true, order: 1 }] },
+          timeHorizon: { enabled: false, options: [{ code: '短线', label: '短线', enabled: true, order: 1 }] }
+        }
+      }
+    ])
   }
 
-  const handleResetDraft = () => {
-    setCustomCategoryDraft(serializeCustomCategoryConfigs(categoryConfigs))
-    setCustomCategoryDraftError(null)
-  }
-
-  const handleAddTemplate = () => {
-    const existingCodes = new Set(normalizedCategoryConfigs.map((item) => item.code))
-    const nextCustomCategories = [...customCategoryConfigs, createCustomTemplate(existingCodes)]
-    const merged = normalizeNoteCategoryConfigs(nextCustomCategories)
-    setCategoryConfigs(merged)
-    setCustomCategoryDraft(JSON.stringify(nextCustomCategories, null, 2))
-    setCustomCategoryDraftError(null)
-  }
-
-  const renderBuiltinSummary = (category: NoteCategoryConfig) => {
-    const viewpoint = category.fields.viewpoint.options.map((item) => item.label).join(' / ')
-    const operationTag = category.fields.operationTag.options.map((item) => item.label).join(' / ')
-    const timeHorizon = category.fields.timeHorizon.options.map((item) => item.label).join(' / ')
-    return (
-      <div key={category.code} className="border border-gray-200 rounded p-3 bg-gray-50">
-        <div className="flex items-center gap-2 mb-2">
-          <Tag color="blue">内置</Tag>
-          <Typography.Text strong>{category.label}</Typography.Text>
-          <Typography.Text type="secondary">({category.code})</Typography.Text>
-        </div>
-        <div className="text-xs text-gray-600 space-y-1">
-          <div>观点字段: {category.fields.viewpoint.enabled ? `开启（${viewpoint}）` : '关闭'}</div>
-          <div>操作字段: {category.fields.operationTag.enabled ? `开启（${operationTag}）` : '关闭'}</div>
-          <div>周期字段: {category.fields.timeHorizon.enabled ? `开启（${timeHorizon}）` : '关闭'}</div>
-          <div>复盘参与: {category.reviewEligible ? '是' : '否'}</div>
-        </div>
-      </div>
-    )
+  const handleRemoveCategory = (index: number) => {
+    setCategoryConfigs((prev) => {
+      const target = prev[index]
+      if (target?.builtIn) return prev
+      return prev.filter((_, currentIndex) => currentIndex !== index)
+    })
   }
 
   return (
@@ -428,48 +363,189 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
                     type="info"
                     showIcon
                     className="mb-3"
-                    message="类别配置采用 JSON 草稿编辑。内置类别仅保留“看盘预测 / 操盘打标”，且锁定不可改。"
+                    message="各类别独立维护字段与枚举。复盘只解析 reviewEligible=true 的类别（默认仅看盘预测）。"
                   />
-                  <div className="mb-2">
-                    <Space wrap>
-                      <Button icon={<PlusOutlined />} onClick={handleAddTemplate}>
-                        新增自定义类别模板
-                      </Button>
-                      <Button onClick={handleFormatDraft}>校验并格式化 JSON</Button>
-                      <Button onClick={handleResetDraft}>重置草稿</Button>
+                  <div className="mb-3">
+                    <Button type="dashed" icon={<PlusOutlined />} onClick={handleAddCategory}>
+                      新增类别
+                    </Button>
+                  </div>
+                  <div className="max-h-[420px] overflow-auto pr-1">
+                    <Space direction="vertical" size="middle" className="w-full">
+                      {categoryConfigs.map((category, index) => (
+                        <div key={`${category.code}-${index}`} className="border border-gray-200 rounded p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <Space>
+                              <Tag color={category.builtIn ? 'blue' : 'default'}>{category.builtIn ? '内置' : '自定义'}</Tag>
+                              <Tag color={category.reviewEligible ? 'magenta' : 'default'}>
+                                {category.reviewEligible ? '参与复盘' : '不参与复盘'}
+                              </Tag>
+                            </Space>
+                            <Button
+                              danger
+                              size="small"
+                              icon={<DeleteOutlined />}
+                              onClick={() => handleRemoveCategory(index)}
+                              disabled={category.builtIn}
+                            >
+                              删除
+                            </Button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Typography.Text type="secondary">类别代码（存储值）</Typography.Text>
+                              <Input
+                                value={category.code}
+                                disabled={category.builtIn}
+                                onChange={(event) => {
+                                  const nextCode = event.target.value.trim()
+                                  updateCategoryConfig(index, (current) => ({
+                                    ...current,
+                                    code: nextCode || current.code
+                                  }))
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <Typography.Text type="secondary">类别名称（展示值）</Typography.Text>
+                              <Input
+                                value={category.label}
+                                onChange={(event) => {
+                                  const nextLabel = event.target.value.trim()
+                                  updateCategoryConfig(index, (current) => ({
+                                    ...current,
+                                    label: nextLabel || current.label
+                                  }))
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex items-center gap-6">
+                            <div className="flex items-center gap-2">
+                              <Typography.Text type="secondary">启用</Typography.Text>
+                              <Switch
+                                checked={category.enabled !== false}
+                                onChange={(checked) => updateCategoryConfig(index, (current) => ({ ...current, enabled: checked }))}
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Typography.Text type="secondary">参与复盘</Typography.Text>
+                              <Switch
+                                checked={category.reviewEligible}
+                                onChange={(checked) => updateCategoryConfig(index, (current) => ({ ...current, reviewEligible: checked }))}
+                              />
+                            </div>
+                          </div>
+
+                          <Divider className="my-3" />
+
+                          <div className="grid grid-cols-1 gap-3">
+                            <div>
+                              <div className="mb-1 flex items-center gap-2">
+                                <Typography.Text type="secondary">观点枚举（逗号分隔）</Typography.Text>
+                                <Switch
+                                  checked={category.fields.viewpoint.enabled}
+                                  size="small"
+                                  onChange={(checked) => updateCategoryConfig(index, (current) => ({
+                                    ...current,
+                                    fields: {
+                                      ...current.fields,
+                                      viewpoint: {
+                                        ...current.fields.viewpoint,
+                                        enabled: checked
+                                      }
+                                    }
+                                  }))}
+                                />
+                              </div>
+                              <Input.TextArea
+                                value={optionsToInput(category, 'viewpoint')}
+                                autoSize={{ minRows: 1, maxRows: 3 }}
+                                onChange={(event) => updateCategoryConfig(index, (current) => ({
+                                  ...current,
+                                  fields: {
+                                    ...current.fields,
+                                    viewpoint: {
+                                      ...current.fields.viewpoint,
+                                      options: parseOptionsInput(event.target.value)
+                                    }
+                                  }
+                                }))}
+                              />
+                              <div className="mt-1 text-xs text-gray-400">{optionsHintText}</div>
+                            </div>
+                            <div>
+                              <div className="mb-1 flex items-center gap-2">
+                                <Typography.Text type="secondary">操作枚举（逗号分隔）</Typography.Text>
+                                <Switch
+                                  checked={category.fields.operationTag.enabled}
+                                  size="small"
+                                  onChange={(checked) => updateCategoryConfig(index, (current) => ({
+                                    ...current,
+                                    fields: {
+                                      ...current.fields,
+                                      operationTag: {
+                                        ...current.fields.operationTag,
+                                        enabled: checked
+                                      }
+                                    }
+                                  }))}
+                                />
+                              </div>
+                              <Input.TextArea
+                                value={optionsToInput(category, 'operationTag')}
+                                autoSize={{ minRows: 1, maxRows: 3 }}
+                                onChange={(event) => updateCategoryConfig(index, (current) => ({
+                                  ...current,
+                                  fields: {
+                                    ...current.fields,
+                                    operationTag: {
+                                      ...current.fields.operationTag,
+                                      options: parseOptionsInput(event.target.value)
+                                    }
+                                  }
+                                }))}
+                              />
+                            </div>
+                            <div>
+                              <div className="mb-1 flex items-center gap-2">
+                                <Typography.Text type="secondary">周期枚举（逗号分隔）</Typography.Text>
+                                <Switch
+                                  checked={category.fields.timeHorizon.enabled}
+                                  size="small"
+                                  onChange={(checked) => updateCategoryConfig(index, (current) => ({
+                                    ...current,
+                                    fields: {
+                                      ...current.fields,
+                                      timeHorizon: {
+                                        ...current.fields.timeHorizon,
+                                        enabled: checked
+                                      }
+                                    }
+                                  }))}
+                                />
+                              </div>
+                              <Input.TextArea
+                                value={optionsToInput(category, 'timeHorizon')}
+                                autoSize={{ minRows: 1, maxRows: 3 }}
+                                onChange={(event) => updateCategoryConfig(index, (current) => ({
+                                  ...current,
+                                  fields: {
+                                    ...current.fields,
+                                    timeHorizon: {
+                                      ...current.fields.timeHorizon,
+                                      options: parseOptionsInput(event.target.value)
+                                    }
+                                  }
+                                }))}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </Space>
-                  </div>
-                  <div className="text-xs text-gray-500 mb-2">
-                    仅编辑自定义类别数组（不要包含看盘预测、操盘打标）。
-                  </div>
-                  <Input.TextArea
-                    value={customCategoryDraft}
-                    onChange={(event) => {
-                      setCustomCategoryDraft(event.target.value)
-                      if (customCategoryDraftError) {
-                        setCustomCategoryDraftError(null)
-                      }
-                    }}
-                    autoSize={{ minRows: 10, maxRows: 18 }}
-                    spellCheck={false}
-                    placeholder={`[\n  {\n    "code": "交易札记",\n    "label": "交易札记",\n    "enabled": true,\n    "reviewEligible": false,\n    "fields": {\n      "viewpoint": { "enabled": false, "options": [{ "code": "未知", "label": "未知", "enabled": true, "order": 1 }] },\n      "operationTag": { "enabled": false, "options": [{ "code": "无", "label": "无", "enabled": true, "order": 1 }] },\n      "timeHorizon": { "enabled": false, "options": [{ "code": "短线", "label": "短线", "enabled": true, "order": 1 }] }\n    }\n  }\n]`}
-                  />
-                  {customCategoryDraftError ? (
-                    <Alert
-                      type="error"
-                      showIcon
-                      className="mt-2"
-                      message={`JSON 校验失败：${customCategoryDraftError}`}
-                    />
-                  ) : (
-                    <div className="mt-2 text-xs text-gray-500">
-                      当前自定义类别数量：{customCategoryConfigs.length}
-                    </div>
-                  )}
-                  <Divider className="my-3" />
-                  <Typography.Text strong>内置类别（只读）</Typography.Text>
-                  <div className="mt-2 space-y-2">
-                    {builtInCategoryConfigs.map(renderBuiltinSummary)}
                   </div>
                 </>
               )
