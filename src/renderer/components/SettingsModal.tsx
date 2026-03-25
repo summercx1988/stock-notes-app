@@ -21,6 +21,29 @@ interface WatchlistStock {
   inDatabase: boolean
 }
 
+const DEFAULT_SETTINGS: UserSettings = {
+  textAnalysis: {
+    baseUrl: 'https://api.minimaxi.com/v1',
+    model: 'MiniMax-M2.7-highspeed',
+    apiKey: ''
+  },
+  cloudASR: {
+    baseUrl: 'https://api.minimaxi.com/v1',
+    model: 'speech-01',
+    apiKey: '',
+    language: 'zh-CN'
+  },
+  notes: {
+    defaultCategory: '看盘预测',
+    defaultDirection: '未知',
+    defaultTimeHorizon: '短线',
+    style: '轻量'
+  }
+}
+
+const isMissingHandlerError = (error: unknown) =>
+  String((error as { message?: string })?.message || error).includes('No handler registered')
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab = 'text-ai' }) => {
   const [form] = Form.useForm<UserSettings>()
   const [loading, setLoading] = useState(false)
@@ -47,6 +70,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
       form.setFieldsValue(settings)
       setWatchlist(watchlistStocks || [])
     } catch (error: any) {
+      if (isMissingHandlerError(error)) {
+        form.setFieldsValue(DEFAULT_SETTINGS)
+        setWatchlist([])
+        message.warning('主进程配置模块未就绪，已使用默认设置。请重启应用后重试。')
+        return
+      }
       message.error(`加载设置失败: ${error?.message || String(error)}`)
     } finally {
       setLoading(false)

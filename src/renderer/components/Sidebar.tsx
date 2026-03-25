@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Input, List, Tag, Empty, Spin, message } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { useAppStore } from '../stores/app'
@@ -143,8 +143,17 @@ const Sidebar: React.FC = () => {
 
   const getNoteCount = (stockCode: string) => {
     const normalizedCode = normalizeStockCode(stockCode)
-    return timeline.filter(n => n.stockCode === normalizedCode).length
+    return noteCountByCode.get(normalizedCode) || 0
   }
+
+  const noteCountByCode = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const item of timeline) {
+      const code = normalizeStockCode(item.stockCode)
+      map.set(code, (map.get(code) || 0) + 1)
+    }
+    return map
+  }, [timeline])
 
   const getDisplayName = (item: { code: string; name: string }) => {
     const normalizedCode = normalizeStockCode(item.code)
@@ -164,7 +173,7 @@ const Sidebar: React.FC = () => {
     : stocks.map(s => ({
         code: normalizeStockCode(typeof s === 'string' ? s : s.code),
         name: normalizeStockName(typeof s === 'string' ? s : s.name, normalizeStockCode(typeof s === 'string' ? s : s.code)),
-        market: 'SH' as const,
+        market: (typeof s === 'string' ? 'SH' : s.market) as 'SH' | 'SZ' | 'BJ',
         isFromSearch: false
       }))
 
@@ -210,10 +219,12 @@ const Sidebar: React.FC = () => {
                 >
                   <div className="font-medium text-slate-800">{getDisplayName(item)}</div>
                   <div className="mt-1 text-xs text-slate-500">
-                    {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
+                    共 {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
                   </div>
-                  {!item.isFromSearch && getNoteCount(item.code) > 0 && (
-                    <Tag color="blue" className="mt-2 text-xs">{getNoteCount(item.code)}</Tag>
+                  {!item.isFromSearch && (
+                    <Tag color={getNoteCount(item.code) > 0 ? 'blue' : 'default'} className="mt-2 text-xs">
+                      {getNoteCount(item.code)}
+                    </Tag>
                   )}
                 </div>
               </List.Item>

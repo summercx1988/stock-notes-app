@@ -39,6 +39,29 @@ const NOTE_CATEGORY_OPTIONS: Array<{ label: NoteCategory; value: NoteCategory }>
   { label: '资讯备忘', value: '资讯备忘' }
 ]
 
+const DEFAULT_SETTINGS: UserSettings = {
+  textAnalysis: {
+    baseUrl: 'https://api.minimaxi.com/v1',
+    model: 'MiniMax-M2.7-highspeed',
+    apiKey: ''
+  },
+  cloudASR: {
+    baseUrl: 'https://api.minimaxi.com/v1',
+    model: 'speech-01',
+    apiKey: '',
+    language: 'zh-CN'
+  },
+  notes: {
+    defaultCategory: '看盘预测',
+    defaultDirection: '未知',
+    defaultTimeHorizon: '短线',
+    style: '轻量'
+  }
+}
+
+const isMissingHandlerError = (error: unknown) =>
+  String((error as { message?: string })?.message || error).includes('No handler registered')
+
 const RecordingControl: React.FC = () => {
   const { setStockNote, setLoading, setCurrentStock } = useAppStore()
 
@@ -98,6 +121,15 @@ const RecordingControl: React.FC = () => {
       setWatchlistOptions(options)
       setStockSearchOptions(options)
     } catch (error) {
+      if (isMissingHandlerError(error)) {
+        setSettings(DEFAULT_SETTINGS)
+        setNoteCategory(DEFAULT_SETTINGS.notes.defaultCategory)
+        setNoteDirection(DEFAULT_SETTINGS.notes.defaultDirection)
+        setWatchlistOptions([])
+        setStockSearchOptions([])
+        console.warn('[RecordingControl] Missing config/watchlist IPC handlers, fallback to defaults.')
+        return
+      }
       console.error('[RecordingControl] Failed to load user preferences:', error)
     }
   }, [])
