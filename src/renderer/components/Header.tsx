@@ -86,6 +86,7 @@ const Header: React.FC = () => {
           options={[
             { label: '盯盘笔记', value: 'notes' },
             { label: '事件时间轴', value: 'timeline' },
+            { label: '事件纵览', value: 'explorer' },
             { label: '复盘分析', value: 'review' }
           ]}
         />

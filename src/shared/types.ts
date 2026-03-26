@@ -3,6 +3,7 @@ export type TimeHorizon = string
 export type NoteInputType = 'voice' | 'manual'
 export type NoteCategory = string
 export type OperationTag = string
+export type TrackingStatus = string
 export type NoteStyle = '轻量' | '结构化'
 
 export interface EnumOptionConfig {
@@ -38,6 +39,7 @@ export interface TimeEntry {
   inputType?: NoteInputType
   category: NoteCategory
   operationTag: OperationTag
+  trackingStatus: TrackingStatus
   title: string
   content: string
   
@@ -194,6 +196,15 @@ export interface FeishuStatus {
   error?: string
 }
 
+export interface VoiceServiceStatus {
+  isConnected: boolean
+  isRunning: boolean
+  isRecording: boolean
+  duration: number
+  memoryUsage: number
+  lastError?: string
+}
+
 export interface UserSettings {
   textAnalysis: {
     baseUrl: string
@@ -261,14 +272,62 @@ export interface TimelineItem {
   timestamp: Date
   category: NoteCategory
   operationTag: OperationTag
+  trackingStatus: TrackingStatus
   title: string
   viewpoint?: Viewpoint
   hasAudio: boolean
 }
 
+export interface TimelineExplorerFilters {
+  categories?: NoteCategory[]
+  viewpointDirections?: ViewpointDirection[]
+  operationTags?: OperationTag[]
+  trackingStatuses?: TrackingStatus[]
+  stockQuery?: string
+  startDate?: string
+  endDate?: string
+}
+
+export interface TimelineExplorerFacetOption {
+  value: string
+  label: string
+  count: number
+}
+
+export interface TimelineExplorerEvent {
+  entryId: string
+  stockCode: string
+  stockName: string
+  eventTime: string
+  createdAt: string
+  category: NoteCategory
+  operationTag: OperationTag
+  trackingStatus: TrackingStatus
+  currentTrackingStatus: TrackingStatus
+  title: string
+  content: string
+  contentPreview: string
+  inputType?: NoteInputType
+  viewpoint?: Viewpoint
+  hasAudio: boolean
+  isLatestForStock: boolean
+}
+
+export interface TimelineExplorerResponse {
+  items: TimelineExplorerEvent[]
+  totalItems: number
+  totalStocks: number
+  facets: {
+    categories: TimelineExplorerFacetOption[]
+    viewpointDirections: TimelineExplorerFacetOption[]
+    operationTags: TimelineExplorerFacetOption[]
+    trackingStatuses: TimelineExplorerFacetOption[]
+  }
+}
+
 export type ReviewScope = 'single' | 'overall'
 export type KlineInterval = '5m' | '15m' | '30m' | '60m' | '1d'
-export type ReviewMarkerDirection = '看多' | '看空' | '中性' | '未知'
+export type ReviewMarkerDirection = '看多' | '看空' | '震荡' | '未知'
 
 export interface ReviewSnapshot {
   total: number

@@ -19,6 +19,7 @@ ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   eventTime?: Date | string
   category?: NoteCategory
   operationTag?: OperationTag
+  trackingStatus?: string
   viewpoint?: Viewpoint
   action?: Action
   inputType?: NoteInputType

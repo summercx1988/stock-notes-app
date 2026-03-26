@@ -5,10 +5,12 @@ import { buildReviewSnapshot, filterByRange, normalizeDirection } from '../core/
 import { alignReviewMarkers, type ReviewVisualEventInput } from '../core/review-alignment'
 import { createTraceId, logPipelineEvent } from '../services/pipeline-logger'
 import { appConfigService } from '../services/app-config'
+import { notifyNotesChanged } from '../services/notes-events'
 import type {
   Action,
   NoteCategory,
   OperationTag,
+  TrackingStatus,
   KlineInterval,
   NoteInputType,
   ReviewEvaluateRequest,
@@ -21,6 +23,8 @@ import type {
   StockNote,
   TimeEntry,
   TimelineItem,
+  TimelineExplorerFilters,
+  TimelineExplorerResponse,
   Viewpoint,
   NotesExportResult,
   NotesImportResult
@@ -32,6 +36,7 @@ interface AddEntryPayload {
   eventTime?: Date | string
   category?: NoteCategory
   operationTag?: OperationTag
+  trackingStatus?: TrackingStatus
   viewpoint?: Viewpoint
   action?: Action
   inputType?: NoteInputType
@@ -61,8 +66,15 @@ export class NotesAppService {
     private readonly marketDataService: MarketDataService
   ) {}
 
-  addEntry(stockCode: string, data: AddEntryPayload): Promise<TimeEntry> {
-    return this.notesService.addEntry(stockCode, data)
+  async addEntry(stockCode: string, data: AddEntryPayload): Promise<TimeEntry> {
+    const entry = await this.notesService.addEntry(stockCode, data)
+    notifyNotesChanged({
+      stockCode,
+      entryId: entry.id,
+      action: 'created',
+      source: 'local'
+    })
+    return entry
   }
 
   getStockNote(stockCode: string): Promise<StockNote | null> {
@@ -77,16 +89,44 @@ export class NotesAppService {
     return this.notesService.getEntriesByTimeRange(stockCode, start, end)
   }
 
-  updateEntry(stockCode: string, entryId: string, data: Partial<TimeEntry>): Promise<TimeEntry> {
-    return this.notesService.updateEntry(stockCode, entryId, data)
+  async updateEntry(stockCode: string, entryId: string, data: Partial<TimeEntry>): Promise<TimeEntry> {
+    const entry = await this.notesService.updateEntry(stockCode, entryId, data)
+    notifyNotesChanged({
+      stockCode,
+      entryId,
+      action: 'updated',
+      source: 'local'
+    })
+    return entry
   }
 
-  deleteEntry(stockCode: string, entryId: string): Promise<void> {
-    return this.notesService.deleteEntry(stockCode, entryId)
+  async deleteEntry(stockCode: string, entryId: string): Promise<void> {
+    await this.notesService.deleteEntry(stockCode, entryId)
+    notifyNotesChanged({
+      stockCode,
+      entryId,
+      action: 'deleted',
+      source: 'local'
+    })
   }
 
   getTimeline(filters?: TimelineFilters): Promise<TimelineItem[]> {
     return this.notesService.getTimeline(filters)
+  }
+
+  getTimelineExplorer(filters?: TimelineExplorerFilters): Promise<TimelineExplorerResponse> {
+    return this.notesService.getTimelineExplorer(filters)
+  }
+
+  async updateLatestTrackingStatus(stockCode: string, trackingStatus?: TrackingStatus): Promise<TimeEntry> {
+    const entry = await this.notesService.updateLatestTrackingStatus(stockCode, trackingStatus)
+    notifyNotesChanged({
+      stockCode,
+      entryId: entry.id,
+      action: 'updated',
+      source: 'local'
+    })
+    return entry
   }
 
   exportStockNote(stockCode: string, outputDir: string): Promise<NotesExportResult> {
@@ -462,10 +502,10 @@ export class NotesAppService {
     return '5m'
   }
 
-  private normalizeVisualDirection(direction?: string): '看多' | '看空' | '中性' | '未知' {
+  private normalizeVisualDirection(direction?: string): '看多' | '看空' | '震荡' | '未知' {
     if (direction === '看多') return '看多'
     if (direction === '看空') return '看空'
-    if (direction === '中性' || direction === '震荡') return '中性'
+    if (direction === '中性' || direction === '震荡') return '震荡'
     return '未知'
   }
 

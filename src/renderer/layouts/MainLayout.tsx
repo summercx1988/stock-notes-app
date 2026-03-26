@@ -5,6 +5,7 @@ import Sidebar from '../components/Sidebar'
 import Header from '../components/Header'
 import StockNoteView from '../components/StockNoteView'
 import StockTimelineView from '../components/StockTimelineView'
+import TimelineExplorerView from '../components/TimelineExplorerView'
 import ReviewAnalysisView from '../components/ReviewAnalysisView'
 
 const { Content } = Layout
@@ -14,6 +15,7 @@ const SIDEBAR_MAX = 520
 
 const MainLayout: React.FC = () => {
   const { activeModule } = useAppStore()
+  const showSidebar = activeModule !== 'explorer'
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
       const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY)
@@ -67,20 +69,25 @@ const MainLayout: React.FC = () => {
         <Layout className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <Header />
           <Layout hasSider className="bg-transparent h-full" ref={layoutRef}>
-            <div
-              style={{ width: sidebarWidth }}
-              className="h-full flex-none border-r border-slate-200 bg-slate-50/60"
-            >
-              <Sidebar />
-            </div>
-            <div
-              className={`w-1 h-full bg-transparent hover:bg-blue-200/70 transition-colors ${resizing ? 'bg-blue-300/80' : ''}`}
-              onMouseDown={() => setResizing(true)}
-              title="拖拽调整侧栏宽度"
-            />
+            {showSidebar ? (
+              <div
+                style={{ width: sidebarWidth }}
+                className="h-full flex-none border-r border-slate-200 bg-slate-50/60"
+              >
+                <Sidebar />
+              </div>
+            ) : null}
+            {showSidebar ? (
+              <div
+                className={`w-1 h-full bg-transparent hover:bg-blue-200/70 transition-colors ${resizing ? 'bg-blue-300/80' : ''}`}
+                onMouseDown={() => setResizing(true)}
+                title="拖拽调整侧栏宽度"
+              />
+            ) : null}
             <Content className="min-w-0 overflow-hidden bg-white">
               {activeModule === 'notes' && <StockNoteView />}
               {activeModule === 'timeline' && <StockTimelineView />}
+              {activeModule === 'explorer' && <TimelineExplorerView />}
               {activeModule === 'review' && <ReviewAnalysisView />}
             </Content>
           </Layout>

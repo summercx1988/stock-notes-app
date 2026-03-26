@@ -130,14 +130,14 @@ const StockTimelineView: React.FC = () => {
   const getViewpointColor = (direction?: Viewpoint['direction']) => {
     if (direction === '看多') return 'red'
     if (direction === '看空') return 'green'
-    if (direction === '中性') return 'blue'
+    if (direction === '震荡') return 'blue'
     return 'default'
   }
 
   const getNodeColor = (direction?: Viewpoint['direction']) => {
     if (direction === '看多') return '#ef4444'
     if (direction === '看空') return '#22c55e'
-    if (direction === '中性') return '#3b82f6'
+    if (direction === '震荡') return '#3b82f6'
     return '#9ca3af'
   }
 
@@ -153,6 +153,11 @@ const StockTimelineView: React.FC = () => {
     if (operationTag === '买入') return 'red'
     if (operationTag === '卖出') return 'green'
     return 'default'
+  }
+
+  const getTrackingStatusColor = (trackingStatus?: string) => {
+    if (trackingStatus === '已取关') return 'default'
+    return 'gold'
   }
 
   const formatMinuteTime = (value?: Date | string) => {
@@ -215,7 +220,7 @@ const StockTimelineView: React.FC = () => {
               { label: '全部观点', value: '全部' },
               { label: '看多', value: '看多' },
               { label: '看空', value: '看空' },
-              { label: '中性', value: '中性' },
+              { label: '震荡', value: '震荡' },
               { label: '未知', value: '未知' }
             ]}
           />
@@ -255,6 +260,9 @@ const StockTimelineView: React.FC = () => {
                         </Tag>
                         <Tag color={getOperationTagColor(entry.operationTag)}>
                           操作: {entry.operationTag || '无'}
+                        </Tag>
+                        <Tag color={getTrackingStatusColor(entry.trackingStatus)}>
+                          状态: {entry.trackingStatus || '关注'}
                         </Tag>
                         <Tag>{entry.inputType === 'voice' ? '语音' : '手动'}</Tag>
                       </div>

@@ -6,11 +6,15 @@ import type {
   StockNote,
   TimeEntry,
   TimelineItem,
+  TimelineExplorerEvent,
+  TimelineExplorerFilters,
+  TimelineExplorerResponse,
   Viewpoint,
   Action,
   NoteInputType,
   NoteCategory,
   OperationTag,
+  TrackingStatus,
   NotesExportResult,
   NotesImportResult
 } from '../../shared/types'
@@ -26,6 +30,7 @@ interface EntryMeta {
   inputType?: string
   category?: string
   operationTag?: string
+  trackingStatus?: string
 }
 
 export class NotesService {
@@ -46,6 +51,42 @@ export class NotesService {
     return this.notesDir
   }
 
+  async migrateLegacyViewpointTerminology(): Promise<{ scannedFiles: number; migratedFiles: number }> {
+    await this.ensureFilePathIndex()
+    const entries = Array.from(this.filePathIndex.entries())
+    let migratedFiles = 0
+
+    for (const [stockCode, filePath] of entries) {
+      let content = ''
+      try {
+        content = await fs.readFile(filePath, 'utf-8')
+      } catch {
+        continue
+      }
+
+      const migrated = content.replace(
+        /(>\s*\*\*观点\*\*:\s*)中性(?=(\s|\(|\||$))/g,
+        '$1震荡'
+      )
+      if (migrated === content) {
+        continue
+      }
+
+      await fs.writeFile(filePath, migrated, 'utf-8')
+      this.cache.delete(stockCode)
+      migratedFiles += 1
+    }
+
+    if (migratedFiles > 0) {
+      await this.ensureFilePathIndex(true)
+    }
+
+    return {
+      scannedFiles: entries.length,
+      migratedFiles
+    }
+  }
+
   async addEntry(
     stockCode: string,
     data: {
@@ -54,6 +95,7 @@ export class NotesService {
       eventTime?: Date | string
       category?: NoteCategory
       operationTag?: OperationTag
+      trackingStatus?: TrackingStatus
       viewpoint?: Viewpoint
       action?: Action
       inputType?: NoteInputType
@@ -86,9 +128,10 @@ export class NotesService {
       inputType: this.normalizeInputType(data.inputType) ?? this.detectInputType(data.audioFile),
       category: data.category ?? this.createDefaultCategory(),
       operationTag: this.normalizeOperationTag(data.operationTag, data.action),
+      trackingStatus: this.normalizeTrackingStatus(data.trackingStatus),
       title,
       content: normalizedContent,
-      viewpoint: data.viewpoint ?? this.createDefaultViewpoint(),
+      viewpoint: this.normalizeViewpoint(data.viewpoint ?? this.createDefaultViewpoint()),
       action: data.action,
       keywords: [],
       audioFile: data.audioFile,
@@ -144,6 +187,9 @@ export class NotesService {
           const fallbackPath = await this.resolveStockFilePath(stockCode)
           const content = await fs.readFile(fallbackPath, 'utf-8')
           const parsed = await this.parseStockNote(content)
+          if (parsed.needsBackfill) {
+            await this.rewriteStockFile(parsed.note.stockCode, parsed.note)
+          }
           const note = parsed.note
           this.cache.set(stockCode, note)
           return note
@@ -201,7 +247,10 @@ export class NotesService {
       content: normalizedContent,
       operationTag: data.operationTag !== undefined || data.action !== undefined
         ? this.normalizeOperationTag(data.operationTag, data.action ?? current.action)
-        : (current.operationTag ?? this.normalizeOperationTag(undefined, current.action))
+        : (current.operationTag ?? this.normalizeOperationTag(undefined, current.action)),
+      trackingStatus: data.trackingStatus !== undefined
+        ? this.normalizeTrackingStatus(data.trackingStatus)
+        : (current.trackingStatus ?? this.createDefaultTrackingStatus())
     }
 
     const updated: TimeEntry = {
@@ -212,7 +261,8 @@ export class NotesService {
       eventTime: updatedEventTime,
       timestamp: updatedEventTime,
       createdAt: this.getEntryCreatedAt(current),
-      inputType: this.normalizeInputType(data.inputType) ?? current.inputType
+      inputType: this.normalizeInputType(data.inputType) ?? current.inputType,
+      viewpoint: this.normalizeViewpoint(data.viewpoint ?? current.viewpoint ?? this.createDefaultViewpoint())
     }
 
     stockNote.entries[index] = updated
@@ -273,6 +323,7 @@ export class NotesService {
           timestamp: eventTime,
           category: entry.category,
           operationTag: entry.operationTag ?? this.createDefaultOperationTag(),
+          trackingStatus: entry.trackingStatus ?? this.createDefaultTrackingStatus(),
           title: entry.title,
           viewpoint: entry.viewpoint,
           hasAudio: !!entry.audioFile
@@ -291,6 +342,83 @@ export class NotesService {
       extra: { total_items: sorted.length }
     })
     return sorted
+  }
+
+  async getTimelineExplorer(filters?: TimelineExplorerFilters): Promise<TimelineExplorerResponse> {
+    const stockCodes = await this.getAllStockCodes()
+    const normalizedTrackingFilters = new Set((filters?.trackingStatuses || []).map((item) => this.normalizeTrackingStatus(item)))
+    const normalizedCategoryFilters = new Set((filters?.categories || []).map((item) => this.normalizeCategory(item)))
+    const normalizedOperationFilters = new Set((filters?.operationTags || []).map((item) => this.normalizeOperationTag(item)))
+    const normalizedViewpointFilters = new Set((filters?.viewpointDirections || []).map((item) => this.normalizeViewpointDirection(item)))
+    const startDate = filters?.startDate ? this.normalizeDate(filters.startDate, new Date(0)) : null
+    const endDate = filters?.endDate ? this.normalizeDate(filters.endDate, new Date()) : null
+    const stockQuery = String(filters?.stockQuery || '').trim().toLowerCase()
+    const baseEvents: TimelineExplorerEvent[] = []
+
+    for (const stockCode of stockCodes) {
+      const note = await this.getStockNote(stockCode)
+      if (!note || note.entries.length === 0) continue
+
+      const latestEntry = this.getLatestEntry(note.entries)
+      const currentTrackingStatus = this.normalizeTrackingStatus(latestEntry?.trackingStatus)
+      if (normalizedTrackingFilters.size > 0 && !normalizedTrackingFilters.has(currentTrackingStatus)) {
+        continue
+      }
+
+      if (stockQuery && !this.matchesStockQuery(note.stockCode, note.stockName, stockQuery)) {
+        continue
+      }
+
+      const sortedEntries = [...note.entries].sort((left, right) => {
+        return this.getEntryEventTime(right).getTime() - this.getEntryEventTime(left).getTime()
+      })
+
+      for (const entry of sortedEntries) {
+        const eventTime = this.getEntryEventTime(entry)
+        if (startDate && eventTime < startDate) continue
+        if (endDate && eventTime > endDate) continue
+
+        baseEvents.push(this.toTimelineExplorerEvent(note, entry, currentTrackingStatus, latestEntry?.id === entry.id))
+      }
+    }
+
+    const facets = this.buildTimelineExplorerFacets(baseEvents)
+    const items = baseEvents.filter((item) => {
+      const normalizedCategory = this.normalizeCategory(item.category)
+      const normalizedOperationTag = this.normalizeOperationTag(item.operationTag)
+      const normalizedDirection = this.normalizeViewpointDirection(item.viewpoint?.direction)
+      if (normalizedCategoryFilters.size > 0 && !normalizedCategoryFilters.has(normalizedCategory)) {
+        return false
+      }
+      if (normalizedOperationFilters.size > 0 && !normalizedOperationFilters.has(normalizedOperationTag)) {
+        return false
+      }
+      if (normalizedViewpointFilters.size > 0 && !normalizedViewpointFilters.has(normalizedDirection)) {
+        return false
+      }
+      return true
+    })
+
+    return {
+      items,
+      totalItems: items.length,
+      totalStocks: new Set(items.map((item) => item.stockCode)).size,
+      facets
+    }
+  }
+
+  async updateLatestTrackingStatus(stockCode: string, trackingStatus?: TrackingStatus): Promise<TimeEntry> {
+    const stockNote = await this.getStockNote(stockCode)
+    if (!stockNote || stockNote.entries.length === 0) {
+      throw new Error(`Stock note not found: ${stockCode}`)
+    }
+    const latestEntry = this.getLatestEntry(stockNote.entries)
+    if (!latestEntry) {
+      throw new Error(`Latest entry not found: ${stockCode}`)
+    }
+    return this.updateEntry(stockCode, latestEntry.id, {
+      trackingStatus: this.normalizeTrackingStatus(trackingStatus)
+    })
   }
 
   async exportStockNote(stockCode: string, outputDir: string): Promise<NotesExportResult> {
@@ -553,14 +681,16 @@ export class NotesService {
     md += `<!-- input-type: ${inputType} -->\n`
     md += `<!-- category: ${entry.category} -->\n`
     md += `<!-- operation-tag: ${operationTag} -->\n`
+    md += `<!-- tracking-status: ${this.normalizeTrackingStatus(entry.trackingStatus)} -->\n`
     md += `### 🕐 ${title}\n\n`
     md += `> **事件时间**: ${this.toLocalMinuteText(eventTime)}\n`
     md += `> **记录时间**: ${this.toLocalMinuteText(createdAt)}\n`
     md += `> **记录来源**: ${inputType}\n`
     md += `> **笔记类别**: ${entry.category}\n`
     md += `> **操作打标**: ${operationTag}\n`
+    md += `> **跟踪状态**: ${this.normalizeTrackingStatus(entry.trackingStatus)}\n`
 
-    const viewpoint = entry.viewpoint ?? this.createDefaultViewpoint()
+    const viewpoint = this.normalizeViewpoint(entry.viewpoint ?? this.createDefaultViewpoint())
     md += `> **观点**: ${viewpoint.direction} (信心: ${viewpoint.confidence}) | **周期**: ${viewpoint.timeHorizon}\n`
 
     if (entry.keywords.length > 0) {
@@ -602,7 +732,10 @@ export class NotesService {
     const normalizedRawName = this.normalizeStockNameCandidate(rawStockName, stockCode)
     const stockInfo = await this.getStockInfo(stockCode)
     const resolvedStockName = normalizedRawName || stockInfo?.name || stockCode
-    const needsBackfill = normalizeStockNameText(rawStockName) !== resolvedStockName && resolvedStockName !== stockCode
+    const normalizedViewpointChanges = this.normalizeEntryViewpoints(entries)
+    const needsBackfill = (
+      normalizeStockNameText(rawStockName) !== resolvedStockName && resolvedStockName !== stockCode
+    ) || normalizedViewpointChanges > 0
 
     return {
       note: {
@@ -635,7 +768,7 @@ export class NotesService {
         continue
       }
 
-      const metaMatch = line.match(/^<!--\s*(entry-id|event-time|created-at|input-type|category|operation-tag):\s*(.+?)\s*-->$/)
+      const metaMatch = line.match(/^<!--\s*(entry-id|event-time|created-at|input-type|category|operation-tag|tracking-status):\s*(.+?)\s*-->$/)
       if (metaMatch) {
         const key = metaMatch[1]
         const value = metaMatch[2].trim()
@@ -645,6 +778,7 @@ export class NotesService {
         if (key === 'input-type') pendingMeta.inputType = value
         if (key === 'category') pendingMeta.category = value
         if (key === 'operation-tag') pendingMeta.operationTag = value
+        if (key === 'tracking-status') pendingMeta.trackingStatus = value
         continue
       }
 
@@ -721,6 +855,7 @@ export class NotesService {
     let inputTypeLabel: string | undefined
     let categoryLabel: string | undefined
     let operationTagLabel: string | undefined
+    let trackingStatusLabel: string | undefined
 
     let inActionSection = false
 
@@ -759,6 +894,12 @@ export class NotesService {
       const operationTagMatch = trimmed.match(/^>\s*\*\*操作打标\*\*:\s*(.+)$/)
       if (operationTagMatch) {
         operationTagLabel = operationTagMatch[1].trim()
+        continue
+      }
+
+      const trackingStatusMatch = trimmed.match(/^>\s*\*\*跟踪状态\*\*:\s*(.+)$/)
+      if (trackingStatusMatch) {
+        trackingStatusLabel = trackingStatusMatch[1].trim()
         continue
       }
 
@@ -845,9 +986,10 @@ export class NotesService {
       inputType,
       category: this.normalizeCategory(meta.category ?? categoryLabel),
       operationTag: this.normalizeOperationTag(meta.operationTag ?? operationTagLabel, action),
+      trackingStatus: this.normalizeTrackingStatus(meta.trackingStatus ?? trackingStatusLabel),
       title,
       content: normalizedContent || title,
-      viewpoint: viewpoint ?? this.createDefaultViewpoint(),
+      viewpoint: this.normalizeViewpoint(viewpoint ?? this.createDefaultViewpoint()),
       action,
       keywords,
       audioFile,
@@ -908,6 +1050,49 @@ export class NotesService {
     return '无'
   }
 
+  private createDefaultTrackingStatus(): TrackingStatus {
+    return '关注'
+  }
+
+  private normalizeViewpointDirection(value?: string): Viewpoint['direction'] {
+    const text = String(value || '').trim()
+    if (!text) return '未知'
+    if (text === '看多') return '看多'
+    if (text === '看空') return '看空'
+    if (text === '震荡' || text === '中性') return '震荡'
+    if (text === '未知') return '未知'
+    return '未知'
+  }
+
+  private normalizeViewpoint(viewpoint?: Viewpoint): Viewpoint {
+    if (!viewpoint) {
+      return this.createDefaultViewpoint()
+    }
+    const confidence = Number.isFinite(viewpoint.confidence) ? viewpoint.confidence : 0
+    return {
+      direction: this.normalizeViewpointDirection(viewpoint.direction),
+      confidence: Math.max(0, Math.min(1, confidence)),
+      timeHorizon: String(viewpoint.timeHorizon || '短线').trim() || '短线'
+    }
+  }
+
+  private normalizeEntryViewpoints(entries: TimeEntry[]): number {
+    let changes = 0
+    for (const entry of entries) {
+      const previous = entry.viewpoint
+      const normalized = this.normalizeViewpoint(previous)
+      const changed = !previous
+        || previous.direction !== normalized.direction
+        || previous.confidence !== normalized.confidence
+        || previous.timeHorizon !== normalized.timeHorizon
+      if (changed) {
+        changes += 1
+      }
+      entry.viewpoint = normalized
+    }
+    return changes
+  }
+
   private getEntryEventTime(entry: TimeEntry): Date {
     return this.normalizeDate(entry.eventTime ?? entry.timestamp, new Date())
   }
@@ -937,6 +1122,94 @@ export class NotesService {
     if (action?.type === '买入') return '买入'
     if (action?.type === '卖出') return '卖出'
     return this.createDefaultOperationTag()
+  }
+
+  private normalizeTrackingStatus(value?: string): TrackingStatus {
+    const normalized = String(value || '').trim()
+    if (!normalized) return this.createDefaultTrackingStatus()
+    if (normalized === '关注' || normalized === '已取关') return normalized
+    return normalized
+  }
+
+  private getLatestEntry(entries: TimeEntry[]): TimeEntry | null {
+    if (!entries.length) return null
+    return [...entries].sort((left, right) => {
+      const eventDelta = this.getEntryEventTime(right).getTime() - this.getEntryEventTime(left).getTime()
+      if (eventDelta !== 0) return eventDelta
+      return this.getEntryCreatedAt(right).getTime() - this.getEntryCreatedAt(left).getTime()
+    })[0] || null
+  }
+
+  private matchesStockQuery(stockCode: string, stockName: string, stockQuery: string): boolean {
+    if (!stockQuery) return true
+    const normalizedCode = String(stockCode || '').toLowerCase()
+    const normalizedName = String(stockName || '').toLowerCase()
+    return normalizedCode.includes(stockQuery) || normalizedName.includes(stockQuery)
+  }
+
+  private toTimelineExplorerEvent(
+    note: StockNote,
+    entry: TimeEntry,
+    currentTrackingStatus: TrackingStatus,
+    isLatestForStock: boolean
+  ): TimelineExplorerEvent {
+    const content = String(entry.content || '').trim()
+    const oneLine = content.replace(/\s+/g, ' ').trim()
+    return {
+      entryId: entry.id,
+      stockCode: note.stockCode,
+      stockName: note.stockName,
+      eventTime: this.getEntryEventTime(entry).toISOString(),
+      createdAt: this.getEntryCreatedAt(entry).toISOString(),
+      category: this.normalizeCategory(entry.category),
+      operationTag: this.normalizeOperationTag(entry.operationTag, entry.action),
+      trackingStatus: this.normalizeTrackingStatus(entry.trackingStatus),
+      currentTrackingStatus,
+      title: entry.title,
+      content,
+      contentPreview: oneLine.length > 140 ? `${oneLine.slice(0, 140)}...` : oneLine,
+      inputType: entry.inputType,
+      viewpoint: entry.viewpoint
+        ? {
+            ...entry.viewpoint,
+            direction: this.normalizeViewpointDirection(entry.viewpoint.direction)
+          }
+        : undefined,
+      hasAudio: Boolean(entry.audioFile),
+      isLatestForStock
+    }
+  }
+
+  private buildTimelineExplorerFacets(items: TimelineExplorerEvent[]): TimelineExplorerResponse['facets'] {
+    const createFacetOptions = (counts: Map<string, number>) => {
+      return [...counts.entries()]
+        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'zh-CN'))
+        .map(([value, count]) => ({
+          value,
+          label: value,
+          count
+        }))
+    }
+
+    const categories = new Map<string, number>()
+    const viewpointDirections = new Map<string, number>()
+    const operationTags = new Map<string, number>()
+    const trackingStatuses = new Map<string, number>()
+
+    for (const item of items) {
+      categories.set(item.category, (categories.get(item.category) || 0) + 1)
+      const direction = this.normalizeViewpointDirection(item.viewpoint?.direction)
+      viewpointDirections.set(direction, (viewpointDirections.get(direction) || 0) + 1)
+      operationTags.set(item.operationTag, (operationTags.get(item.operationTag) || 0) + 1)
+      trackingStatuses.set(item.currentTrackingStatus, (trackingStatuses.get(item.currentTrackingStatus) || 0) + 1)
+    }
+
+    return {
+      categories: createFacetOptions(categories),
+      viewpointDirections: createFacetOptions(viewpointDirections),
+      operationTags: createFacetOptions(operationTags),
+      trackingStatuses: createFacetOptions(trackingStatuses)
+    }
   }
 
   private detectInputType(audioFile?: string): NoteInputType {

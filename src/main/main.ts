@@ -4,6 +4,7 @@ import path from 'path'
 import { voiceTranscriberClient } from './services/VoiceTranscriberClient'
 import { feishuBotService } from './services/feishu-bot'
 import { appConfigService } from './services/app-config'
+import { sharedNotesService } from './application/container'
 
 let mainWindow: BrowserWindow | null = null
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -59,6 +60,17 @@ if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
   createWindow()
 
+  try {
+    const migration = await sharedNotesService.migrateLegacyViewpointTerminology()
+    if (migration.migratedFiles > 0) {
+      console.log(
+        `[Main] Viewpoint migration completed: migrated ${migration.migratedFiles}/${migration.scannedFiles} files (中性 -> 震荡)`
+      )
+    }
+  } catch (error) {
+    console.warn('[Main] Viewpoint migration failed:', error)
+  }
+
   const config = await appConfigService.getAll()
   if (config.feishu?.enabled) {
     console.log('[Main] Auto-starting Feishu bot service')
@@ -90,6 +102,7 @@ import './ipc/ai'
 import './ipc/audio'
 import './ipc/stock'
 import './ipc/review'
+import './ipc/timeline'
 import './ipc/config'
 import './ipc/system'
 import './ipc/feishu'

@@ -8,19 +8,17 @@ import type {
   ReviewSnapshotResponse,
   ReviewVisualRequest,
   ReviewVisualResponse,
+  TimelineExplorerFilters,
+  TimelineExplorerResponse,
   UserSettings,
   FeishuStatus,
-  NotesChangedEvent
+  NotesChangedEvent,
+  VoiceServiceStatus
 } from '../shared/types'
 
 interface VoiceCommandResult {
   success: boolean
   error?: string
-}
-
-interface VoiceStatus {
-  isConnected: boolean
-  isRunning: boolean
 }
 
 interface VoiceTranscribeResult extends VoiceCommandResult {
@@ -65,7 +63,7 @@ const api = {
   voice: {
     start: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:start'),
     stop: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:stop'),
-    status: (): Promise<VoiceStatus> => ipcRenderer.invoke('voice:status'),
+    status: (): Promise<VoiceServiceStatus> => ipcRenderer.invoke('voice:status'),
     startRecording: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:startRecording'),
     stopRecording: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:stopRecording'),
     transcribeFile: (audioPath: string) =>
@@ -87,10 +85,16 @@ const api = {
       ipcRenderer.on('voice:error', handler)
       return () => ipcRenderer.removeListener('voice:error', handler)
     },
+    onStatus: (callback: (status: VoiceServiceStatus) => void) => {
+      const handler = (_: unknown, status: VoiceServiceStatus) => callback(status)
+      ipcRenderer.on('voice:status', handler)
+      return () => ipcRenderer.removeListener('voice:status', handler)
+    },
     removeListeners: () => {
       ipcRenderer.removeAllListeners('voice:transcript')
       ipcRenderer.removeAllListeners('voice:audio_saved')
       ipcRenderer.removeAllListeners('voice:error')
+      ipcRenderer.removeAllListeners('voice:status')
     }
   },
 
@@ -130,6 +134,13 @@ const api = {
       ipcRenderer.invoke('review:evaluate', request),
     getVisualData: (request: ReviewVisualRequest): Promise<ReviewVisualResponse> =>
       ipcRenderer.invoke('review:getVisualData', request),
+  },
+
+  timeline: {
+    queryExplorer: (filters?: TimelineExplorerFilters): Promise<TimelineExplorerResponse> =>
+      ipcRenderer.invoke('timeline:queryExplorer', filters),
+    updateLatestTrackingStatus: (stockCode: string, trackingStatus?: string) =>
+      ipcRenderer.invoke('timeline:updateLatestTrackingStatus', stockCode, trackingStatus)
   },
 
   system: {
