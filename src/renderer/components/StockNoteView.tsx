@@ -4,7 +4,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import MDEditor from '@uiw/react-md-editor'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { NoteCategory, NoteCategoryConfig, OperationTag, TimeEntry, UserSettings, Viewpoint } from '../../shared/types'
+import type { NoteCategory, NoteCategoryConfig, OperationTag, TimeEntry, TrackingStatus, UserSettings, Viewpoint } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, getCategoryConfig, getEnabledOptions, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 
 const StockNoteView: React.FC = () => {
@@ -24,13 +24,19 @@ const StockNoteView: React.FC = () => {
   const [editEventTime, setEditEventTime] = useState<Dayjs | null>(null)
   const [editCategory, setEditCategory] = useState<NoteCategory>('看盘预测')
   const [editOperationTag, setEditOperationTag] = useState<OperationTag>('无')
+  const [editTrackingStatus, setEditTrackingStatus] = useState<TrackingStatus>('关注')
   const [isAdding, setIsAdding] = useState(false)
   const [newContent, setNewContent] = useState('')
   const [newViewpoint, setNewViewpoint] = useState<Viewpoint | null>(null)
   const [newEventTime, setNewEventTime] = useState<Dayjs | null>(null)
   const [newCategory, setNewCategory] = useState<NoteCategory>('看盘预测')
   const [newOperationTag, setNewOperationTag] = useState<OperationTag>('无')
+  const [newTrackingStatus, setNewTrackingStatus] = useState<TrackingStatus>('关注')
   const [categoryConfigs, setCategoryConfigs] = useState<NoteCategoryConfig[]>(DEFAULT_NOTE_CATEGORY_CONFIGS)
+  const trackingStatusOptions = [
+    { label: '关注', value: '关注' },
+    { label: '已取关', value: '已取关' }
+  ]
 
   const categoryOptions = categoryConfigs
     .filter((item) => item.enabled !== false)
@@ -173,6 +179,7 @@ const StockNoteView: React.FC = () => {
           content: editContent,
           category: editCategory,
           operationTag: editOperationTag,
+          trackingStatus: editTrackingStatus,
           viewpoint: editViewpoint || createViewpoint('未知', '短线'),
           eventTime: (editEventTime || dayjs()).toISOString()
         })
@@ -183,6 +190,7 @@ const StockNoteView: React.FC = () => {
           content: editContent,
           category: editCategory,
           operationTag: editOperationTag,
+          trackingStatus: editTrackingStatus,
           viewpoint: editViewpoint || createViewpoint('未知', '短线'),
           eventTime: (editEventTime || dayjs()).toISOString(),
           inputType: 'manual'
@@ -198,6 +206,7 @@ const StockNoteView: React.FC = () => {
       setEditEventTime(null)
       setEditCategory('看盘预测')
       setEditOperationTag('无')
+      setEditTrackingStatus('关注')
     } catch (error: any) {
       message.error('保存失败: ' + error.message)
     } finally {
@@ -228,6 +237,7 @@ const StockNoteView: React.FC = () => {
     setNewEventTime(dayjs())
     setNewCategory('看盘预测')
     setNewOperationTag('无')
+    setNewTrackingStatus('关注')
   }
 
   const handleSaveNewNote = async () => {
@@ -239,6 +249,7 @@ const StockNoteView: React.FC = () => {
         content: newContent,
         category: newCategory,
         operationTag: newOperationTag,
+        trackingStatus: newTrackingStatus,
         viewpoint: newViewpoint || createViewpoint('未知', '短线'),
         eventTime: (newEventTime || dayjs()).toISOString(),
         inputType: 'manual'
@@ -251,6 +262,7 @@ const StockNoteView: React.FC = () => {
       setNewEventTime(null)
       setNewCategory('看盘预测')
       setNewOperationTag('无')
+      setNewTrackingStatus('关注')
     } catch (error: any) {
       message.error('保存失败: ' + error.message)
     } finally {
@@ -265,6 +277,7 @@ const StockNoteView: React.FC = () => {
     setEditEventTime(toDayjs(entry.eventTime || entry.timestamp) || dayjs())
     setEditCategory(entry.category || '看盘预测')
     setEditOperationTag(entry.operationTag || '无')
+    setEditTrackingStatus(entry.trackingStatus || '关注')
     setIsAdding(false)
   }
 
@@ -275,6 +288,7 @@ const StockNoteView: React.FC = () => {
     setEditEventTime(null)
     setEditCategory('看盘预测')
     setEditOperationTag('无')
+    setEditTrackingStatus('关注')
   }
 
   const cancelAdd = () => {
@@ -284,6 +298,7 @@ const StockNoteView: React.FC = () => {
     setNewEventTime(null)
     setNewCategory('看盘预测')
     setNewOperationTag('无')
+    setNewTrackingStatus('关注')
   }
 
   const getViewpointTag = (viewpoint?: Viewpoint) => {
@@ -292,10 +307,10 @@ const StockNoteView: React.FC = () => {
       看多: 'red',
       看空: 'green',
       未知: 'default',
-      中性: 'blue',
+      震荡: 'blue',
       观望: 'default'
     }
-    return <Tag color={colorMap[viewpoint.direction] || 'default'}>观点: {viewpoint.direction}</Tag>
+    return <Tag color={colorMap[viewpoint.direction] || 'default'}>{viewpoint.direction}</Tag>
   }
 
   const getCategoryTag = (category: NoteCategory) => {
@@ -304,14 +319,19 @@ const StockNoteView: React.FC = () => {
       普通笔记: 'blue'
     }
     const config = categoryConfigs.find((item) => item.code === category)
-    return <Tag color={colorMap[category] || 'default'}>类别: {config?.label || category}</Tag>
+    return <Tag color={colorMap[category] || 'default'}>{config?.label || category}</Tag>
   }
 
   const getOperationTag = (operationTag?: OperationTag) => {
     const tag = operationTag || '无'
-    if (tag === '买入') return <Tag color="red">操作: 买入</Tag>
-    if (tag === '卖出') return <Tag color="green">操作: 卖出</Tag>
-    return <Tag>操作: 无</Tag>
+    if (tag === '买入') return <Tag color="red">买入</Tag>
+    if (tag === '卖出') return <Tag color="green">卖出</Tag>
+    return <Tag>无</Tag>
+  }
+
+  const getTrackingStatusTag = (trackingStatus?: string) => {
+    const status = trackingStatus || '关注'
+    return <Tag color={status === '已取关' ? 'default' : 'gold'}>{status}</Tag>
   }
 
   const formatTime = (timestamp: Date | string, eventTime?: Date | string) => {
@@ -359,7 +379,7 @@ const StockNoteView: React.FC = () => {
         <div className="flex-1 overflow-auto p-4">
           {isAdding && (
             <div className="mb-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
-              <div className="mb-3 flex items-center gap-4">
+              <div className="mb-3 flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">类别</span>
                   <Select
@@ -404,6 +424,16 @@ const StockNoteView: React.FC = () => {
                   />
                 </div>
                 <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">状态</span>
+                  <Select
+                    value={newTrackingStatus}
+                    onChange={(value) => setNewTrackingStatus(value)}
+                    style={{ width: 120 }}
+                    size="small"
+                    options={trackingStatusOptions}
+                  />
+                </div>
+                <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">时间</span>
                   <DatePicker
                     value={newEventTime}
@@ -437,7 +467,7 @@ const StockNoteView: React.FC = () => {
                 <div key={entry.id} className="border border-gray-200 rounded-lg overflow-hidden">
                   {editingId === entry.id ? (
                     <div className="p-4 bg-gray-50">
-                      <div className="mb-3 flex items-center gap-4">
+                      <div className="mb-3 flex flex-wrap items-center gap-3">
                         <div className="flex items-center gap-1">
                           <span className="text-xs text-gray-500">类别</span>
                           <Select
@@ -482,6 +512,16 @@ const StockNoteView: React.FC = () => {
                           />
                         </div>
                         <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">状态</span>
+                          <Select
+                            value={editTrackingStatus}
+                            onChange={(value) => setEditTrackingStatus(value)}
+                            style={{ width: 120 }}
+                            size="small"
+                            options={trackingStatusOptions}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
                           <span className="text-xs text-gray-500">时间</span>
                           <DatePicker
                             value={editEventTime}
@@ -513,6 +553,7 @@ const StockNoteView: React.FC = () => {
                           {getCategoryTag(entry.category)}
                           {getViewpointTag(entry.viewpoint)}
                           {getOperationTag(entry.operationTag)}
+                          {getTrackingStatusTag(entry.trackingStatus)}
                         </div>
                         <Space size="small">
                           <Button size="small" icon={<EditOutlined />} onClick={() => startEdit(entry)} />
