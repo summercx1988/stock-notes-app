@@ -53,6 +53,13 @@ const DEFAULT_SETTINGS: UserSettings = {
     defaultTimeHorizon: '短线',
     style: '轻量',
     categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
+  },
+  feishu: {
+    enabled: false,
+    appId: '',
+    appSecret: '',
+    encryptKey: '',
+    verificationToken: ''
   }
 }
 
@@ -297,10 +304,10 @@ const RecordingControl: React.FC = () => {
 
     setRecordingState('analyzing')
     setCurrentStep(3)
-    message.info('正在纠错并匹配股票...')
+    message.info('正在快速匹配股票与标签...')
 
     try {
-      const result = await window.api.ai.extract(normalizedInput)
+      const result = await window.api.ai.extractFast(normalizedInput)
       const optimizedContent = normalizeNoteContent(result.optimizedText || normalizedInput)
       setEditableNoteContent(optimizedContent || normalizedInput)
 
@@ -777,7 +784,7 @@ const RecordingControl: React.FC = () => {
           {currentStep === 3 && recordingState === 'analyzing' && (
             <div className="text-center py-8">
               <LoadingOutlined className="text-5xl text-cyan-500 mb-4" />
-              <div className="text-lg">正在纠错并匹配股票...</div>
+              <div className="text-lg">正在快速匹配股票与标签...</div>
             </div>
           )}
 

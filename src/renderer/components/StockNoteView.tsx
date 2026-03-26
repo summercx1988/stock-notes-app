@@ -91,6 +91,16 @@ const StockNoteView: React.FC = () => {
   }, [currentStockCode, stockNotes])
 
   useEffect(() => {
+    const unsubscribe = window.api.notes.onChanged((event) => {
+      if (!currentStockCode || event.stockCode !== currentStockCode) {
+        return
+      }
+      void loadNote()
+    })
+    return () => { unsubscribe() }
+  }, [currentStockCode])
+
+  useEffect(() => {
     let cancelled = false
     const loadCategoryConfigs = async () => {
       try {

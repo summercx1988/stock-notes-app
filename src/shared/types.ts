@@ -247,6 +247,13 @@ export interface NotesImportResult {
   failedFiles: Array<{ fileName: string; reason: string }>
 }
 
+export interface NotesChangedEvent {
+  stockCode: string
+  entryId?: string
+  action: 'created' | 'updated' | 'deleted'
+  source: 'local' | 'feishu'
+}
+
 export interface TimelineItem {
   id: string
   stockCode: string

@@ -2,17 +2,19 @@
 
 面向 A 股场景的轻量桌面笔记工具，核心目标是“快速记录 + 时间轴沉淀 + 复盘纠错”。
 
-当前实现基线：`v3.4`（2026-03-25）
+当前实现基线：`v3.5`（2026-03-26）
 
 ## 核心能力
 
 - 录音或上传音频后，本地 `whisper.cpp` 转写
-- 文本纠错与股票名称匹配（优先结合自选股）
+- 本地录音与飞书远程录入都已接入“极速解析”链路
+- 股票识别优先使用本地规则、自选股与股票库，必要时才触发 1 次 LLM
 - 一只股票一个 Markdown 文件（文件即数据库）
 - 事件按时间轴写入，支持观点、类别与操作打标（无/买入/卖出）
 - 类别简化为 `看盘预测` + `普通笔记`
 - 操盘行为通过“操作打标（买入/卖出）”记录，不再单独使用操盘类别
 - 复盘模块只解析 `reviewEligible=true` 的类别（默认仅 `看盘预测`）
+- 飞书远程录入支持 JSON 2.0 卡片确认、编辑与候选股票确认
 - 提供 GUI 笔记导入/导出（单股/全部，跳过或覆盖重复）
 
 ## 文件命名规则（已统一）
@@ -32,7 +34,8 @@
 ## 架构概览
 
 - 前端：Electron + React + TypeScript + Ant Design
-- 主进程：IPC、笔记存储、股票数据库、文本处理
+- 主进程：IPC、笔记存储、股票数据库、飞书机器人、复盘分析
+- 解析层：`ParseOrchestrator`（完整链路）+ `FeishuFastParseOrchestrator`（极速链路）
 - 语音服务：Git 子模块 `voice-transcriber-service`（Swift）
 - 存储：`data/stocks/*.md`、`data/audio/*`、`data/stocks-database.json`
 
@@ -96,3 +99,4 @@ npm run electron:dev
 - 技术规格说明：[docs/TECHNICAL_SPEC.md](./docs/TECHNICAL_SPEC.md)
 - 模块化架构说明：[docs/MODULAR_ARCHITECTURE.md](./docs/MODULAR_ARCHITECTURE.md)
 - 录音转写专项说明：[docs/RECORDING_TRANSCRIBE_SPEC.md](./docs/RECORDING_TRANSCRIBE_SPEC.md)
+- 飞书卡片交互经验：[docs/FEISHU_CARD_INTERACTION_LESSONS.md](./docs/FEISHU_CARD_INTERACTION_LESSONS.md)

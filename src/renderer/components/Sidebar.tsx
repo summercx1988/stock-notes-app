@@ -50,6 +50,13 @@ const Sidebar: React.FC = () => {
   }, [refreshTimeline, stockNotes])
 
   useEffect(() => {
+    const unsubscribe = window.api.notes.onChanged(() => {
+      void refreshTimeline()
+    })
+    return () => { unsubscribe() }
+  }, [refreshTimeline])
+
+  useEffect(() => {
     let cancelled = false
 
     const syncStocks = async () => {

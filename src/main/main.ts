@@ -2,8 +2,16 @@ import 'dotenv/config'
 import { app, BrowserWindow } from 'electron'
 import path from 'path'
 import { voiceTranscriberClient } from './services/VoiceTranscriberClient'
+import { feishuBotService } from './services/feishu-bot'
+import { appConfigService } from './services/app-config'
 
 let mainWindow: BrowserWindow | null = null
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!hasSingleInstanceLock) {
+  console.log('[Main] Another instance is already running, quitting current process')
+  app.quit()
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -35,8 +43,27 @@ function createWindow() {
   })
 }
 
+if (hasSingleInstanceLock) {
+  app.on('second-instance', () => {
+    if (!mainWindow) {
+      createWindow()
+      return
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    mainWindow.focus()
+  })
+}
+
 app.whenReady().then(async () => {
   createWindow()
+
+  const config = await appConfigService.getAll()
+  if (config.feishu?.enabled) {
+    console.log('[Main] Auto-starting Feishu bot service')
+    await feishuBotService.start()
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -47,6 +74,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', async () => {
   await voiceTranscriberClient.stop()
+  await feishuBotService.stop()
   if (process.platform !== 'darwin') {
     app.quit()
   }
@@ -54,6 +82,7 @@ app.on('window-all-closed', async () => {
 
 app.on('before-quit', async () => {
   await voiceTranscriberClient.stop()
+  await feishuBotService.stop()
 })
 
 import './ipc/notes'
@@ -63,3 +92,4 @@ import './ipc/stock'
 import './ipc/review'
 import './ipc/config'
 import './ipc/system'
+import './ipc/feishu'

@@ -84,6 +84,23 @@ const StockTimelineView: React.FC = () => {
     }
   }, [])
 
+  useEffect(() => {
+    const unsubscribe = window.api.notes.onChanged(async (event) => {
+      if (!currentStockCode || event.stockCode !== currentStockCode) {
+        return
+      }
+      try {
+        const note = await window.api.notes.getStockNote(currentStockCode)
+        if (note) {
+          setStockNote(currentStockCode, note)
+        }
+      } catch (error) {
+        console.error('Failed to reload timeline note after remote change:', error)
+      }
+    })
+    return () => { unsubscribe() }
+  }, [currentStockCode, setStockNote])
+
   const filteredEntries = useMemo(() => {
     return [...entries]
       .filter((entry) => {

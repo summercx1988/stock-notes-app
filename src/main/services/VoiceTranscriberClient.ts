@@ -30,8 +30,6 @@ export class VoiceTranscriberClient extends EventEmitter {
   private process: ChildProcess | null = null
   private ws: WebSocket | null = null
   private isConnected: boolean = false
-  private reconnectAttempts: number = 0
-  private maxReconnectAttempts: number = 5
   private servicePath: string
   private port: number
   private mainWindow: BrowserWindow | null = null
@@ -72,15 +70,22 @@ export class VoiceTranscriberClient extends EventEmitter {
   }
 
   async start(): Promise<void> {
-    if (this.isConnected && this.ws?.readyState === WebSocket.OPEN) {
+    if (this.isSocketOpen()) {
       return
+    }
+
+    try {
+      await this.connectWebSocket(800)
+      return
+    } catch {
+      // No existing service is accepting connections, continue to spawn below.
     }
 
     if (!this.process) {
       await this.startService()
     }
 
-    if (!this.isConnected) {
+    if (!this.isSocketOpen()) {
       await this.connectWebSocket()
     }
   }
@@ -118,21 +123,44 @@ export class VoiceTranscriberClient extends EventEmitter {
     })
   }
 
-  private async connectWebSocket(): Promise<void> {
+  private async connectWebSocket(timeoutMs: number = 3000): Promise<void> {
     return new Promise((resolve, reject) => {
       const url = `ws://localhost:${this.port}`
       console.log('[VoiceClient] Connecting to:', url)
-      
-      this.ws = new WebSocket(url)
 
-      this.ws.on('open', () => {
+      if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
+        try {
+          this.ws.removeAllListeners()
+          this.ws.close()
+        } catch {
+          // ignore stale socket cleanup failure
+        }
+      }
+
+      const ws = new WebSocket(url)
+      this.ws = ws
+      let settled = false
+      const timeout = setTimeout(() => {
+        if (settled) return
+        settled = true
+        try {
+          ws.terminate()
+        } catch {
+          // ignore
+        }
+        reject(new Error('连接语音服务超时'))
+      }, timeoutMs)
+
+      ws.on('open', () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
         console.log('[VoiceClient] WebSocket connected')
         this.isConnected = true
-        this.reconnectAttempts = 0
         resolve()
       })
 
-      this.ws.on('message', (data) => {
+      ws.on('message', (data) => {
         try {
           const message: ServerMessage = JSON.parse(data.toString())
           this.handleMessage(message)
@@ -141,19 +169,26 @@ export class VoiceTranscriberClient extends EventEmitter {
         }
       })
 
-      this.ws.on('error', (error) => {
+      ws.on('error', (error) => {
         console.error('[VoiceClient] WebSocket error:', error)
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.reconnectAttempts++
-          setTimeout(() => this.connectWebSocket(), 1000)
-        } else {
+        if (!settled) {
+          settled = true
+          clearTimeout(timeout)
           reject(error)
         }
       })
 
-      this.ws.on('close', () => {
+      ws.on('close', () => {
         console.log('[VoiceClient] WebSocket closed')
         this.isConnected = false
+        if (this.ws === ws) {
+          this.ws = null
+        }
+        if (!settled) {
+          settled = true
+          clearTimeout(timeout)
+          reject(new Error('语音服务连接已关闭'))
+        }
       })
     })
   }
@@ -195,21 +230,32 @@ export class VoiceTranscriberClient extends EventEmitter {
     }
   }
 
+  private isSocketOpen(): boolean {
+    return Boolean(this.ws && this.ws.readyState === WebSocket.OPEN && this.isConnected)
+  }
+
   private send(message: ClientMessage): void {
-    if (this.ws && this.isConnected) {
+    if (this.ws && this.isSocketOpen()) {
       this.ws.send(JSON.stringify(message))
     } else {
       throw new Error('语音服务未连接')
     }
   }
 
-  startRecording(): void {
+  async startRecording(): Promise<void> {
     console.log('[VoiceClient] Starting recording')
+    if (!this.isSocketOpen()) {
+      await this.start()
+    }
     this.send({ type: 'start' })
   }
 
-  stopRecording(): void {
+  async stopRecording(): Promise<void> {
     console.log('[VoiceClient] Stopping recording')
+    if (!this.isSocketOpen()) {
+      console.warn('[VoiceClient] stopRecording skipped: socket is not connected')
+      return
+    }
     this.send({ type: 'stop' })
   }
 
@@ -292,6 +338,7 @@ export class VoiceTranscriberClient extends EventEmitter {
   }
 
   ping(): void {
+    if (!this.isSocketOpen()) return
     this.send({ type: 'ping' })
   }
 
@@ -319,8 +366,8 @@ export class VoiceTranscriberClient extends EventEmitter {
 
   getStatus(): { isConnected: boolean; isRunning: boolean } {
     return {
-      isConnected: this.isConnected,
-      isRunning: this.process !== null
+      isConnected: this.isSocketOpen(),
+      isRunning: this.process !== null || this.isSocketOpen()
     }
   }
 

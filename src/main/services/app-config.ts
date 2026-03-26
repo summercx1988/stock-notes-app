@@ -24,6 +24,13 @@ const DEFAULT_SETTINGS: UserSettings = {
     defaultTimeHorizon: '短线',
     style: '轻量',
     categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
+  },
+  feishu: {
+    enabled: true,
+    appId: 'cli_a9496c7813a1dbc8',
+    appSecret: '1CF9rURs8T1KD65oEvJzYbZktfeVzwLB',
+    encryptKey: '',
+    verificationToken: ''
   }
 }
 

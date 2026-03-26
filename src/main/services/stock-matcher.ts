@@ -77,6 +77,14 @@ class StockNameMatcher {
 
   findBestMatch(segment: string): MatchResult {
     const normalizedSegment = normalizeStockNameText(segment)
+    if (normalizedSegment.length < 3) {
+      return {
+        original: segment,
+        matched: null,
+        distance: Infinity,
+        confidence: 0
+      }
+    }
     let bestMatch: Stock | null = null
     let minDistance = Infinity
 
@@ -185,6 +193,11 @@ class StockNameMatcher {
     if (exactMatch) {
       console.log(`[StockMatcher] findByName exact match: ${Date.now() - start}ms`)
       return { code: exactMatch.code, name: exactMatch.name, confidence: 1.0 }
+    }
+
+    if (normalizedName.length < 3) {
+      console.log(`[StockMatcher] findByName skip fuzzy for short name: ${Date.now() - start}ms`)
+      return null
     }
 
     for (const stock of this.stocks) {

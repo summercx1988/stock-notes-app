@@ -42,6 +42,10 @@ export class NotesService {
     this.audioDir = path.join(path.dirname(this.notesDir), 'audio')
   }
 
+  getNotesDir(): string {
+    return this.notesDir
+  }
+
   async addEntry(
     stockCode: string,
     data: {
@@ -669,7 +673,8 @@ export class NotesService {
         if (
           nextLine.startsWith('### 🕐 ') ||
           nextLine.startsWith('## 📅 ') ||
-          nextLine.startsWith('<!-- entry-id:')
+          nextLine.startsWith('<!-- entry-id:') ||
+          nextLine.trim() === '---'
         ) {
           break
         }
@@ -722,6 +727,10 @@ export class NotesService {
     for (const rawLine of lines) {
       const line = rawLine.trimEnd()
       const trimmed = line.trim()
+
+      if (trimmed === '---') {
+        continue
+      }
 
       const eventTimeMatch = trimmed.match(/^>\s*\*\*事件时间\*\*:\s*(.+)$/)
       if (eventTimeMatch) {
@@ -817,7 +826,7 @@ export class NotesService {
       contentLines.push(rawLine)
     }
 
-    const normalizedContent = normalizeNoteContent(contentLines.join('\n').trim())
+    const normalizedContent = normalizeNoteContent(this.stripTrailingSeparators(contentLines).join('\n').trim())
     const eventTime = this.resolveEventTime({
       metaEventTime: meta.eventTime,
       lineEventTime: eventTimeLabel,
@@ -868,6 +877,19 @@ export class NotesService {
 
     const fallbackDateText = fallbackDate.toISOString().split('T')[0]
     return this.normalizeDate(`${fallbackDateText} ${headingTime}`, fallbackDate)
+  }
+
+  private stripTrailingSeparators(lines: string[]): string[] {
+    const normalized = [...lines]
+    while (normalized.length > 0) {
+      const last = normalized[normalized.length - 1].trim()
+      if (!last || last === '---') {
+        normalized.pop()
+        continue
+      }
+      break
+    }
+    return normalized
   }
 
   private createDefaultViewpoint(): Viewpoint {

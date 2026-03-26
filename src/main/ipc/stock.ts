@@ -51,6 +51,13 @@ ipcMain.handle('ai:extract', async (_, text: string): Promise<AIExtractResult> =
   return result
 })
 
+ipcMain.handle('ai:extractFast', async (_, text: string): Promise<AIExtractResult> => {
+  console.log('[IPC] ai:extractFast called with:', text.substring(0, 100))
+  const result = await aiProcessor.extractForFeishu(text)
+  console.log('[IPC] ai:extractFast result:', result.stock?.code, result.stock?.name)
+  return result
+})
+
 ipcMain.handle('voice:start', async () => {
   console.log('[IPC] voice:start')
   
@@ -92,7 +99,7 @@ ipcMain.handle('voice:startRecording', async () => {
       await voiceTranscriberClient.start()
     }
 
-    voiceTranscriberClient.startRecording()
+    await voiceTranscriberClient.startRecording()
     return { success: true }
   } catch (error: any) {
     console.error('[IPC] voice:startRecording error:', error)
@@ -104,7 +111,7 @@ ipcMain.handle('voice:stopRecording', async () => {
   console.log('[IPC] voice:stopRecording')
 
   try {
-    voiceTranscriberClient.stopRecording()
+    await voiceTranscriberClient.stopRecording()
     return { success: true }
   } catch (error: any) {
     console.error('[IPC] voice:stopRecording error:', error)

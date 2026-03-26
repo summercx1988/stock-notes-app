@@ -199,11 +199,12 @@ class StockDatabase {
       }
     }
 
-    // 尝试模糊匹配（至少 2 个字符）
-    if (lowerText.length >= 2) {
+    // 尝试保守的近似匹配，仅在文本中包含至少 3 个连续字符时启用。
+    // 这里避免使用 2 字前缀匹配，否则很容易把普通中文短语误判成股票。
+    if (lowerText.length >= 3) {
       for (const stock of this.stocks.values()) {
         const name = normalizeStockNameText(stock.name).toLowerCase()
-        if (name.includes(lowerText) || lowerText.includes(name.substring(0, 2))) {
+        if (name.includes(lowerText) || lowerText.includes(name)) {
           return { stock, matchType: 'fuzzy', score: 70 }
         }
       }

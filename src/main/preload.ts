@@ -9,7 +9,8 @@ import type {
   ReviewVisualRequest,
   ReviewVisualResponse,
   UserSettings,
-  FeishuStatus
+  FeishuStatus,
+  NotesChangedEvent
 } from '../shared/types'
 
 interface VoiceCommandResult {
@@ -48,10 +49,16 @@ const api = {
       ipcRenderer.invoke('notes:exportAll', outputDir),
     importFromDirectory: (sourceDir: string, mode: 'skip' | 'replace' = 'skip'): Promise<NotesImportResult> =>
       ipcRenderer.invoke('notes:importFromDirectory', sourceDir, mode),
+    onChanged: (callback: (event: NotesChangedEvent) => void) => {
+      const handler = (_: unknown, event: NotesChangedEvent) => callback(event)
+      ipcRenderer.on('notes:changed', handler)
+      return () => ipcRenderer.removeListener('notes:changed', handler)
+    }
   },
 
   ai: {
     extract: (text: string) => ipcRenderer.invoke('ai:extract', text),
+    extractFast: (text: string) => ipcRenderer.invoke('ai:extractFast', text),
     optimizeText: (text: string) => ipcRenderer.invoke('ai:optimize', text),
   },
 

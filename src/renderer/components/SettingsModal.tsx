@@ -6,7 +6,7 @@ import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
-  initialTab?: 'text-ai' | 'asr' | 'category-schema' | 'watchlist'
+  initialTab?: 'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'feishu'
 }
 
 interface WatchlistStock {
@@ -33,6 +33,13 @@ const DEFAULT_SETTINGS: UserSettings = {
     defaultTimeHorizon: '短线',
     style: '轻量',
     categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
+  },
+  feishu: {
+    enabled: true,
+    appId: 'cli_a9496c7813a1dbc8',
+    appSecret: '1CF9rURs8T1KD65oEvJzYbZktfeVzwLB',
+    encryptKey: '',
+    verificationToken: ''
   }
 }
 
@@ -44,7 +51,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
   const [loading, setLoading] = useState(false)
   const [watchlistInput, setWatchlistInput] = useState('')
   const [watchlist, setWatchlist] = useState<WatchlistStock[]>([])
-  const [activeTab, setActiveTab] = useState<'text-ai' | 'asr' | 'category-schema' | 'watchlist'>(initialTab)
+  const [activeTab, setActiveTab] = useState<'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'feishu'>(initialTab)
   const [categoryConfigs, setCategoryConfigs] = useState<NoteCategoryConfig[]>(DEFAULT_NOTE_CATEGORY_CONFIGS)
 
   const watchlistHint = useMemo(() => {
@@ -179,7 +186,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
       <Form form={form} layout="vertical">
         <Tabs
           activeKey={activeTab}
-          onChange={(key) => setActiveTab(key as 'text-ai' | 'asr' | 'category-schema' | 'watchlist')}
+          onChange={(key) => setActiveTab(key as 'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'feishu')}
           items={[
             {
               key: 'text-ai',
@@ -291,6 +298,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
                       </Space>
                     )}
                   </div>
+                </>
+              )
+            },
+            {
+              key: 'feishu',
+              label: '飞书机器人',
+              children: (
+                <>
+                  <Alert
+                    type="info"
+                    showIcon
+                    className="mb-3"
+                    message={
+                      <span>
+                        配置飞书机器人后，可通过飞书对话远程录入笔记。
+                        <a href="https://open.feishu.cn/document/home/introduction-to-feishu-open-platform/" target="_blank" rel="noopener noreferrer"> 查看配置教程</a>
+                      </span>
+                    }
+                  />
+                  <Form.Item label="App ID" name={['feishu', 'appId']}>
+                    <Input placeholder="cli_xxxxxxxxxx" />
+                  </Form.Item>
+                  <Form.Item label="App Secret" name={['feishu', 'appSecret']}>
+                    <Input.Password placeholder="应用密钥" />
+                  </Form.Item>
+                  <Divider />
+                  <Typography.Text type="secondary">
+                    配置步骤：<br />
+                    1. 在飞书开放平台创建企业自建应用<br />
+                    2. 获取 App ID 和 Secret<br />
+                    3. 配置事件订阅（WebSocket 模式），添加 im.message.receive_v1 事件<br />
+                    4. 发布应用版本
+                  </Typography.Text>
                 </>
               )
             }
