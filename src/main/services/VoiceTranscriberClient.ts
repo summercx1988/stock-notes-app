@@ -7,6 +7,7 @@ import { app, BrowserWindow } from 'electron'
 import { createTraceId, logPipelineEvent } from './pipeline-logger'
 import { cleanTranscriptText } from '../../shared/text-normalizer'
 import { resolveProjectRoot } from './data-paths'
+import type { VoiceServiceStatus } from '../../shared/types'
 
 interface ServerMessage {
   type: 'transcript' | 'audio_saved' | 'error' | 'pong' | 'status'
@@ -33,6 +34,13 @@ export class VoiceTranscriberClient extends EventEmitter {
   private servicePath: string
   private port: number
   private mainWindow: BrowserWindow | null = null
+  private currentServerStatus: ServerMessage['status'] = {
+    isRecording: false,
+    duration: 0,
+    memoryUsage: 0
+  }
+  private recordingSessionActive: boolean = false
+  private lastError?: string
 
   constructor(port: number = 8765) {
     super()
@@ -157,6 +165,8 @@ export class VoiceTranscriberClient extends EventEmitter {
         clearTimeout(timeout)
         console.log('[VoiceClient] WebSocket connected')
         this.isConnected = true
+        this.lastError = undefined
+        this.publishStatus()
         resolve()
       })
 
@@ -184,6 +194,17 @@ export class VoiceTranscriberClient extends EventEmitter {
         if (this.ws === ws) {
           this.ws = null
         }
+        if (this.recordingSessionActive || this.currentServerStatus?.isRecording) {
+          this.recordingSessionActive = false
+          this.currentServerStatus = {
+            isRecording: false,
+            duration: 0,
+            memoryUsage: this.currentServerStatus?.memoryUsage || 0
+          }
+          this.lastError = '录音连接已中断，请重新录音'
+          this.emitVoiceError(this.lastError)
+        }
+        this.publishStatus()
         if (!settled) {
           settled = true
           clearTimeout(timeout)
@@ -207,17 +228,33 @@ export class VoiceTranscriberClient extends EventEmitter {
         break
       case 'audio_saved':
         console.log('[VoiceClient] Emitting audio_saved:', message.audioPath)
+        this.recordingSessionActive = false
+        this.currentServerStatus = {
+          isRecording: false,
+          duration: this.currentServerStatus?.duration || 0,
+          memoryUsage: this.currentServerStatus?.memoryUsage || 0
+        }
+        this.lastError = undefined
         this.emit('audio_saved', message.audioPath)
         this.sendToRenderer('voice:audio_saved', message.audioPath)
+        this.publishStatus()
         break
       case 'error':
         console.log('[VoiceClient] Emitting error:', message.errorMessage)
-        this.emit('error', message.errorMessage)
-        this.sendToRenderer('voice:error', message.errorMessage)
+        this.lastError = message.errorMessage
+        this.emitVoiceError(message.errorMessage)
+        this.publishStatus()
         break
       case 'status':
         console.log('[VoiceClient] Emitting status:', message.status)
-        this.emit('status', message.status)
+        this.currentServerStatus = {
+          isRecording: Boolean(message.status?.isRecording),
+          duration: message.status?.duration || 0,
+          memoryUsage: message.status?.memoryUsage || 0
+        }
+        this.recordingSessionActive = Boolean(message.status?.isRecording)
+        this.emit('status', this.getStatus())
+        this.publishStatus()
         break
       case 'pong':
         break
@@ -247,12 +284,18 @@ export class VoiceTranscriberClient extends EventEmitter {
     if (!this.isSocketOpen()) {
       await this.start()
     }
+    this.lastError = undefined
+    this.recordingSessionActive = true
     this.send({ type: 'start' })
+    this.publishStatus()
   }
 
   async stopRecording(): Promise<void> {
     console.log('[VoiceClient] Stopping recording')
     if (!this.isSocketOpen()) {
+      if (this.recordingSessionActive || this.currentServerStatus?.isRecording) {
+        throw new Error('录音连接已中断，音频可能未完整保存，请重新录音')
+      }
       console.warn('[VoiceClient] stopRecording skipped: socket is not connected')
       return
     }
@@ -362,13 +405,37 @@ export class VoiceTranscriberClient extends EventEmitter {
     }
     
     this.isConnected = false
+    this.recordingSessionActive = false
+    this.currentServerStatus = {
+      isRecording: false,
+      duration: 0,
+      memoryUsage: 0
+    }
+    this.publishStatus()
   }
 
-  getStatus(): { isConnected: boolean; isRunning: boolean } {
+  getStatus(): VoiceServiceStatus {
     return {
       isConnected: this.isSocketOpen(),
-      isRunning: this.process !== null || this.isSocketOpen()
+      isRunning: this.process !== null || this.isSocketOpen(),
+      isRecording: Boolean(this.currentServerStatus?.isRecording || this.recordingSessionActive),
+      duration: this.currentServerStatus?.duration || 0,
+      memoryUsage: this.currentServerStatus?.memoryUsage || 0,
+      lastError: this.lastError
     }
+  }
+
+  private publishStatus(): void {
+    const status = this.getStatus()
+    this.sendToRenderer('voice:status', status)
+  }
+
+  private emitVoiceError(error?: string): void {
+    if (!error) return
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', error)
+    }
+    this.sendToRenderer('voice:error', error)
   }
 
   private cleanTranscriptText(text?: string): string {

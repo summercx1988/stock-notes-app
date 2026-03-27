@@ -105,7 +105,7 @@ function bumpDirection(cluster: ReviewMarkerCluster, direction: ReviewMarkerDire
     cluster.bearish += 1
     return
   }
-  if (direction === '中性') {
+  if (direction === '震荡') {
     cluster.neutral += 1
     return
   }
@@ -131,4 +131,3 @@ function lowerBound(sortedValues: number[], target: number): number {
 function toMs(input: string): number {
   return new Date(input).getTime()
 }
-

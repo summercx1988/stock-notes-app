@@ -44,14 +44,14 @@ const INTERVAL_OPTIONS: Array<{ label: string; value: KlineInterval }> = [
 const DIRECTION_OPTIONS: Array<{ label: string; value: ReviewMarkerDirection }> = [
   { label: '看多', value: '看多' },
   { label: '看空', value: '看空' },
-  { label: '中性', value: '中性' },
+  { label: '震荡', value: '震荡' },
   { label: '未知', value: '未知' }
 ]
 
 const MARKER_BG_BY_DIRECTION: Record<ReviewMarkerDirection, string> = {
   看多: '#ef4444',
   看空: '#22c55e',
-  中性: '#64748b',
+  震荡: '#64748b',
   未知: '#94a3b8'
 }
 
@@ -70,7 +70,7 @@ const resolveDirectionFromCluster = (input: { bullish: number; bearish: number; 
   const pairs: Array<{ direction: ReviewMarkerDirection; count: number }> = [
     { direction: '看多', count: input.bullish },
     { direction: '看空', count: input.bearish },
-    { direction: '中性', count: input.neutral },
+    { direction: '震荡', count: input.neutral },
     { direction: '未知', count: input.unknown }
   ]
   return pairs.sort((left, right) => right.count - left.count)[0]?.direction || '未知'

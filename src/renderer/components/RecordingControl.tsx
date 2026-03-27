@@ -3,7 +3,7 @@ import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, Da
 import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { NoteCategory, NoteCategoryConfig, OperationTag, UserSettings, Viewpoint } from '../../shared/types'
+import type { NoteCategory, NoteCategoryConfig, OperationTag, UserSettings, Viewpoint, VoiceServiceStatus } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, getCategoryConfig, getEnabledOptions, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 import { cleanTranscriptText, normalizeNoteContent } from '../../shared/text-normalizer'
 
@@ -32,7 +32,7 @@ interface AIExtractResult {
 }
 
 type TranscribeEngine = 'local' | 'cloud'
-type RecordingState = 'idle' | 'connecting' | 'recording' | 'transcribing' | 'analyzing' | 'completed'
+type RecordingState = 'idle' | 'connecting' | 'recording' | 'stopping' | 'transcribing' | 'analyzing' | 'completed'
 type StockSelectOption = { label: string; value: string; name: string }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -89,6 +89,7 @@ const RecordingControl: React.FC = () => {
   const [noteDirection, setNoteDirection] = useState<Viewpoint['direction']>('未知')
   const [noteOperationTag, setNoteOperationTag] = useState<OperationTag>('无')
   const [settings, setSettings] = useState<UserSettings | null>(null)
+  const [voiceStatus, setVoiceStatus] = useState<VoiceServiceStatus | null>(null)
 
   const categoryConfigs: NoteCategoryConfig[] = normalizeNoteCategoryConfigs(
     settings?.notes?.categoryConfigs || DEFAULT_NOTE_CATEGORY_CONFIGS
@@ -104,6 +105,8 @@ const RecordingControl: React.FC = () => {
 
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
   const stockSearchTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const audioSavedTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const disconnectHandledRef = useRef(false)
   const cloudASRReady = Boolean(settings?.cloudASR?.apiKey && settings?.cloudASR?.baseUrl)
 
   const formatDuration = (seconds: number) => {
@@ -116,7 +119,15 @@ const RecordingControl: React.FC = () => {
     if (!sentiment) return '未知'
     if (sentiment.includes('看多') || sentiment === 'bullish') return '看多'
     if (sentiment.includes('看空') || sentiment === 'bearish') return '看空'
-    if (sentiment.includes('震荡') || sentiment.includes('中性')) return '中性'
+    if (sentiment.includes('震荡') || sentiment.includes('中性')) return '震荡'
+    return '未知'
+  }
+
+  const normalizeDirectionAlias = (direction?: string): Viewpoint['direction'] => {
+    if (direction === '中性') return '震荡'
+    if (direction === '看多' || direction === '看空' || direction === '震荡' || direction === '未知') {
+      return direction
+    }
     return '未知'
   }
 
@@ -148,7 +159,7 @@ const RecordingControl: React.FC = () => {
         ? normalizedConfig.notes.defaultCategory
         : (enabledCategoryCodes[0] || '看盘预测')
       setNoteCategory(preferredCategory)
-      setNoteDirection(normalizedConfig.notes.defaultDirection || '未知')
+      setNoteDirection(normalizeDirectionAlias(normalizedConfig.notes.defaultDirection))
 
       const options: StockSelectOption[] = (watchlist || []).map((stock: any) => ({
         value: stock.code,
@@ -168,13 +179,27 @@ const RecordingControl: React.FC = () => {
         }
         setSettings(fallback)
         setNoteCategory(fallback.notes.defaultCategory)
-        setNoteDirection(DEFAULT_SETTINGS.notes.defaultDirection)
+        setNoteDirection(normalizeDirectionAlias(DEFAULT_SETTINGS.notes.defaultDirection))
         setWatchlistOptions([])
         setStockSearchOptions([])
         console.warn('[RecordingControl] Missing config/watchlist IPC handlers, fallback to defaults.')
         return
       }
       console.error('[RecordingControl] Failed to load user preferences:', error)
+    }
+  }, [])
+
+  const clearRecordingTimer = useCallback(() => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current)
+      recordingTimerRef.current = null
+    }
+  }, [])
+
+  const clearAudioSavedTimeout = useCallback(() => {
+    if (audioSavedTimeoutRef.current) {
+      clearTimeout(audioSavedTimeoutRef.current)
+      audioSavedTimeoutRef.current = null
     }
   }, [])
 
@@ -197,19 +222,19 @@ const RecordingControl: React.FC = () => {
       ? settings.notes.defaultCategory
       : (enabledCodes[0] || '看盘预测')
     setNoteCategory(preferredCategory)
-    setNoteDirection(settings?.notes.defaultDirection || '未知')
+    setNoteDirection(normalizeDirectionAlias(settings?.notes.defaultDirection))
     setNoteOperationTag('无')
+    setVoiceStatus(null)
+    disconnectHandledRef.current = false
 
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current)
-      recordingTimerRef.current = null
-    }
+    clearRecordingTimer()
+    clearAudioSavedTimeout()
 
     if (stockSearchTimerRef.current) {
       clearTimeout(stockSearchTimerRef.current)
       stockSearchTimerRef.current = null
     }
-  }, [settings, watchlistOptions])
+  }, [clearAudioSavedTimeout, clearRecordingTimer, settings, watchlistOptions])
 
   useEffect(() => {
     void loadUserPreferences()
@@ -220,6 +245,68 @@ const RecordingControl: React.FC = () => {
       setTranscribeEngine('local')
     }
   }, [cloudASRReady, transcribeEngine])
+
+  useEffect(() => {
+    if (!isModalOpen || transcribeEngine !== 'local') return
+
+    const unsubscribeStatus = window.api.voice.onStatus((status) => {
+      setVoiceStatus(status)
+
+      const isActivePhase = ['connecting', 'recording', 'stopping', 'transcribing'].includes(recordingState)
+      if (!isActivePhase) {
+        if (status.isConnected) {
+          disconnectHandledRef.current = false
+        }
+        return
+      }
+
+      if (!status.isConnected && !disconnectHandledRef.current) {
+        disconnectHandledRef.current = true
+        clearRecordingTimer()
+        clearAudioSavedTimeout()
+        setRecordingState('idle')
+        setCurrentStep(0)
+        message.error(status.lastError || '录音连接已中断，请重新录音')
+        return
+      }
+
+      if (status.isConnected) {
+        disconnectHandledRef.current = false
+      }
+    })
+
+    return () => {
+      unsubscribeStatus()
+    }
+  }, [clearAudioSavedTimeout, clearRecordingTimer, isModalOpen, recordingState, transcribeEngine])
+
+  useEffect(() => {
+    if (!isModalOpen || transcribeEngine !== 'local') return
+    if (!['connecting', 'recording', 'stopping', 'transcribing'].includes(recordingState)) return
+
+    const timer = setInterval(() => {
+      void window.api.voice.status()
+        .then((status) => {
+          setVoiceStatus(status)
+          if (!status.isConnected && !disconnectHandledRef.current) {
+            disconnectHandledRef.current = true
+            clearRecordingTimer()
+            clearAudioSavedTimeout()
+            setRecordingState('idle')
+            setCurrentStep(0)
+            message.error(status.lastError || '录音连接已中断，请重新录音')
+          }
+          if (status.isConnected) {
+            disconnectHandledRef.current = false
+          }
+        })
+        .catch((error) => {
+          console.warn('[RecordingControl] voice.status polling failed:', error)
+        })
+    }, 1500)
+
+    return () => clearInterval(timer)
+  }, [isModalOpen, recordingState, transcribeEngine])
 
   useEffect(() => {
     const directionCodes = noteDirectionOptions.map((item) => item.value)
@@ -384,6 +471,7 @@ const RecordingControl: React.FC = () => {
 
     const unsubscribeAudioSaved = window.api.voice.onAudioSaved(async (path) => {
       console.log('[RecordingControl] Audio saved:', path)
+      clearAudioSavedTimeout()
       setAudioPath(path)
 
       message.success({
@@ -433,8 +521,11 @@ const RecordingControl: React.FC = () => {
 
     const unsubscribeError = window.api.voice.onError((error) => {
       console.error('[RecordingControl] Error:', error)
+      clearRecordingTimer()
+      clearAudioSavedTimeout()
       message.error('语音服务错误: ' + error)
       setRecordingState('idle')
+      setCurrentStep(0)
     })
 
     return () => {
@@ -442,11 +533,12 @@ const RecordingControl: React.FC = () => {
       unsubscribeAudioSaved()
       unsubscribeError()
     }
-  }, [isModalOpen, handleAnalyze, recordingDuration, transcribeAudio])
+  }, [clearAudioSavedTimeout, clearRecordingTimer, handleAnalyze, isModalOpen, recordingDuration, transcribeAudio])
 
   const checkVoiceServiceStatus = async () => {
     try {
       const status = await window.api.voice.status()
+      setVoiceStatus(status)
       return status
     } catch (error) {
       console.error('[RecordingControl] Status check failed:', error)
@@ -467,7 +559,21 @@ const RecordingControl: React.FC = () => {
         if (!result?.success) {
           throw new Error(result?.error || '语音服务启动失败')
         }
+        const latestStatus = await checkVoiceServiceStatus()
+        setVoiceStatus(latestStatus)
         message.success('语音服务已启动')
+      }
+
+      const effectiveStatus = await checkVoiceServiceStatus()
+      if (effectiveStatus?.isRecording) {
+        setRecordingState('recording')
+        setCurrentStep(1)
+        setRecordingDuration(Math.max(0, Math.floor(effectiveStatus.duration || 0)))
+        clearRecordingTimer()
+        recordingTimerRef.current = setInterval(() => {
+          setRecordingDuration(prev => prev + 1)
+        }, 1000)
+        message.info('检测到已有录音会话，已恢复录音状态')
       }
     } catch (error: any) {
       console.error('[RecordingControl] Failed to start voice service:', error)
@@ -477,15 +583,35 @@ const RecordingControl: React.FC = () => {
 
   const handleCloseModal = () => {
     if (recordingState === 'recording') {
-      stopRecording()
+      void stopRecording()
     }
     setIsModalOpen(false)
     resetState()
   }
 
   const startRecording = async () => {
+    if (recordingState === 'connecting' || recordingState === 'recording' || recordingState === 'stopping') {
+      return
+    }
+
     try {
+      clearAudioSavedTimeout()
+      disconnectHandledRef.current = false
       setRecordingState('connecting')
+
+      const latestStatus = await checkVoiceServiceStatus()
+      if (latestStatus?.isRecording) {
+        setRecordingState('recording')
+        setCurrentStep(1)
+        setRecordingDuration(Math.max(0, Math.floor(latestStatus.duration || 0)))
+        clearRecordingTimer()
+        recordingTimerRef.current = setInterval(() => {
+          setRecordingDuration(prev => prev + 1)
+        }, 1000)
+        message.info('当前已有录音进行中')
+        return
+      }
+
       const result = await window.api.voice.startRecording()
       if (!result?.success) {
         throw new Error(result?.error || '启动录音失败')
@@ -508,21 +634,28 @@ const RecordingControl: React.FC = () => {
 
   const stopRecording = async () => {
     try {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current)
-        recordingTimerRef.current = null
-      }
+      clearRecordingTimer()
+      clearAudioSavedTimeout()
+      setRecordingState('stopping')
+      setCurrentStep(2)
 
       const result = await window.api.voice.stopRecording()
       if (!result?.success) {
         throw new Error(result?.error || '停止录音失败')
       }
 
-      message.info('录音已停止，正在保存...')
+      audioSavedTimeoutRef.current = setTimeout(() => {
+        setRecordingState('idle')
+        setCurrentStep(0)
+        message.error('停止录音后未收到音频保存结果，可能是录音连接中断，请重新录音')
+      }, 8000)
+
+      message.info('录音已停止，正在保存音频...')
     } catch (error: any) {
       console.error('[RecordingControl] Stop recording failed:', error)
       message.error('停止录音失败: ' + error.message)
       setRecordingState('idle')
+      setCurrentStep(0)
     }
   }
 
@@ -571,7 +704,7 @@ const RecordingControl: React.FC = () => {
         || preferredHorizon
       const viewpoint: Viewpoint = {
         direction: noteDirection,
-        confidence: noteDirection === '未知' ? 0 : noteDirection === '中性' ? 0.6 : 0.7,
+        confidence: noteDirection === '未知' ? 0 : noteDirection === '震荡' ? 0.6 : 0.7,
         timeHorizon: resolvedHorizon
       }
       const stockInfo = await window.api.stock.getByCode(stockCode)
@@ -648,6 +781,8 @@ const RecordingControl: React.FC = () => {
         return <Tag color="blue" icon={<LoadingOutlined />}>连接中</Tag>
       case 'recording':
         return <Tag color="red" icon={<AudioOutlined />}>录音中</Tag>
+      case 'stopping':
+        return <Tag color="orange" icon={<LoadingOutlined />}>保存音频中</Tag>
       case 'transcribing':
         return <Tag color="purple" icon={<LoadingOutlined />}>转写中</Tag>
       case 'analyzing':
@@ -730,6 +865,7 @@ const RecordingControl: React.FC = () => {
                       size="large"
                       icon={<AudioOutlined />}
                       onClick={startRecording}
+                      disabled={recordingState === 'connecting' || recordingState === 'recording' || recordingState === 'stopping'}
                     >
                       开始录音
                     </Button>
@@ -778,6 +914,16 @@ const RecordingControl: React.FC = () => {
               <LoadingOutlined className="text-5xl text-purple-500 mb-4" />
               <div className="text-lg mb-4">正在转写音频...</div>
               <Progress percent={transcribeProgress} status="active" style={{ maxWidth: 300, margin: '0 auto' }} />
+            </div>
+          )}
+
+          {currentStep === 2 && recordingState === 'stopping' && (
+            <div className="text-center py-8">
+              <LoadingOutlined className="text-5xl text-orange-500 mb-4" />
+              <div className="text-lg mb-4">正在结束录音并保存音频...</div>
+              <div className="text-gray-500 text-sm">
+                {voiceStatus?.isConnected === false ? '检测到录音连接异常，正在等待结果...' : '请稍候，随后会自动进入转写'}
+              </div>
             </div>
           )}
 

@@ -70,7 +70,6 @@ function normalizeSentiment(value?: string): '看多' | '看空' | '震荡' | '�
 }
 
 function toViewpointDirection(sentiment: '看多' | '看空' | '震荡' | '未知'): Viewpoint['direction'] {
-  if (sentiment === '震荡') return '中性'
   return sentiment
 }
 

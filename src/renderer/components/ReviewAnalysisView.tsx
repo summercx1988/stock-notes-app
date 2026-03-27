@@ -393,7 +393,7 @@ const ReviewAnalysisView: React.FC = () => {
               title={(
                 <Space size={6}>
                   <span>预测统计（看盘预测）</span>
-                  <Tooltip title="标签说明：看多=预期上涨；看空=预期下跌；未知/中性不计入胜率">
+                  <Tooltip title="标签说明：看多=预期上涨；看空=预期下跌；未知/震荡不计入胜率">
                     <InfoCircleOutlined />
                   </Tooltip>
                 </Space>

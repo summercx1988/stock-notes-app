@@ -34,6 +34,12 @@ const DEFAULT_SETTINGS: UserSettings = {
   }
 }
 
+const normalizeDefaultDirection = (value?: string): string => {
+  if (!value) return '未知'
+  if (value === '中性') return '震荡'
+  return value
+}
+
 class AppConfigService {
   private cache: UserSettings | null = null
   private loadingPromise: Promise<UserSettings> | null = null
@@ -58,6 +64,7 @@ class AppConfigService {
     const settings = await this.ensureLoaded()
     this.setByPath(settings as unknown as Record<string, unknown>, key, value)
     settings.notes.categoryConfigs = normalizeNoteCategoryConfigs(settings.notes.categoryConfigs)
+    settings.notes.defaultDirection = normalizeDefaultDirection(settings.notes.defaultDirection)
     await this.persist(settings)
     return this.clone(settings)
   }
@@ -69,6 +76,7 @@ class AppConfigService {
       partial as unknown as Record<string, unknown>
     ) as unknown as UserSettings
     merged.notes.categoryConfigs = normalizeNoteCategoryConfigs(merged.notes.categoryConfigs)
+    merged.notes.defaultDirection = normalizeDefaultDirection(merged.notes.defaultDirection)
     await this.persist(merged)
     return this.clone(merged)
   }
@@ -96,6 +104,7 @@ class AppConfigService {
         parsed as unknown as Record<string, unknown>
       ) as unknown as UserSettings
       merged.notes.categoryConfigs = normalizeNoteCategoryConfigs(merged.notes.categoryConfigs)
+      merged.notes.defaultDirection = normalizeDefaultDirection(merged.notes.defaultDirection)
       return merged
     } catch (error: any) {
       if (error?.code !== 'ENOENT') {
@@ -104,6 +113,7 @@ class AppConfigService {
       await this.persist(DEFAULT_SETTINGS)
       const cloned = this.clone(DEFAULT_SETTINGS)
       cloned.notes.categoryConfigs = normalizeNoteCategoryConfigs(cloned.notes.categoryConfigs)
+      cloned.notes.defaultDirection = normalizeDefaultDirection(cloned.notes.defaultDirection)
       return cloned
     }
   }

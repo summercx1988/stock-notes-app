@@ -30,7 +30,7 @@ const MARGIN_RIGHT = 16
 const colorByDirection: Record<ReviewMarkerDirection, string> = {
   看多: '#ef4444',
   看空: '#16a34a',
-  中性: '#64748b',
+  震荡: '#64748b',
   未知: '#9ca3af'
 }
 
@@ -38,7 +38,7 @@ const resolveClusterDirection = (input: { bullish: number; bearish: number; neut
   const pairs: Array<{ direction: ReviewMarkerDirection; count: number }> = [
     { direction: '看多', count: input.bullish },
     { direction: '看空', count: input.bearish },
-    { direction: '中性', count: input.neutral },
+    { direction: '震荡', count: input.neutral },
     { direction: '未知', count: input.unknown }
   ]
   return pairs.sort((left, right) => right.count - left.count)[0]?.direction || '未知'
@@ -135,7 +135,7 @@ const ReviewKlinePanel: React.FC<ReviewKlinePanelProps> = ({
     const directionSummary = data.markers.reduce<Record<ReviewMarkerDirection, number>>((acc, marker) => {
       acc[marker.direction] = (acc[marker.direction] || 0) + 1
       return acc
-    }, { 看多: 0, 看空: 0, 中性: 0, 未知: 0 })
+    }, { 看多: 0, 看空: 0, 震荡: 0, 未知: 0 })
 
     const labels = candles
       .map((item, index) => ({ index, timestamp: item.timestamp }))
@@ -216,7 +216,7 @@ const ReviewKlinePanel: React.FC<ReviewKlinePanelProps> = ({
       </div>
 
       <div className="mb-2 text-xs text-gray-500">
-        方向分布：看多 {chart.directionSummary.看多} · 看空 {chart.directionSummary.看空} · 中性 {chart.directionSummary.中性} · 未知 {chart.directionSummary.未知}
+        方向分布：看多 {chart.directionSummary.看多} · 看空 {chart.directionSummary.看空} · 震荡 {chart.directionSummary.震荡} · 未知 {chart.directionSummary.未知}
       </div>
 
       {data.stats.totalMarkers === 0 ? (
@@ -384,4 +384,3 @@ const ReviewKlinePanel: React.FC<ReviewKlinePanelProps> = ({
 }
 
 export default ReviewKlinePanel
-

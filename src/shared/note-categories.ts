@@ -20,7 +20,7 @@ export const DEFAULT_NOTE_CATEGORY_CONFIGS: NoteCategoryConfig[] = [
         options: [
           toOption('看多', '看多', 1),
           toOption('看空', '看空', 2),
-          toOption('中性', '中性', 3),
+          toOption('震荡', '震荡', 3),
           toOption('未知', '未知', 4)
         ]
       },
