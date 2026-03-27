@@ -358,18 +358,26 @@ export class NotesService {
     for (const stockCode of stockCodes) {
       const note = await this.getStockNote(stockCode)
       if (!note || note.entries.length === 0) continue
+      const stockMeta = (!note.industry || !note.sector) ? await this.getStockInfo(stockCode) : null
+      const enrichedNote = stockMeta
+        ? {
+            ...note,
+            industry: note.industry || stockMeta.industry,
+            sector: note.sector || stockMeta.sector
+          }
+        : note
 
-      const latestEntry = this.getLatestEntry(note.entries)
+      const latestEntry = this.getLatestEntry(enrichedNote.entries)
       const currentTrackingStatus = this.normalizeTrackingStatus(latestEntry?.trackingStatus)
       if (normalizedTrackingFilters.size > 0 && !normalizedTrackingFilters.has(currentTrackingStatus)) {
         continue
       }
 
-      if (stockQuery && !this.matchesStockQuery(note.stockCode, note.stockName, stockQuery)) {
+      if (stockQuery && !this.matchesStockQuery(enrichedNote.stockCode, enrichedNote.stockName, stockQuery)) {
         continue
       }
 
-      const sortedEntries = [...note.entries].sort((left, right) => {
+      const sortedEntries = [...enrichedNote.entries].sort((left, right) => {
         return this.getEntryEventTime(right).getTime() - this.getEntryEventTime(left).getTime()
       })
 
@@ -378,7 +386,7 @@ export class NotesService {
         if (startDate && eventTime < startDate) continue
         if (endDate && eventTime > endDate) continue
 
-        baseEvents.push(this.toTimelineExplorerEvent(note, entry, currentTrackingStatus, latestEntry?.id === entry.id))
+        baseEvents.push(this.toTimelineExplorerEvent(enrichedNote, entry, currentTrackingStatus, latestEntry?.id === entry.id))
       }
     }
 
@@ -1159,6 +1167,8 @@ export class NotesService {
       entryId: entry.id,
       stockCode: note.stockCode,
       stockName: note.stockName,
+      industry: note.industry,
+      sector: note.sector,
       eventTime: this.getEntryEventTime(entry).toISOString(),
       createdAt: this.getEntryCreatedAt(entry).toISOString(),
       category: this.normalizeCategory(entry.category),

@@ -1,10 +1,9 @@
 import React, { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, DatePicker, Drawer, Empty, Input, Segmented, Select, Space, Spin, Tag, Tooltip, message } from 'antd'
+import { Button, DatePicker, Drawer, Empty, Input, Segmented, Select, Space, Spin, Tag, message } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
 import * as echarts from 'echarts'
 import type { EChartsOption } from 'echarts'
 import MDEditor from '@uiw/react-md-editor'
-import { MinusOutlined, PlusOutlined } from '@ant-design/icons'
 import { useAppStore } from '../stores/app'
 import type {
   NoteCategoryConfig,
@@ -23,11 +22,13 @@ type FilterValue = '全部' | string
 const TRACKING_OPTIONS: TrackingStatus[] = ['关注', '已取关']
 const VIEWPOINT_OPTIONS = ['看多', '看空', '震荡', '未知']
 const DEFAULT_RANGE: [Dayjs, Dayjs] = [dayjs().subtract(45, 'day').startOf('day'), dayjs().endOf('day')]
-const CHART_MIN_HEIGHT = 620
-const DEFAULT_ZOOM_WINDOW = { start: 0, end: 100 }
-const MIN_ZOOM_SPAN = 8
-const ZOOM_STEP = 12
-const MARKER_LANES = [0.38, 0.56, 0.76, 0.98]
+const CHART_MIN_HEIGHT = 520
+const CHART_MAX_VIEWPORT_HEIGHT = 760
+const CHART_MIN_WIDTH = 980
+const COLUMN_WIDTH = 120
+const ROW_HEIGHT = 40
+const RECENT_ACTIVITY_DAYS = 14
+const VIEWPOINT_COLUMN_ORDER = ['看多', '震荡', '看空', '未知']
 
 const getDirectionColor = (direction?: string) => {
   if (direction === '看多') return '#d94f4f'
@@ -63,13 +64,22 @@ const createFacetCountMap = (options: TimelineExplorerFacetOption[]) => {
 
 const formatShortTime = (value?: string) => dayjs(value).format('MM-DD HH:mm')
 
-const hashString = (value: string) => {
-  let hash = 0
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) - hash) + value.charCodeAt(index)
-    hash |= 0
+const buildColumnKey = (sector: string, viewpoint: string) => `${sector}__${viewpoint}`
+
+const getSectorLabel = (item: TimelineExplorerEvent) => item.sector || item.industry || '未分组'
+
+const getIndustryLabel = (item: TimelineExplorerEvent) => item.industry || '未知行业'
+
+const getRecentMarkerSize = (recentCount: number, isLatestForStock: boolean) => {
+  let size = 14
+  if (recentCount >= 6) {
+    size = 24
+  } else if (recentCount >= 4) {
+    size = 20
+  } else if (recentCount >= 2) {
+    size = 17
   }
-  return Math.abs(hash)
+  return isLatestForStock ? size + 1 : size
 }
 
 const TimelineExplorerView: React.FC = () => {
@@ -90,7 +100,6 @@ const TimelineExplorerView: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [refreshToken, setRefreshToken] = useState(0)
   const [trackingUpdating, setTrackingUpdating] = useState(false)
-  const [zoomWindow, setZoomWindow] = useState(DEFAULT_ZOOM_WINDOW)
 
   const deferredStockQuery = useDeferredValue(stockQuery)
 
@@ -166,10 +175,6 @@ const TimelineExplorerView: React.FC = () => {
     })
   }, [response?.items])
 
-  useEffect(() => {
-    setZoomWindow(DEFAULT_ZOOM_WINDOW)
-  }, [items.length, timeRange, trackingFilter, viewpointFilter, categoryFilter, operationFilter, deferredStockQuery])
-
   const eventMap = useMemo(() => {
     return new Map(items.map((item) => [item.entryId, item]))
   }, [items])
@@ -237,8 +242,68 @@ const TimelineExplorerView: React.FC = () => {
   }, [items])
 
   const chartHeight = useMemo(() => {
-    return Math.max(CHART_MIN_HEIGHT, items.length * 34)
+    return Math.max(CHART_MIN_HEIGHT, items.length * ROW_HEIGHT + 80)
   }, [items.length])
+
+  const sectorOrder = useMemo(() => {
+    const order: string[] = []
+    const seen = new Set<string>()
+    for (const item of items) {
+      const sector = getSectorLabel(item)
+      if (seen.has(sector)) continue
+      seen.add(sector)
+      order.push(sector)
+    }
+    return order
+  }, [items])
+
+  const explorerColumns = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const item of items) {
+      const sector = getSectorLabel(item)
+      const direction = getDirectionLabel(item.viewpoint?.direction)
+      const key = buildColumnKey(sector, direction)
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+
+    return sectorOrder.flatMap((sector) => {
+      return VIEWPOINT_COLUMN_ORDER.map((viewpoint, index) => {
+        const key = buildColumnKey(sector, viewpoint)
+        return {
+          key,
+          sector,
+          viewpoint,
+          showSector: index === 0,
+          itemCount: counts.get(key) || 0
+        }
+      })
+    })
+  }, [items, sectorOrder])
+
+  const columnMap = useMemo(() => {
+    return new Map(explorerColumns.map((column) => [column.key, column]))
+  }, [explorerColumns])
+
+  const chartWidth = useMemo(() => {
+    return Math.max(CHART_MIN_WIDTH, explorerColumns.length * COLUMN_WIDTH + 220)
+  }, [explorerColumns.length])
+
+  const recentActivity = useMemo(() => {
+    const counts = new Map<string, number>()
+    const visibleEnd = timeRange?.[1] || (items[0] ? dayjs(items[0].eventTime) : dayjs())
+    const cutoff = visibleEnd.subtract(RECENT_ACTIVITY_DAYS, 'day').startOf('day')
+
+    for (const item of items) {
+      const eventTime = dayjs(item.eventTime)
+      if (eventTime.isBefore(cutoff) || eventTime.isAfter(visibleEnd)) continue
+      counts.set(item.stockCode, (counts.get(item.stockCode) || 0) + 1)
+    }
+
+    return {
+      counts,
+      label: `近${RECENT_ACTIVITY_DAYS}天`
+    }
+  }, [items, timeRange])
 
   const handleSetLatestTrackingStatus = async (trackingStatus: TrackingStatus) => {
     if (!selectedEvent) return
@@ -261,21 +326,6 @@ const TimelineExplorerView: React.FC = () => {
     setActiveModule('timeline')
   }
 
-  const handleZoom = (direction: 'in' | 'out') => {
-    setZoomWindow((current) => {
-      const span = current.end - current.start
-      const midpoint = current.start + span / 2
-      const nextSpan = direction === 'in'
-        ? Math.max(MIN_ZOOM_SPAN, span - ZOOM_STEP)
-        : Math.min(100, span + ZOOM_STEP)
-      const nextStart = Math.max(0, Math.min(100 - nextSpan, midpoint - nextSpan / 2))
-      return {
-        start: Number(nextStart.toFixed(2)),
-        end: Number((nextStart + nextSpan).toFixed(2))
-      }
-    })
-  }
-
   const chartOption = useMemo<EChartsOption>(() => {
     if (items.length === 0) {
       return {
@@ -294,28 +344,45 @@ const TimelineExplorerView: React.FC = () => {
     }
 
     const rowIds = items.map((item) => item.entryId)
-    const timelineData = items.map((item) => [0, item.entryId])
+    const columnKeys = explorerColumns.map((column) => column.key)
+    const sectorAreas = sectorOrder.map<[Record<string, unknown>, Record<string, unknown>]>((sector, index) => {
+      return [
+        {
+          xAxis: buildColumnKey(sector, VIEWPOINT_COLUMN_ORDER[0]),
+          itemStyle: {
+            color: index % 2 === 0 ? 'rgba(148, 163, 184, 0.06)' : 'rgba(59, 130, 246, 0.04)'
+          }
+        },
+        {
+          xAxis: buildColumnKey(sector, VIEWPOINT_COLUMN_ORDER[VIEWPOINT_COLUMN_ORDER.length - 1])
+        }
+      ]
+    })
 
-    const markerData = items.map((item, index) => {
+    const markerData = items.map((item) => {
       const statusTone = getTrackingTone(item.currentTrackingStatus)
-      const direction = item.viewpoint?.direction
-      const laneSeed = hashString(`${item.stockCode}:${item.category}`) % MARKER_LANES.length
-      const laneBase = MARKER_LANES[laneSeed] + ((index % 2 === 0 ? 1 : -1) * 0.018)
+      const direction = getDirectionLabel(item.viewpoint?.direction)
+      const recentCount = recentActivity.counts.get(item.stockCode) || 0
       return {
         name: item.stockCode,
-        value: [laneBase, item.entryId],
+        value: [buildColumnKey(getSectorLabel(item), direction), item.entryId],
         entryId: item.entryId,
         stockCode: item.stockCode,
         stockName: item.stockName,
+        industry: item.industry,
+        sector: item.sector,
         eventTime: item.eventTime,
         category: item.category,
-        viewpointDirection: getDirectionLabel(direction),
+        viewpointDirection: direction,
         operationTag: item.operationTag,
         trackingStatus: item.currentTrackingStatus,
+        recentCount,
         symbol: item.category === '看盘预测' ? 'circle' : 'roundRect',
-        symbolSize: item.isLatestForStock ? 17 : 13,
+        symbolSize: getRecentMarkerSize(recentCount, item.isLatestForStock),
         itemStyle: {
           color: getDirectionColor(direction),
+          borderColor: statusTone.border,
+          borderWidth: item.currentTrackingStatus === '关注' ? 2.5 : 1.5,
           opacity: statusTone.opacity,
           shadowColor: selectedEvent?.entryId === item.entryId ? getDirectionColor(direction) : 'rgba(15,23,42,0.08)',
           shadowBlur: selectedEvent?.entryId === item.entryId ? 18 : 6,
@@ -329,8 +396,8 @@ const TimelineExplorerView: React.FC = () => {
       animationDurationUpdate: 180,
       backgroundColor: 'transparent',
       grid: {
-        top: 18,
-        right: 56,
+        top: 88,
+        right: 32,
         bottom: 24,
         left: 128
       },
@@ -354,15 +421,68 @@ const TimelineExplorerView: React.FC = () => {
                 ${formatShortTime(item.eventTime)}
               </div>
               <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;">
+                <span style="padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,0.08); font-size: 11px;">${item.sector || '未分组'}</span>
                 <span style="padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,0.08); font-size: 11px;">${categoryLabelMap.get(item.category) || item.category}</span>
                 <span style="padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,0.08); font-size: 11px;">${getDirectionLabel(item.viewpoint?.direction)}</span>
                 <span style="padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,0.08); font-size: 11px;">${item.currentTrackingStatus}</span>
               </div>
               <div style="font-size: 11px; line-height: 1.6; color: #94a3b8;">
-                ${item.operationTag || '无操作'} · 点击查看详情
+                ${getIndustryLabel(item)} · ${recentActivity.label}${params.data.recentCount || 0} 条 · ${item.operationTag || '无操作'}
               </div>
             </div>
           `
+        }
+      },
+      xAxis: {
+        type: 'category',
+        position: 'top',
+        data: columnKeys,
+        axisTick: {
+          show: false
+        },
+        axisLine: {
+          lineStyle: {
+            color: '#cbd5e1'
+          }
+        },
+        axisLabel: {
+          interval: 0,
+          margin: 18,
+          formatter: (value: string) => {
+            const column = columnMap.get(value)
+            if (!column) return ''
+            if (column.showSector) {
+              return `{sector|${column.sector}}\n{view|${column.viewpoint}}`
+            }
+            return `{sectorMute|·}\n{view|${column.viewpoint}}`
+          },
+          rich: {
+            sector: {
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#475569',
+              lineHeight: 16,
+              align: 'center'
+            },
+            sectorMute: {
+              fontSize: 11,
+              color: '#cbd5e1',
+              lineHeight: 16,
+              align: 'center'
+            },
+            view: {
+              fontSize: 10,
+              color: '#94a3b8',
+              lineHeight: 16,
+              align: 'center'
+            }
+          }
+        },
+        splitLine: {
+          show: true,
+          lineStyle: {
+            color: 'rgba(203, 213, 225, 0.34)'
+          }
         }
       },
       yAxis: {
@@ -421,78 +541,30 @@ const TimelineExplorerView: React.FC = () => {
           }
         }
       },
-      xAxis: {
-        type: 'value',
-        min: -0.18,
-          max: 1.24,
-        show: false
-      },
-      dataZoom: [
-        {
-          type: 'inside',
-          yAxisIndex: 0,
-          filterMode: 'none',
-          start: zoomWindow.start,
-          end: zoomWindow.end,
-          zoomOnMouseWheel: false,
-          moveOnMouseMove: true,
-          moveOnMouseWheel: true
-        }
-      ],
       series: [
-        {
-          type: 'line',
-          data: timelineData,
-          lineStyle: {
-            color: '#8f99a8',
-            width: 2.4
-          },
-          symbol: 'none',
-          silent: true,
-          z: 1
-        },
         {
           type: 'scatter',
           data: markerData,
           z: 3,
+          symbolSize: (_value: unknown, params: any) => params?.data?.symbolSize || 14,
           emphasis: {
-            scale: 1.22,
+            scale: 1.12,
             itemStyle: {
               shadowBlur: 22,
               opacity: 1
             }
-          }
-        },
-        {
-          type: 'scatter',
-          data: [
-            {
-              value: [0, items[0].entryId],
-              symbol: 'circle',
-              symbolSize: 7,
-              silent: true,
-              itemStyle: {
-                color: '#8f99a8'
-              }
+          },
+          markArea: sectorAreas.length > 0 ? {
+            silent: true,
+            label: {
+              show: false
             },
-            {
-              value: [0, items[items.length - 1].entryId],
-              symbol: 'circle',
-              symbolSize: 7,
-              silent: true,
-              itemStyle: {
-                color: '#8f99a8'
-              }
-            }
-          ],
-          z: 2,
-          tooltip: {
-            show: false
-          }
+            data: sectorAreas
+          } : undefined
         }
       ]
     }
-  }, [axisLabelMap, categoryLabelMap, eventMap, items, selectedEvent?.entryId, zoomWindow.end, zoomWindow.start])
+  }, [axisLabelMap, categoryLabelMap, columnMap, eventMap, explorerColumns, items, recentActivity, sectorOrder, selectedEvent?.entryId])
 
   useEffect(() => {
     if (!chartHostRef.current) return
@@ -515,26 +587,8 @@ const TimelineExplorerView: React.FC = () => {
       }
     }
 
-    const handleDataZoom = (params: any) => {
-      const batchItem = Array.isArray(params?.batch) ? params.batch[0] : params
-      const nextStart = typeof batchItem?.start === 'number' ? batchItem.start : null
-      const nextEnd = typeof batchItem?.end === 'number' ? batchItem.end : null
-      if (nextStart === null || nextEnd === null) return
-      setZoomWindow((current) => {
-        if (Math.abs(current.start - nextStart) < 0.01 && Math.abs(current.end - nextEnd) < 0.01) {
-          return current
-        }
-        return {
-          start: Number(nextStart.toFixed(2)),
-          end: Number(nextEnd.toFixed(2))
-        }
-      })
-    }
-
     chart.off('click')
-    chart.off('datazoom')
     chart.on('click', handleClick)
-    chart.on('datazoom', handleDataZoom)
 
     if (!resizeObserverRef.current && chartHostRef.current) {
       resizeObserverRef.current = new ResizeObserver(() => {
@@ -545,7 +599,6 @@ const TimelineExplorerView: React.FC = () => {
 
     return () => {
       chart.off('click', handleClick)
-      chart.off('datazoom', handleDataZoom)
     }
   }, [chartOption, eventMap])
 
@@ -569,11 +622,12 @@ const TimelineExplorerView: React.FC = () => {
                   <div className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Global Explorer</div>
                   <h2 className="mt-1 text-2xl font-semibold text-slate-900">事件纵览时间轴</h2>
                   <p className="mt-1 text-sm text-slate-600">
-                    让时间轴回到主角位置。沿时间扫描 marker，悬停看简要观点，点击进入右侧抽屉查看完整笔记。
+                    横向按行业板块和观点分列，纵向按时间展开事件。点越大，代表这只股票在 {recentActivity.label} 的记录越密集。
                   </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <Tag>板块 {sectorOrder.length}</Tag>
                   <Tag color="gold">关注股票 {metrics.activeStocks}</Tag>
                   <Tag color="red">看多 {metrics.bullish}</Tag>
                   <Tag color="green">看空 {metrics.bearish}</Tag>
@@ -671,48 +725,42 @@ const TimelineExplorerView: React.FC = () => {
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#d94f4f]" />
-                    看多
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#d94f4f]" />
+                      看多
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#2f8f74]" />
-                    看空
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#2f8f74]" />
+                      看空
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#5f8fd6]" />
-                    震荡
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#5f8fd6]" />
+                      震荡
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#8f97a6]" />
-                    未知
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#8f97a6]" />
+                      未知
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
-                    <span className="h-3 w-3 rounded-full border-2 border-[#f59e0b] bg-white" />
-                    关注
+                      <span className="h-3 w-3 rounded-full border-2 border-[#f59e0b] bg-white" />
+                      关注
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
-                    <span className="h-3 w-3 rounded-full border-2 border-[#94a3b8] bg-white opacity-50" />
-                    已取关
+                      <span className="h-3 w-3 rounded-full border-2 border-[#94a3b8] bg-white opacity-50" />
+                      已取关
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
-                    <span className="h-3 w-3 rounded-full bg-slate-900" />
-                    看盘预测
+                      <span className="h-3 w-3 rounded-full bg-slate-900" />
+                      看盘预测
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
-                    <span className="h-3 w-4 rounded bg-slate-900" />
-                    普通笔记
+                      <span className="h-3 w-4 rounded bg-slate-900" />
+                      普通笔记
                     </span>
                   </div>
 
-                  <Space size="small">
-                    <Tooltip title="放大时间轴尺度">
-                      <Button size="small" icon={<PlusOutlined />} onClick={() => handleZoom('in')} />
-                    </Tooltip>
-                    <Tooltip title="缩小时间轴尺度">
-                      <Button size="small" icon={<MinusOutlined />} onClick={() => handleZoom('out')} />
-                    </Tooltip>
-                    <span className="text-[11px] text-slate-400">拖拽或滚轮都可滚动时间轴</span>
-                  </Space>
+                  <div className="text-[11px] text-slate-400">
+                    纵向按时间滚动，板块变多时会出现横向滚动条。
+                  </div>
                 </div>
 
                 <Spin spinning={loading}>
@@ -725,10 +773,15 @@ const TimelineExplorerView: React.FC = () => {
                     </div>
                   ) : (
                     <div
-                      ref={chartHostRef}
-                      className="w-full rounded-[18px]"
-                      style={{ height: chartHeight }}
-                    />
+                      className="overflow-auto rounded-[18px] border border-slate-200/70 bg-white/70"
+                      style={{ maxHeight: CHART_MAX_VIEWPORT_HEIGHT }}
+                    >
+                      <div
+                        ref={chartHostRef}
+                        className="rounded-[18px]"
+                        style={{ width: chartWidth, height: chartHeight }}
+                      />
+                    </div>
                   )}
                 </Spin>
               </div>
@@ -747,6 +800,8 @@ const TimelineExplorerView: React.FC = () => {
           <div className="space-y-5">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-wrap gap-2">
+                {selectedEvent.sector ? <Tag color="cyan">{selectedEvent.sector}</Tag> : null}
+                {selectedEvent.industry ? <Tag>{selectedEvent.industry}</Tag> : null}
                 <Tag color={selectedEvent.category === '看盘预测' ? 'magenta' : 'blue'}>
                   {categoryLabelMap.get(selectedEvent.category) || selectedEvent.category}
                 </Tag>
@@ -759,6 +814,7 @@ const TimelineExplorerView: React.FC = () => {
                 </Tag>
               </div>
               <div className="mt-3 text-sm leading-6 text-slate-600">
+                <div>行业板块：{selectedEvent.sector || '未分组'} / {getIndustryLabel(selectedEvent)}</div>
                 <div>事件时间：{dayjs(selectedEvent.eventTime).format('YYYY-MM-DD HH:mm')}</div>
                 <div>记录时间：{dayjs(selectedEvent.createdAt).format('YYYY-MM-DD HH:mm')}</div>
                 <div>记录来源：{selectedEvent.inputType === 'voice' ? '语音' : '手动'}</div>

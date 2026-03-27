@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, DatePicker, Select, Input } from 'antd'
+import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, DatePicker, Select, Input, AutoComplete } from 'antd'
 import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
@@ -80,8 +80,8 @@ const RecordingControl: React.FC = () => {
   const [editableNoteContent, setEditableNoteContent] = useState<string>('')
   const [selectedStockCode, setSelectedStockCode] = useState<string>('')
   const [selectedStockName, setSelectedStockName] = useState<string>('')
+  const [stockSearchKeyword, setStockSearchKeyword] = useState<string>('')
   const [stockSearchOptions, setStockSearchOptions] = useState<StockSelectOption[]>([])
-  const [watchlistOptions, setWatchlistOptions] = useState<StockSelectOption[]>([])
   const [stockSearching, setStockSearching] = useState(false)
   const [transcribeProgress, setTranscribeProgress] = useState(0)
   const [noteEventTime, setNoteEventTime] = useState<Dayjs | null>(dayjs())
@@ -140,10 +140,7 @@ const RecordingControl: React.FC = () => {
 
   const loadUserPreferences = useCallback(async () => {
     try {
-      const [config, watchlist] = await Promise.all([
-        window.api.config.getAll(),
-        window.api.watchlist.get()
-      ])
+      const config = await window.api.config.getAll()
       const normalizedConfig: UserSettings = {
         ...config,
         notes: {
@@ -160,14 +157,6 @@ const RecordingControl: React.FC = () => {
         : (enabledCategoryCodes[0] || '看盘预测')
       setNoteCategory(preferredCategory)
       setNoteDirection(normalizeDirectionAlias(normalizedConfig.notes.defaultDirection))
-
-      const options: StockSelectOption[] = (watchlist || []).map((stock: any) => ({
-        value: stock.code,
-        name: stock.name,
-        label: `${stock.name}${stock.code}`
-      }))
-      setWatchlistOptions(options)
-      setStockSearchOptions(options)
     } catch (error) {
       if (isMissingHandlerError(error)) {
         const fallback = {
@@ -180,9 +169,7 @@ const RecordingControl: React.FC = () => {
         setSettings(fallback)
         setNoteCategory(fallback.notes.defaultCategory)
         setNoteDirection(normalizeDirectionAlias(DEFAULT_SETTINGS.notes.defaultDirection))
-        setWatchlistOptions([])
-        setStockSearchOptions([])
-        console.warn('[RecordingControl] Missing config/watchlist IPC handlers, fallback to defaults.')
+        console.warn('[RecordingControl] Missing config IPC handlers, fallback to defaults.')
         return
       }
       console.error('[RecordingControl] Failed to load user preferences:', error)
@@ -213,7 +200,9 @@ const RecordingControl: React.FC = () => {
     setEditableNoteContent('')
     setSelectedStockCode('')
     setSelectedStockName('')
-    setStockSearchOptions((prev) => (prev.length > 0 ? prev : watchlistOptions))
+    setStockSearchKeyword('')
+    setStockSearchOptions([])
+    setStockSearching(false)
     setTranscribeProgress(0)
     setNoteEventTime(dayjs())
     const normalizedCategories = normalizeNoteCategoryConfigs(settings?.notes?.categoryConfigs || DEFAULT_NOTE_CATEGORY_CONFIGS)
@@ -234,7 +223,7 @@ const RecordingControl: React.FC = () => {
       clearTimeout(stockSearchTimerRef.current)
       stockSearchTimerRef.current = null
     }
-  }, [clearAudioSavedTimeout, clearRecordingTimer, settings, watchlistOptions])
+  }, [clearAudioSavedTimeout, clearRecordingTimer, settings])
 
   useEffect(() => {
     void loadUserPreferences()
@@ -319,68 +308,96 @@ const RecordingControl: React.FC = () => {
     }
   }, [noteCategory, noteDirectionOptions, noteOperationOptions, noteDirection, noteOperationTag])
 
-  const handleStockSearch = useCallback((query: string) => {
-    if (stockSearchTimerRef.current) {
-      clearTimeout(stockSearchTimerRef.current)
+  const searchStockOptions = useCallback(async (keyword: string, limit = 12) => {
+    const q = keyword.trim()
+    if (!q) {
+      setStockSearchOptions([])
+      setStockSearching(false)
+      return []
     }
 
-    stockSearchTimerRef.current = setTimeout(async () => {
-      const q = query.trim()
-      if (!q) {
-        setStockSearchOptions(() => {
-          const selected = watchlistOptions.find((item) => item.value === selectedStockCode)
-          if (selected) {
-            return watchlistOptions
-          }
-          if (!selectedStockCode) {
-            return watchlistOptions
-          }
-          return [
-            ...watchlistOptions,
-            { value: selectedStockCode, name: selectedStockName || selectedStockCode, label: `${selectedStockName || selectedStockCode}${selectedStockCode}` }
-          ]
-        })
-        setStockSearching(false)
-        return
-      }
+    setStockSearching(true)
+    try {
+      const results = await window.api.stock.search(q, limit)
+      const options: StockSelectOption[] = results.map((result: any) => ({
+        value: result.stock.code,
+        name: result.stock.name,
+        label: `${result.stock.name}${result.stock.code}`
+      }))
+      setStockSearchOptions(options)
+      return results
+    } catch (error) {
+      console.error('[RecordingControl] Stock search failed:', error)
+      setStockSearchOptions([])
+      return []
+    } finally {
+      setStockSearching(false)
+    }
+  }, [])
 
-      if (/^\d{6}$/.test(q)) {
-        setSelectedStockCode(q)
-        setSelectedStockName(q)
-        setStockSearchOptions((prev) => {
-          const existing = prev.find((item) => item.value === q)
-          if (existing) return prev
-          return [...prev, { value: q, name: q, label: `股票代码 ${q}` }]
-        })
-      }
+  const resolveStockByKeyword = useCallback(async (keyword: string, normalizeKeyword = false) => {
+    const q = keyword.trim()
+    if (!q) {
+      setSelectedStockCode('')
+      setSelectedStockName('')
+      setStockSearchOptions([])
+      setStockSearching(false)
+      return
+    }
 
+    const normalizedCode = q.replace(/\D/g, '').slice(0, 6)
+    if (/^\d{6}$/.test(q)) {
       setStockSearching(true)
       try {
-        const results = await window.api.stock.search(q, 15)
-        const options: StockSelectOption[] = results.map((result: any) => ({
-          value: result.stock.code,
-          name: result.stock.name,
-          label: `${result.stock.name}${result.stock.code}`
-        }))
-        setStockSearchOptions((prev) => {
-          const map = new Map<string, StockSelectOption>()
-          watchlistOptions.forEach((item) => map.set(item.value, item))
-          prev.forEach((item) => map.set(item.value, item))
-          options.forEach((item) => map.set(item.value, item))
-          return Array.from(map.values()).sort((left, right) => {
-            const leftWatch = watchlistOptions.some((item) => item.value === left.value)
-            const rightWatch = watchlistOptions.some((item) => item.value === right.value)
-            if (leftWatch === rightWatch) return 0
-            return leftWatch ? -1 : 1
-          })
-        })
+        const stockInfo = await window.api.stock.getByCode(normalizedCode)
+        if (stockInfo?.name) {
+          setSelectedStockCode(normalizedCode)
+          setSelectedStockName(stockInfo.name)
+          if (normalizeKeyword) {
+            setStockSearchKeyword(`${stockInfo.name}${normalizedCode}`)
+          }
+        } else {
+          setSelectedStockCode(normalizedCode)
+          setSelectedStockName(normalizedCode)
+        }
       } catch (error) {
-        console.error('[RecordingControl] Stock search failed:', error)
+        console.error('[RecordingControl] getByCode failed:', error)
+        setSelectedStockCode(normalizedCode)
+        setSelectedStockName(normalizedCode)
       } finally {
         setStockSearching(false)
       }
+      return
+    }
+
+    try {
+      const results = await searchStockOptions(q, 8)
+      const matched = results[0]?.stock
+      if (matched) {
+        setSelectedStockCode(matched.code)
+        setSelectedStockName(matched.name)
+        if (normalizeKeyword) {
+          setStockSearchKeyword(`${matched.name}${matched.code}`)
+        }
+      } else {
+        setSelectedStockCode('')
+        setSelectedStockName(q)
+      }
+    } catch (error) {
+      console.error('[RecordingControl] resolveStockByKeyword failed:', error)
+      setSelectedStockCode('')
+      setSelectedStockName(q)
+    }
+  }, [searchStockOptions])
+
+  const scheduleStockSearch = useCallback((keyword: string) => {
+    if (stockSearchTimerRef.current) {
+      clearTimeout(stockSearchTimerRef.current)
+    }
+    stockSearchTimerRef.current = setTimeout(() => {
+      void searchStockOptions(keyword)
     }, 220)
-  }, [selectedStockCode, selectedStockName, watchlistOptions])
+  }, [searchStockOptions])
 
   const handleAnalyze = useCallback(async (textToAnalyze: string) => {
     const normalizedInput = cleanTranscriptText(textToAnalyze)
@@ -424,17 +441,7 @@ const RecordingControl: React.FC = () => {
         message.success(`处理完成: ${resolvedStock.name}${resolvedStock.code}`)
         setSelectedStockCode(resolvedStock.code)
         setSelectedStockName(resolvedStock.name)
-        setStockSearchOptions((prev) => {
-          const merged = new Map<string, StockSelectOption>()
-          watchlistOptions.forEach((item) => merged.set(item.value, item))
-          prev.forEach((item) => merged.set(item.value, item))
-          merged.set(resolvedStock.code, {
-            value: resolvedStock.code,
-            name: resolvedStock.name,
-            label: `${resolvedStock.name}${resolvedStock.code}`
-          })
-          return Array.from(merged.values())
-        })
+        setStockSearchKeyword(`${resolvedStock.name}${resolvedStock.code}`)
       } else {
         message.warning('未识别到股票，请手动选择')
       }
@@ -450,7 +457,7 @@ const RecordingControl: React.FC = () => {
       setRecordingState('transcribing')
       setCurrentStep(2)
     }
-  }, [watchlistOptions])
+  }, [])
 
   const transcribeAudio = useCallback(async (path: string) => {
     if (transcribeEngine === 'cloud') {
@@ -666,7 +673,14 @@ const RecordingControl: React.FC = () => {
     let stockCode = normalizeStockCode(selectedStockCode) || normalizeStockCode(extractResult.stock?.code)
     if (!stockCode) {
       try {
-        const sourceText = [editableNoteContent, extractResult.optimizedText, extractResult.originalText, transcribedText]
+        const sourceText = [
+          stockSearchKeyword,
+          selectedStockName,
+          editableNoteContent,
+          extractResult.optimizedText,
+          extractResult.originalText,
+          transcribedText
+        ]
           .filter(Boolean)
           .join('\n')
         const matched = await window.api.stock.match(sourceText)
@@ -676,6 +690,9 @@ const RecordingControl: React.FC = () => {
           setSelectedStockCode(matchedCode)
           if (matched?.stock?.name) {
             setSelectedStockName(matched.stock.name)
+            setStockSearchKeyword(`${matched.stock.name}${matchedCode}`)
+          } else {
+            setStockSearchKeyword(matchedCode)
           }
         }
       } catch (error) {
@@ -971,69 +988,80 @@ const RecordingControl: React.FC = () => {
               <div className="p-4 bg-gray-50 rounded-lg">
                 <h4 className="font-medium mb-3">记录配置</h4>
                 <div className="flex flex-wrap items-center gap-3 mb-3">
-                  <Select
-                    showSearch
-                    value={selectedStockCode || undefined}
-                    onSearch={handleStockSearch}
-                    filterOption={false}
-                    loading={stockSearching}
+                  <AutoComplete
+                    value={stockSearchKeyword}
+                    options={stockSearchOptions.map((item) => ({
+                      value: item.value,
+                      label: item.label,
+                      name: item.name
+                    }))}
                     style={{ width: 260 }}
-                    placeholder="输入股票名称或代码"
-                    options={stockSearchOptions}
-                    onChange={(value, option) => {
-                      const picked = option as { name?: string; label?: string }
-                      setSelectedStockCode(value)
-                      if (picked?.name) {
-                        setSelectedStockName(picked.name)
-                      } else if (typeof picked?.label === 'string') {
-                        setSelectedStockName(picked.label)
-                      } else {
-                        setSelectedStockName(value)
-                      }
+                    placeholder="输入股票名称或代码（全量库模糊匹配）"
+                    filterOption={false}
+                    allowClear
+                    onSearch={(value) => {
+                      scheduleStockSearch(String(value || ''))
                     }}
-                    notFoundContent={stockSearching ? '搜索中...' : '未找到匹配股票'}
-                  />
-                  <Input
-                    value={selectedStockCode}
-                    placeholder="或手动输入6位代码"
-                    style={{ width: 180 }}
-                    maxLength={6}
-                    onChange={(event) => {
-                      const code = event.target.value.replace(/\D/g, '').slice(0, 6)
-                      setSelectedStockCode(code)
-
-                      if (!code) {
+                    onChange={(value) => {
+                      const raw = String(value || '')
+                      setStockSearchKeyword(raw)
+                      if (!raw.trim()) {
+                        if (stockSearchTimerRef.current) {
+                          clearTimeout(stockSearchTimerRef.current)
+                          stockSearchTimerRef.current = null
+                        }
+                        setSelectedStockCode('')
                         setSelectedStockName('')
+                        setStockSearchOptions([])
+                        setStockSearching(false)
                         return
                       }
+                      setSelectedStockCode('')
+                      setSelectedStockName(raw.trim())
+                      scheduleStockSearch(raw)
+                    }}
+                    onSelect={(value, option) => {
+                      const code = String(value || '').replace(/\D/g, '').slice(0, 6)
+                      const picked = option as { name?: string; label?: string }
+                      if (!code) return
 
-                      if (code.length === 6) {
-                        void window.api.stock.getByCode(code).then((stockInfo: any) => {
-                          if (stockInfo?.name) {
-                            setSelectedStockName(stockInfo.name)
-                            setStockSearchOptions((prev) => {
-                              const exists = prev.some((item) => item.value === code)
-                              if (exists) return prev
-                              return [...prev, {
-                                value: code,
-                                name: stockInfo.name,
-                                label: `${stockInfo.name}${code}`
-                              }]
-                            })
-                          } else {
-                            setSelectedStockName(code)
-                          }
-                        }).catch((error) => {
-                          console.error('[RecordingControl] getByCode failed:', error)
-                          setSelectedStockName(code)
-                        })
+                      setSelectedStockCode(code)
+                      if (picked?.name) {
+                        setSelectedStockName(picked.name)
                       } else {
                         setSelectedStockName(code)
                       }
+
+                      if (typeof picked?.label === 'string') {
+                        setStockSearchKeyword(picked.label)
+                      } else {
+                        setStockSearchKeyword(code)
+                      }
                     }}
+                    onInputKeyDown={(event) => {
+                      if (event.key !== 'Enter') return
+                      if (stockSearchTimerRef.current) {
+                        clearTimeout(stockSearchTimerRef.current)
+                        stockSearchTimerRef.current = null
+                      }
+                      void resolveStockByKeyword(stockSearchKeyword, true)
+                    }}
+                    onBlur={() => {
+                      if (stockSearchTimerRef.current) {
+                        clearTimeout(stockSearchTimerRef.current)
+                        stockSearchTimerRef.current = null
+                      }
+                      void resolveStockByKeyword(stockSearchKeyword, true)
+                    }}
+                    status={!stockSearching && stockSearchKeyword.trim() && !selectedStockCode ? 'warning' : undefined}
+                    notFoundContent={stockSearching ? '搜索中...' : '未找到匹配股票'}
                   />
-                  {selectedStockCode && (
-                    <Tag color="blue">已选: {selectedStockName || selectedStockCode}</Tag>
+                  {selectedStockCode ? (
+                    <Tag color="blue">已匹配: {selectedStockName || selectedStockCode} ({selectedStockCode})</Tag>
+                  ) : (
+                    stockSearchKeyword.trim() && !stockSearching
+                      ? <Tag color="orange">未匹配到股票代码</Tag>
+                      : null
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-3">

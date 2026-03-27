@@ -298,6 +298,8 @@ export interface TimelineExplorerEvent {
   entryId: string
   stockCode: string
   stockName: string
+  industry?: string
+  sector?: string
   eventTime: string
   createdAt: string
   category: NoteCategory

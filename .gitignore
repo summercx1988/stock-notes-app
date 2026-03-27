@@ -45,6 +45,7 @@ models/
 tmp/
 temp/
 *.tmp
+.trae/
 
 # Test
 coverage/

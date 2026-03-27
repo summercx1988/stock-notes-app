@@ -64,31 +64,28 @@ const Sidebar: React.FC = () => {
       const stockList = await Promise.all(stockCodes.map(async (code) => {
         const item = timeline.find((timelineItem) => timelineItem.stockCode === code)
         const timelineName = item?.stockName || code
-        if (timelineName && timelineName !== code) {
-          return {
-            code,
-            name: timelineName,
-            market: 'SH' as const
-          }
-        }
         try {
           const dbStock = await window.api.stock.getByCode(code)
           return {
             code,
-            name: dbStock?.name || code,
+            name: timelineName && timelineName !== code ? timelineName : (dbStock?.name || code),
+            industry: dbStock?.industry,
+            sector: dbStock?.sector,
             market: (dbStock?.market || 'SH') as 'SH' | 'SZ' | 'BJ'
           }
         } catch {
           return {
             code,
-            name: code,
+            name: timelineName || code,
+            industry: undefined,
+            sector: undefined,
             market: 'SH' as const
           }
         }
       }))
 
       if (!cancelled) {
-        const uniqueByCode = new Map<string, { code: string; name: string; market: 'SH' | 'SZ' | 'BJ' }>()
+        const uniqueByCode = new Map<string, { code: string; name: string; market: 'SH' | 'SZ' | 'BJ'; industry?: string; sector?: string }>()
         for (const stock of stockList) {
           const normalizedCode = normalizeStockCode(stock.code)
           const normalizedName = normalizeStockName(stock.name, normalizedCode)
@@ -97,7 +94,9 @@ const Sidebar: React.FC = () => {
             uniqueByCode.set(normalizedCode, {
               code: normalizedCode,
               name: normalizedName || normalizedCode,
-              market: stock.market
+              market: stock.market,
+              industry: stock.industry,
+              sector: stock.sector
             })
           }
         }
@@ -174,17 +173,28 @@ const Sidebar: React.FC = () => {
       : normalizedCode
   }
 
+  const getStockMetaLine = (item: { industry?: string; sector?: string }) => {
+    if (item.sector && item.industry && item.sector !== item.industry) {
+      return `${item.sector} · ${item.industry}`
+    }
+    return item.sector || item.industry || null
+  }
+
   const rawDisplayItems = searchText.trim()
     ? searchResults.map(r => ({
         code: normalizeStockCode(r.stock.code),
         name: normalizeStockName(r.stock.name, normalizeStockCode(r.stock.code)),
         market: r.stock.market,
+        industry: r.stock.industry,
+        sector: r.stock.sector,
         isFromSearch: true
       }))
     : stocks.map(s => ({
         code: normalizeStockCode(typeof s === 'string' ? s : s.code),
         name: normalizeStockName(typeof s === 'string' ? s : s.name, normalizeStockCode(typeof s === 'string' ? s : s.code)),
         market: (typeof s === 'string' ? 'SH' : s.market) as 'SH' | 'SZ' | 'BJ',
+        industry: typeof s === 'string' ? undefined : s.industry,
+        sector: typeof s === 'string' ? undefined : s.sector,
         isFromSearch: false
       }))
 
@@ -229,6 +239,11 @@ const Sidebar: React.FC = () => {
                   }`}
                 >
                   <div className="font-medium text-slate-800">{getDisplayName(item)}</div>
+                  {getStockMetaLine(item) ? (
+                    <div className="mt-1 text-xs text-slate-500">
+                      {getStockMetaLine(item)}
+                    </div>
+                  ) : null}
                   <div className="mt-1 text-xs text-slate-500">
                     共 {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
                   </div>
