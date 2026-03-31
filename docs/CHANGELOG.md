@@ -30,6 +30,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - 修复打包后应用无法启动的问题（路径编码、sandbox 配置）。
 - 修复打包后语音服务路径错误的问题。
+- 修复删除笔记后 sidebar 笔记数量不更新的问题（添加 `notifyNotesChanged` 调用）。
 
 ### Notes
 - 首次打开应用时，如提示"无法验证开发者"，需右键点击应用选择"打开"确认。

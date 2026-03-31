@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Menu } from 'electron'
 import path from 'path'
 import { voiceTranscriberClient } from './services/VoiceTranscriberClient'
 import { feishuBotService } from './services/feishu-bot'
@@ -58,6 +58,64 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+
+  const menuTemplate: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: '股票投资笔记',
+      submenu: [
+        {
+          label: '关于股票投资笔记',
+          role: 'about'
+        },
+        { type: 'separator' },
+        {
+          label: '退出',
+          accelerator: 'CmdOrCtrl+Q',
+          click: async () => {
+            console.log('[Main] User requested quit via menu')
+            await voiceTranscriberClient.stop()
+            await feishuBotService.stop()
+            app.quit()
+          }
+        }
+      ]
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' }
+      ]
+    },
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload', label: '重新加载' },
+        { role: 'forceReload', label: '强制重新加载' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: '重置缩放' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '全屏' }
+      ]
+    },
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'close', label: '关闭' }
+      ]
+    }
+  ]
+
+  const menu = Menu.buildFromTemplate(menuTemplate)
+  Menu.setApplicationMenu(menu)
 }
 
 if (hasSingleInstanceLock) {
@@ -104,16 +162,32 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', async () => {
-  await voiceTranscriberClient.stop()
-  await feishuBotService.stop()
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 
-app.on('before-quit', async () => {
-  await voiceTranscriberClient.stop()
-  await feishuBotService.stop()
+let isQuitting = false
+
+app.on('before-quit', async (event) => {
+  if (isQuitting) return
+  
+  event.preventDefault()
+  isQuitting = true
+  
+  console.log('[Main] Cleaning up before quit...')
+  
+  try {
+    await Promise.all([
+      voiceTranscriberClient.stop(),
+      feishuBotService.stop()
+    ])
+    console.log('[Main] All services stopped')
+  } catch (error) {
+    console.error('[Main] Error stopping services:', error)
+  }
+  
+  app.exit(0)
 })
 
 import './ipc/notes'
