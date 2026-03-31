@@ -14,12 +14,20 @@ All notable changes to this project will be documented in this file.
 - 更新 `.gitignore` 防止敏感文件和构建产物上传。
 
 ### Changed
+- **数据存储路径统一**：
+  - 开发与部署统一使用 `~/Library/Application Support/stock-notes-app/data/`。
+  - 首次运行自动创建数据目录。
+  - 重装应用不会丢失用户数据。
+  - 项目代码不包含用户数据，安全上传 Git。
 - README 新增打包发布章节，包含完整的打包流程和安装说明。
 - 版本基线更新为 `v3.6`。
 
+### Fixed
+- 修复打包后应用无法启动的问题（路径编码、sandbox 配置）。
+- 修复打包后语音服务路径错误的问题。
+
 ### Notes
 - 首次打开应用时，如提示"无法验证开发者"，需右键点击应用选择"打开"确认。
-- 用户数据目录 `data/` 不会被打包，首次运行会自动创建。
 
 ## 2026-03-27 (事件纵览板块矩阵与侧边栏股票信息增强)
 

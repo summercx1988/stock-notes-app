@@ -1,4 +1,3 @@
-import 'dotenv/config'
 import { app, BrowserWindow } from 'electron'
 import path from 'path'
 import { voiceTranscriberClient } from './services/VoiceTranscriberClient'
@@ -15,6 +14,7 @@ if (!hasSingleInstanceLock) {
 }
 
 function createWindow() {
+  console.log('[Main] Creating main window...')
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -23,21 +23,37 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 15 },
   })
+  console.log('[Main] Window created, setting up handlers...')
 
   voiceTranscriberClient.setMainWindow(mainWindow)
 
-  if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
+  const isDev = process.env.NODE_ENV === 'development'
+  console.log('[Main] Environment:', isDev ? 'development' : 'production')
+  
+  if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+    const appPath = app.getAppPath()
+    console.log('[Main] App path:', appPath)
+    const htmlPath = path.join(appPath, 'dist/renderer/index.html')
+    console.log('[Main] Loading HTML from:', htmlPath)
+    mainWindow.loadFile(htmlPath)
   }
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[Main] Window content loaded successfully')
+  })
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('[Main] Failed to load:', errorCode, errorDescription)
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -58,6 +74,7 @@ if (hasSingleInstanceLock) {
 }
 
 app.whenReady().then(async () => {
+  console.log('[Main] App is ready')
   createWindow()
 
   try {

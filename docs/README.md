@@ -1,7 +1,7 @@
-# 盯盘笔记系统 - 使用与开发说明 v3.5
+# 盯盘笔记系统 - 使用与开发说明 v3.6
 
-**版本：** v3.5  
-**更新日期：** 2026-03-26  
+**版本：** v3.6  
+**更新日期：** 2026-03-31  
 **适用范围：** 当前主仓库 `stock-notes-app`
 
 ---
@@ -131,8 +131,10 @@ npm run cli:regression
 
 ### 5.2 数据目录
 
+应用数据统一存储在用户目录：
+
 ```text
-data/
+~/Library/Application Support/stock-notes-app/data/
 ├── stocks/
 │   ├── 中远海能（600026）.md
 │   ├── 贵州茅台(600519).md
@@ -140,8 +142,16 @@ data/
 ├── audio/
 │   ├── temp/
 │   └── 600026/
+├── config/
+│   └── settings.json
 └── stocks-database.json
 ```
+
+**说明：**
+- 开发与部署使用同一数据目录
+- 首次运行自动创建
+- 重装应用不会丢失数据
+- 访问方式：访达按 `Cmd+Shift+G`，输入上述路径
 
 ### 5.3 兼容策略
 
@@ -257,4 +267,8 @@ stock-notes-export-.../
 - `docs/MODULAR_ARCHITECTURE.md`：模块化解耦与复用路线
 - `docs/UI_UX_TECH_PLAN.md`：UI/UX 与技术实施计划
 - `docs/ROADMAP_STOCK_ANALYSIS.md`：后续股票分析路线图
+- `docs/future_work/trading-trainer/README.md`：独立 future_work 项目索引（匿名训练 + 风格建模）
+- `docs/future_work/trading-trainer/PRD.md`：训练与风格建模系统的业务需求与范围定义
+- `docs/future_work/trading-trainer/TECH_SELECTION.md`：训练与建模系统的技术选型与开源调研
+- `docs/future_work/trading-trainer/REQUIREMENTS_REVIEW.md`：当前需求的结构化评审与后续 spec 拆分建议
 - `docs/FEISHU_CARD_INTERACTION_LESSONS.md`：飞书 JSON 2.0 卡片与极速解析迭代经验

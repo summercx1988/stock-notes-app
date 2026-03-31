@@ -4,7 +4,7 @@ import type { UserSettings } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 import { getDataPath } from './data-paths'
 
-const SETTINGS_PATH = getDataPath('config', 'settings.json')
+const getSettingsPath = (): string => getDataPath('config', 'settings.json')
 
 const DEFAULT_SETTINGS: UserSettings = {
   textAnalysis: {
@@ -97,7 +97,7 @@ class AppConfigService {
 
   private async loadFromFile(): Promise<UserSettings> {
     try {
-      const content = await fs.readFile(SETTINGS_PATH, 'utf-8')
+      const content = await fs.readFile(getSettingsPath(), 'utf-8')
       const parsed = JSON.parse(content) as Partial<UserSettings>
       const merged = this.deepMerge(
         DEFAULT_SETTINGS as unknown as Record<string, unknown>,
@@ -119,8 +119,9 @@ class AppConfigService {
   }
 
   private async persist(settings: UserSettings): Promise<void> {
-    await fs.mkdir(path.dirname(SETTINGS_PATH), { recursive: true })
-    await fs.writeFile(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8')
+    const settingsPath = getSettingsPath()
+    await fs.mkdir(path.dirname(settingsPath), { recursive: true })
+    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
     this.cache = settings
   }
 

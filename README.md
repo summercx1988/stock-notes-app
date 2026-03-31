@@ -37,7 +37,29 @@
 - 主进程：IPC、笔记存储、股票数据库、飞书机器人、复盘分析
 - 解析层：`ParseOrchestrator`（完整链路）+ `FeishuFastParseOrchestrator`（极速链路）
 - 语音服务：Git 子模块 `voice-transcriber-service`（Swift）
-- 存储：`data/stocks/*.md`、`data/audio/*`、`data/stocks-database.json`
+- 存储：`~/Library/Application Support/stock-notes-app/data/`
+
+## 数据存储
+
+应用数据统一存储在用户目录，与项目代码分离：
+
+```text
+~/Library/Application Support/stock-notes-app/data/
+├── stocks/                # 股票 Markdown 笔记
+├── audio/                 # 录音与导入音频
+├── config/                # 配置文件
+├── market/                # 市场数据缓存
+└── stocks-database.json   # 股票名称与代码数据库
+```
+
+**优点：**
+- 开发与部署使用同一数据源
+- 重装应用不会丢失数据
+- 项目代码不包含用户数据，安全上传 Git
+
+**访问方式：**
+- 访达中按 `Cmd+Shift+G`，输入 `~/Library/Application Support/stock-notes-app`
+- 或终端执行 `open ~/Library/Application\ Support/stock-notes-app/`
 
 ## 目录说明
 
@@ -47,10 +69,6 @@ stock-notes-app/
 │   ├── main/                  # Electron 主进程、IPC、服务
 │   ├── renderer/              # React UI
 │   └── shared/                # 共享类型
-├── data/
-│   ├── stocks/                # 股票 Markdown 笔记（名称+代码）
-│   ├── audio/                 # 录音与导入音频
-│   └── stocks-database.json   # 股票名称与代码数据库
 ├── voice-transcriber-service/ # Swift 子模块
 └── docs/
     ├── README.md
@@ -100,3 +118,44 @@ npm run electron:dev
 - 模块化架构说明：[docs/MODULAR_ARCHITECTURE.md](./docs/MODULAR_ARCHITECTURE.md)
 - 录音转写专项说明：[docs/RECORDING_TRANSCRIBE_SPEC.md](./docs/RECORDING_TRANSCRIBE_SPEC.md)
 - 飞书卡片交互经验：[docs/FEISHU_CARD_INTERACTION_LESSONS.md](./docs/FEISHU_CARD_INTERACTION_LESSONS.md)
+- 飞书机器人配置教程：[docs/飞书机器人配置教程.md](./docs/飞书机器人配置教程.md)
+
+## 打包发布
+
+### 开发环境打包
+
+```bash
+# 1. 编译语音服务（Release 版本）
+cd voice-transcriber-service
+swift build -c release
+cp .build/release/voice-transcriber-service ./voice-transcriber-service
+cd ..
+
+# 2. 打包应用（生成 DMG 和 ZIP）
+npm run electron:build
+```
+
+### 输出文件
+
+打包完成后，在 `release/` 目录下生成：
+
+| 文件 | 说明 |
+|------|------|
+| `股票投资笔记-x.x.x-arm64.dmg` | Apple Silicon (M1/M2/M3) 安装包 |
+| `股票投资笔记-x.x.x.dmg` | Intel Mac 安装包 |
+| `股票投资笔记-x.x.x-arm64-mac.zip` | Apple Silicon 压缩包 |
+| `股票投资笔记-x.x.x-mac.zip` | Intel Mac 压缩包 |
+
+### 安装使用
+
+1. 双击 DMG 文件打开
+2. 将应用拖到 Applications 文件夹
+3. 首次打开时，如提示"无法验证开发者"：
+   - 右键点击应用 → 选择"打开" → 点击"打开"确认
+   - 或在系统设置 → 隐私与安全性 → 仍要打开
+
+### 注意事项
+
+- 打包前确保语音服务已编译（`voice-transcriber-service/voice-transcriber-service`）
+- 用户数据存储在 `~/Library/Application Support/stock-notes-app/data/`，不会被打包
+- 首次运行会自动创建数据目录
