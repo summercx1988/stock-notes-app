@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-03-31 (v3.6 应用打包发布)
+
+### Added
+- 新增 macOS 应用打包支持：
+  - 配置 `electron-builder` 生成 DMG 和 ZIP 安装包。
+  - 支持 Apple Silicon (arm64) 和 Intel (x64) 双架构。
+  - 语音服务自动打包到应用资源目录。
+- 新增 macOS 权限配置 `build/entitlements.mac.plist`：
+  - 麦克风权限、网络访问、文件读写权限。
+- 更新 `.gitignore` 防止敏感文件和构建产物上传。
+
+### Changed
+- README 新增打包发布章节，包含完整的打包流程和安装说明。
+- 版本基线更新为 `v3.6`。
+
+### Notes
+- 首次打开应用时，如提示"无法验证开发者"，需右键点击应用选择"打开"确认。
+- 用户数据目录 `data/` 不会被打包，首次运行会自动创建。
+
 ## 2026-03-27 (事件纵览板块矩阵与侧边栏股票信息增强)
 
 ### Added

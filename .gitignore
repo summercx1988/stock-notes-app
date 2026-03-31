@@ -8,7 +8,8 @@ pnpm-lock.yaml
 dist/
 release/
 out/
-build/
+build/*
+!build/entitlements.mac.plist
 
 # IDE
 .idea/
@@ -53,3 +54,15 @@ coverage/
 # Electron
 *.dmg
 *.app
+*.zip
+*.blockmap
+
+# Swift build artifacts
+voice-transcriber-service/.build/
+voice-transcriber-service/voice-transcriber-service
+
+# Sensitive files
+*.pem
+*.key
+secrets/
+credentials/
