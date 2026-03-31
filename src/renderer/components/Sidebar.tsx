@@ -61,31 +61,46 @@ const Sidebar: React.FC = () => {
 
     const syncStocks = async () => {
       const stockCodes = [...new Set(timeline.map((item) => item.stockCode))]
-      const stockList = await Promise.all(stockCodes.map(async (code) => {
+      
+      const codeToName = new Map<string, string>()
+      const codesNeedingLookup: string[] = []
+      
+      for (const code of stockCodes) {
         const item = timeline.find((timelineItem) => timelineItem.stockCode === code)
         const timelineName = item?.stockName || code
-        try {
-          const dbStock = await window.api.stock.getByCode(code)
-          return {
-            code,
-            name: timelineName && timelineName !== code ? timelineName : (dbStock?.name || code),
-            industry: dbStock?.industry,
-            sector: dbStock?.sector,
-            market: (dbStock?.market || 'SH') as 'SH' | 'SZ' | 'BJ'
-          }
-        } catch {
-          return {
-            code,
-            name: timelineName || code,
-            industry: undefined,
-            sector: undefined,
-            market: 'SH' as const
-          }
+        if (timelineName && timelineName !== code) {
+          codeToName.set(code, timelineName)
+        } else {
+          codesNeedingLookup.push(code)
         }
-      }))
+      }
+
+      if (codesNeedingLookup.length > 0) {
+        try {
+          const stockMap = await window.api.stock.getByCodes(codesNeedingLookup)
+          for (const code of codesNeedingLookup) {
+            const stock = stockMap[code]
+            if (stock) {
+              codeToName.set(code, stock.name)
+            }
+          }
+        } catch (error) {
+          console.error('Failed to batch lookup stocks:', error)
+        }
+      }
 
       if (!cancelled) {
-        const uniqueByCode = new Map<string, { code: string; name: string; market: 'SH' | 'SZ' | 'BJ'; industry?: string; sector?: string }>()
+        const stockList = stockCodes.map((code) => {
+          const item = timeline.find((timelineItem) => timelineItem.stockCode === code)
+          const name = codeToName.get(code) || code
+          return {
+            code,
+            name,
+            market: (item?.market || 'SH') as 'SH' | 'SZ' | 'BJ'
+          }
+        })
+
+        const uniqueByCode = new Map<string, { code: string; name: string; market: 'SH' | 'SZ' | 'BJ' }>()
         for (const stock of stockList) {
           const normalizedCode = normalizeStockCode(stock.code)
           const normalizedName = normalizeStockName(stock.name, normalizedCode)
@@ -94,9 +109,7 @@ const Sidebar: React.FC = () => {
             uniqueByCode.set(normalizedCode, {
               code: normalizedCode,
               name: normalizedName || normalizedCode,
-              market: stock.market,
-              industry: stock.industry,
-              sector: stock.sector
+              market: stock.market
             })
           }
         }
@@ -173,28 +186,17 @@ const Sidebar: React.FC = () => {
       : normalizedCode
   }
 
-  const getStockMetaLine = (item: { industry?: string; sector?: string }) => {
-    if (item.sector && item.industry && item.sector !== item.industry) {
-      return `${item.sector} · ${item.industry}`
-    }
-    return item.sector || item.industry || null
-  }
-
   const rawDisplayItems = searchText.trim()
     ? searchResults.map(r => ({
         code: normalizeStockCode(r.stock.code),
         name: normalizeStockName(r.stock.name, normalizeStockCode(r.stock.code)),
         market: r.stock.market,
-        industry: r.stock.industry,
-        sector: r.stock.sector,
         isFromSearch: true
       }))
     : stocks.map(s => ({
         code: normalizeStockCode(typeof s === 'string' ? s : s.code),
         name: normalizeStockName(typeof s === 'string' ? s : s.name, normalizeStockCode(typeof s === 'string' ? s : s.code)),
         market: (typeof s === 'string' ? 'SH' : s.market) as 'SH' | 'SZ' | 'BJ',
-        industry: typeof s === 'string' ? undefined : s.industry,
-        sector: typeof s === 'string' ? undefined : s.sector,
         isFromSearch: false
       }))
 
@@ -239,11 +241,6 @@ const Sidebar: React.FC = () => {
                   }`}
                 >
                   <div className="font-medium text-slate-800">{getDisplayName(item)}</div>
-                  {getStockMetaLine(item) ? (
-                    <div className="mt-1 text-xs text-slate-500">
-                      {getStockMetaLine(item)}
-                    </div>
-                  ) : null}
                   <div className="mt-1 text-xs text-slate-500">
                     共 {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
                   </div>

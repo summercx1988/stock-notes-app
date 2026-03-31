@@ -52,6 +52,15 @@ export class NotesService {
   }
 
   async migrateLegacyViewpointTerminology(): Promise<{ scannedFiles: number; migratedFiles: number }> {
+    const migrationFlagPath = getDataPath('.migration-viewpoint-v1')
+    
+    try {
+      await fs.access(migrationFlagPath)
+      return { scannedFiles: 0, migratedFiles: 0 }
+    } catch {
+      // 标记文件不存在，需要执行迁移
+    }
+
     await this.ensureFilePathIndex()
     const entries = Array.from(this.filePathIndex.entries())
     let migratedFiles = 0
@@ -80,6 +89,8 @@ export class NotesService {
     if (migratedFiles > 0) {
       await this.ensureFilePathIndex(true)
     }
+
+    await fs.writeFile(migrationFlagPath, new Date().toISOString(), 'utf-8')
 
     return {
       scannedFiles: entries.length,

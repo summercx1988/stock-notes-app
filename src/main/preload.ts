@@ -123,6 +123,7 @@ const api = {
   stock: {
     search: (query: string, limit?: number) => ipcRenderer.invoke('stock:search', query, limit),
     getByCode: (code: string) => ipcRenderer.invoke('stock:getByCode', code),
+    getByCodes: (codes: string[]) => ipcRenderer.invoke('stock:getByCodes', codes),
     getByName: (name: string) => ipcRenderer.invoke('stock:getByName', name),
     match: (text: string) => ipcRenderer.invoke('stock:match', text),
   },

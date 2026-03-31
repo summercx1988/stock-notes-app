@@ -18,6 +18,16 @@ ipcMain.handle('stock:getByCode', async (_, code: string): Promise<StockInfo | n
   return stockDatabase.getByCode(code) || null
 })
 
+ipcMain.handle('stock:getByCodes', async (_, codes: string[]): Promise<Record<string, StockInfo>> => {
+  await stockDatabase.ensureLoaded()
+  const result = stockDatabase.getByCodes(codes)
+  const record: Record<string, StockInfo> = {}
+  for (const [code, stock] of result) {
+    record[code] = stock
+  }
+  return record
+})
+
 ipcMain.handle('stock:getByName', async (_, name: string): Promise<StockInfo | null> => {
   await stockDatabase.ensureLoaded()
   return stockDatabase.getByName(name) || null

@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - 新增 macOS 权限配置 `build/entitlements.mac.plist`：
   - 麦克风权限、网络访问、文件读写权限。
 - 更新 `.gitignore` 防止敏感文件和构建产物上传。
+- 新增批量股票查询接口 `stock:getByCodes`，减少 IPC 调用次数。
 
 ### Changed
 - **数据存储路径统一**：
@@ -19,6 +20,10 @@ All notable changes to this project will be documented in this file.
   - 首次运行自动创建数据目录。
   - 重装应用不会丢失用户数据。
   - 项目代码不包含用户数据，安全上传 Git。
+- **启动性能优化**：
+  - 主进程后台任务延迟 200ms 执行，窗口先显示。
+  - 观点迁移添加标记文件，只执行一次。
+  - 前端使用批量查询替代逐个查询。
 - README 新增打包发布章节，包含完整的打包流程和安装说明。
 - 版本基线更新为 `v3.6`。
 

@@ -77,22 +77,24 @@ app.whenReady().then(async () => {
   console.log('[Main] App is ready')
   createWindow()
 
-  try {
-    const migration = await sharedNotesService.migrateLegacyViewpointTerminology()
-    if (migration.migratedFiles > 0) {
-      console.log(
-        `[Main] Viewpoint migration completed: migrated ${migration.migratedFiles}/${migration.scannedFiles} files (中性 -> 震荡)`
-      )
+  setTimeout(async () => {
+    try {
+      const migration = await sharedNotesService.migrateLegacyViewpointTerminology()
+      if (migration.migratedFiles > 0) {
+        console.log(
+          `[Main] Viewpoint migration completed: migrated ${migration.migratedFiles}/${migration.scannedFiles} files (中性 -> 震荡)`
+        )
+      }
+    } catch (error) {
+      console.warn('[Main] Viewpoint migration failed:', error)
     }
-  } catch (error) {
-    console.warn('[Main] Viewpoint migration failed:', error)
-  }
 
-  const config = await appConfigService.getAll()
-  if (config.feishu?.enabled) {
-    console.log('[Main] Auto-starting Feishu bot service')
-    await feishuBotService.start()
-  }
+    const config = await appConfigService.getAll()
+    if (config.feishu?.enabled) {
+      console.log('[Main] Auto-starting Feishu bot service')
+      await feishuBotService.start()
+    }
+  }, 200)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

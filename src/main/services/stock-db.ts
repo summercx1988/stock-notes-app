@@ -175,6 +175,17 @@ class StockDatabase {
     return this.stocks.get(code)
   }
 
+  getByCodes(codes: string[]): Map<string, StockInfo> {
+    const result = new Map<string, StockInfo>()
+    for (const code of codes) {
+      const stock = this.stocks.get(code)
+      if (stock) {
+        result.set(code, stock)
+      }
+    }
+    return result
+  }
+
   getByName(name: string): StockInfo | undefined {
     return this.nameIndex.get(normalizeStockNameText(name))
   }
