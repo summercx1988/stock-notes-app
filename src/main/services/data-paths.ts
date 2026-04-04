@@ -7,14 +7,6 @@ let cachedDataDir: string | null = null
 let loggedDataDir = false
 let cachedProjectRoot: string | null | undefined
 
-const exists = (targetPath: string): boolean => {
-  try {
-    return fs.existsSync(targetPath)
-  } catch {
-    return false
-  }
-}
-
 const isDirectory = (targetPath: string): boolean => {
   try {
     return fs.statSync(targetPath).isDirectory()

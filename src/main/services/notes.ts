@@ -22,6 +22,9 @@ import { stockDatabase } from './stock-db'
 import { createTraceId, logPipelineEvent } from './pipeline-logger'
 import { normalizeNoteContent, normalizeStockNameText } from '../../shared/text-normalizer'
 import { getDataPath } from './data-paths'
+import { appLogger } from './app-logger'
+
+const SYSTEM_STOCK_CODES = new Set(['__DAILY_REVIEW__'])
 
 interface EntryMeta {
   id?: string
@@ -31,6 +34,24 @@ interface EntryMeta {
   category?: string
   operationTag?: string
   trackingStatus?: string
+}
+
+export interface ReviewCandidateEntry {
+  entryId: string
+  stockCode: string
+  stockName: string
+  eventTime: string
+  createdAt: string
+  category: NoteCategory
+  operationTag: OperationTag
+  trackingStatus: TrackingStatus
+  title: string
+  content: string
+  contentPreview: string
+  inputType?: NoteInputType
+  viewpoint?: Viewpoint
+  action?: Action
+  hasAudio: boolean
 }
 
 export class NotesService {
@@ -117,6 +138,11 @@ export class NotesService {
   ): Promise<TimeEntry> {
     const traceId = createTraceId('save')
     const startedAt = Date.now()
+    appLogger.debug('NotesService', 'addEntry started', {
+      stockCode,
+      category: data.category,
+      inputType: data.inputType
+    })
     logPipelineEvent({
       traceId,
       stage: 'save',
@@ -161,6 +187,12 @@ export class NotesService {
         category: entry.category,
         durationMs: Date.now() - startedAt
       })
+      appLogger.info('NotesService', 'addEntry succeeded', {
+        stockCode,
+        entryId: id,
+        durationMs: Date.now() - startedAt,
+        category: entry.category
+      })
       return entry
     } catch (error: any) {
       logPipelineEvent({
@@ -172,6 +204,11 @@ export class NotesService {
         durationMs: Date.now() - startedAt,
         errorCode: 'SAVE_FAILED',
         message: error?.message || String(error)
+      })
+      appLogger.error('NotesService', 'addEntry failed', {
+        stockCode,
+        durationMs: Date.now() - startedAt,
+        error
       })
       throw error
     }
@@ -208,6 +245,10 @@ export class NotesService {
           return null
         }
       }
+      appLogger.warn('NotesService', 'getStockNote failed', {
+        stockCode,
+        error
+      })
       return null
     }
   }
@@ -229,18 +270,106 @@ export class NotesService {
     })
   }
 
+  async getLatestUserNoteModifiedAt(): Promise<Date | null> {
+    await this.ensureFilePathIndex()
+    let latestTimestamp = 0
+
+    for (const [stockCode, filePath] of this.filePathIndex.entries()) {
+      if (SYSTEM_STOCK_CODES.has(stockCode)) continue
+      try {
+        const stat = await fs.stat(filePath)
+        if (stat.mtimeMs > latestTimestamp) {
+          latestTimestamp = stat.mtimeMs
+        }
+      } catch {
+        continue
+      }
+    }
+
+    return latestTimestamp > 0 ? new Date(latestTimestamp) : null
+  }
+
+  async getReviewCandidatesByTimeRange(
+    startDate: Date,
+    endDate: Date,
+    limit: number = 120
+  ): Promise<ReviewCandidateEntry[]> {
+    await this.ensureFilePathIndex()
+    const candidateFiles: Array<{ stockCode: string; filePath: string; mtimeMs: number }> = []
+
+    for (const [stockCode, filePath] of this.filePathIndex.entries()) {
+      if (SYSTEM_STOCK_CODES.has(stockCode)) continue
+      try {
+        const stat = await fs.stat(filePath)
+        if (stat.mtimeMs < startDate.getTime()) continue
+        candidateFiles.push({ stockCode, filePath, mtimeMs: stat.mtimeMs })
+      } catch {
+        continue
+      }
+    }
+
+    candidateFiles.sort((left, right) => right.mtimeMs - left.mtimeMs)
+
+    const matches: ReviewCandidateEntry[] = []
+    for (const candidate of candidateFiles) {
+      const note = await this.getStockNote(candidate.stockCode)
+      if (!note || note.entries.length === 0) continue
+
+      const sortedEntries = [...note.entries].sort(
+        (left, right) => this.getEntryEventTime(right).getTime() - this.getEntryEventTime(left).getTime()
+      )
+
+      for (const entry of sortedEntries) {
+        const eventTime = this.getEntryEventTime(entry)
+        if (eventTime > endDate) continue
+        if (eventTime < startDate) break
+
+        matches.push({
+          entryId: entry.id,
+          stockCode: note.stockCode,
+          stockName: note.stockName,
+          eventTime: eventTime.toISOString(),
+          createdAt: this.getEntryCreatedAt(entry).toISOString(),
+          category: entry.category,
+          operationTag: entry.operationTag ?? this.createDefaultOperationTag(),
+          trackingStatus: entry.trackingStatus ?? this.createDefaultTrackingStatus(),
+          title: entry.title,
+          content: entry.content,
+          contentPreview: entry.content.trim().slice(0, 200),
+          inputType: entry.inputType,
+          viewpoint: entry.viewpoint,
+          action: entry.action,
+          hasAudio: Boolean(entry.audioFile)
+        })
+      }
+    }
+
+    return matches
+      .sort((left, right) => new Date(right.eventTime).getTime() - new Date(left.eventTime).getTime())
+      .slice(0, Math.max(20, limit))
+  }
+
   async updateEntry(
     stockCode: string,
     entryId: string,
     data: Partial<TimeEntry>
   ): Promise<TimeEntry> {
+    const startedAt = Date.now()
     const stockNote = await this.getStockNote(stockCode)
     if (!stockNote) {
+      appLogger.warn('NotesService', 'updateEntry skipped because stock note not found', {
+        stockCode,
+        entryId
+      })
       throw new Error(`Stock note not found: ${stockCode}`)
     }
 
     const index = stockNote.entries.findIndex((entry) => entry.id === entryId)
     if (index === -1) {
+      appLogger.warn('NotesService', 'updateEntry skipped because entry not found', {
+        stockCode,
+        entryId
+      })
       throw new Error(`Entry not found: ${entryId}`)
     }
 
@@ -278,20 +407,35 @@ export class NotesService {
 
     stockNote.entries[index] = updated
     await this.rewriteStockFile(stockCode, stockNote)
+    appLogger.info('NotesService', 'updateEntry succeeded', {
+      stockCode,
+      entryId,
+      durationMs: Date.now() - startedAt
+    })
     return updated
   }
 
   async deleteEntry(stockCode: string, entryId: string): Promise<void> {
+    const startedAt = Date.now()
     const stockNote = await this.getStockNote(stockCode)
     if (!stockNote) return
 
     const originalLength = stockNote.entries.length
     stockNote.entries = stockNote.entries.filter((entry) => entry.id !== entryId)
     if (stockNote.entries.length === originalLength) {
+      appLogger.warn('NotesService', 'deleteEntry skipped because entry not found', {
+        stockCode,
+        entryId
+      })
       throw new Error(`Entry not found: ${entryId}`)
     }
 
     await this.rewriteStockFile(stockCode, stockNote)
+    appLogger.info('NotesService', 'deleteEntry succeeded', {
+      stockCode,
+      entryId,
+      durationMs: Date.now() - startedAt
+    })
   }
 
   async getTimeline(filters?: {
@@ -315,6 +459,7 @@ export class NotesService {
     const items: TimelineItem[] = []
 
     for (const code of stockCodes) {
+      if (SYSTEM_STOCK_CODES.has(code)) continue
       if (filters?.stockCode && code !== filters.stockCode) continue
 
       const note = await this.getStockNote(code)
@@ -367,6 +512,7 @@ export class NotesService {
     const baseEvents: TimelineExplorerEvent[] = []
 
     for (const stockCode of stockCodes) {
+      if (SYSTEM_STOCK_CODES.has(stockCode)) continue
       const note = await this.getStockNote(stockCode)
       if (!note || note.entries.length === 0) continue
       const stockMeta = (!note.industry || !note.sector) ? await this.getStockInfo(stockCode) : null

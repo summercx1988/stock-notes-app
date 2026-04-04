@@ -3,6 +3,7 @@ import path from 'path'
 import type { UserSettings } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 import { getDataPath } from './data-paths'
+import { appLogger } from './app-logger'
 
 const getSettingsPath = (): string => getDataPath('config', 'settings.json')
 
@@ -25,6 +26,24 @@ const DEFAULT_SETTINGS: UserSettings = {
     style: '轻量',
     categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
   },
+  dailyReview: {
+    enabled: true,
+    analysisLookbackDays: 3,
+    analysisMaxItems: 120,
+    reminder: {
+      enabled: true,
+      time: '09:00',
+      weekdaysOnly: true,
+      autoGeneratePreMarket: true,
+      includeSections: {
+        yesterdaySummary: true,
+        pendingItems: true,
+        keyLevels: true,
+        watchlist: true,
+        riskReminders: true
+      }
+    }
+  },
   feishu: {
     enabled: true,
     appId: 'cli_a9496c7813a1dbc8',
@@ -38,6 +57,53 @@ const normalizeDefaultDirection = (value?: string): string => {
   if (!value) return '未知'
   if (value === '中性') return '震荡'
   return value
+}
+
+const toInteger = (value: unknown, fallback: number): number => {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.round(n)
+}
+
+const toBoolean = (value: unknown, fallback: boolean): boolean => {
+  if (typeof value === 'boolean') return value
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return fallback
+}
+
+const normalizeReminderTime = (value: unknown, fallback: string): string => {
+  const text = String(value || '').trim()
+  const matched = text.match(/^(\d{1,2}):(\d{1,2})$/)
+  if (!matched) return fallback
+  const hour = Math.max(0, Math.min(23, toInteger(matched[1], 9)))
+  const minute = Math.max(0, Math.min(59, toInteger(matched[2], 0)))
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+const normalizeDailyReviewSettings = (settings: UserSettings): void => {
+  const base = DEFAULT_SETTINGS.dailyReview
+  const current = settings.dailyReview || base
+  const includeSections = current.reminder?.includeSections || base.reminder.includeSections
+
+  settings.dailyReview = {
+    enabled: toBoolean(current.enabled, base.enabled),
+    analysisLookbackDays: Math.max(1, Math.min(7, toInteger(current.analysisLookbackDays, base.analysisLookbackDays))),
+    analysisMaxItems: Math.max(20, Math.min(300, toInteger(current.analysisMaxItems, base.analysisMaxItems))),
+    reminder: {
+      enabled: toBoolean(current.reminder?.enabled, base.reminder.enabled),
+      time: normalizeReminderTime(current.reminder?.time, base.reminder.time),
+      weekdaysOnly: toBoolean(current.reminder?.weekdaysOnly, base.reminder.weekdaysOnly),
+      autoGeneratePreMarket: toBoolean(current.reminder?.autoGeneratePreMarket, base.reminder.autoGeneratePreMarket),
+      includeSections: {
+        yesterdaySummary: toBoolean(includeSections.yesterdaySummary, base.reminder.includeSections.yesterdaySummary),
+        pendingItems: toBoolean(includeSections.pendingItems, base.reminder.includeSections.pendingItems),
+        keyLevels: toBoolean(includeSections.keyLevels, base.reminder.includeSections.keyLevels),
+        watchlist: toBoolean(includeSections.watchlist, base.reminder.includeSections.watchlist),
+        riskReminders: toBoolean(includeSections.riskReminders, base.reminder.includeSections.riskReminders)
+      }
+    }
+  }
 }
 
 class AppConfigService {
@@ -65,7 +131,9 @@ class AppConfigService {
     this.setByPath(settings as unknown as Record<string, unknown>, key, value)
     settings.notes.categoryConfigs = normalizeNoteCategoryConfigs(settings.notes.categoryConfigs)
     settings.notes.defaultDirection = normalizeDefaultDirection(settings.notes.defaultDirection)
+    normalizeDailyReviewSettings(settings)
     await this.persist(settings)
+    appLogger.info('AppConfig', 'Config key updated', { key })
     return this.clone(settings)
   }
 
@@ -77,7 +145,11 @@ class AppConfigService {
     ) as unknown as UserSettings
     merged.notes.categoryConfigs = normalizeNoteCategoryConfigs(merged.notes.categoryConfigs)
     merged.notes.defaultDirection = normalizeDefaultDirection(merged.notes.defaultDirection)
+    normalizeDailyReviewSettings(merged)
     await this.persist(merged)
+    appLogger.info('AppConfig', 'Config updated by partial patch', {
+      topLevelKeys: Object.keys(partial || {})
+    })
     return this.clone(merged)
   }
 
@@ -105,15 +177,19 @@ class AppConfigService {
       ) as unknown as UserSettings
       merged.notes.categoryConfigs = normalizeNoteCategoryConfigs(merged.notes.categoryConfigs)
       merged.notes.defaultDirection = normalizeDefaultDirection(merged.notes.defaultDirection)
+      normalizeDailyReviewSettings(merged)
+      appLogger.debug('AppConfig', 'Config loaded from disk')
       return merged
     } catch (error: any) {
       if (error?.code !== 'ENOENT') {
         console.error('[AppConfig] Load failed:', error?.message || String(error))
+        appLogger.warn('AppConfig', 'Failed to load config from disk, fallback to defaults', { error })
       }
       await this.persist(DEFAULT_SETTINGS)
       const cloned = this.clone(DEFAULT_SETTINGS)
       cloned.notes.categoryConfigs = normalizeNoteCategoryConfigs(cloned.notes.categoryConfigs)
       cloned.notes.defaultDirection = normalizeDefaultDirection(cloned.notes.defaultDirection)
+      normalizeDailyReviewSettings(cloned)
       return cloned
     }
   }

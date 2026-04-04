@@ -54,6 +54,24 @@ const DEFAULT_SETTINGS: UserSettings = {
     style: '轻量',
     categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
   },
+  dailyReview: {
+    enabled: true,
+    analysisLookbackDays: 3,
+    analysisMaxItems: 120,
+    reminder: {
+      enabled: true,
+      time: '09:00',
+      weekdaysOnly: true,
+      autoGeneratePreMarket: true,
+      includeSections: {
+        yesterdaySummary: true,
+        pendingItems: true,
+        keyLevels: true,
+        watchlist: true,
+        riskReminders: true
+      }
+    }
+  },
   feishu: {
     enabled: false,
     appId: '',

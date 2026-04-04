@@ -4,6 +4,7 @@ import { SearchOutlined } from '@ant-design/icons'
 import { useAppStore } from '../stores/app'
 
 const Sidebar: React.FC = () => {
+  const DAILY_REVIEW_STOCK_CODE = '__DAILY_REVIEW__'
   const {
     stocks,
     stockNotes,
@@ -60,7 +61,11 @@ const Sidebar: React.FC = () => {
     let cancelled = false
 
     const syncStocks = async () => {
-      const stockCodes = [...new Set(timeline.map((item) => item.stockCode))]
+      const stockCodes = [...new Set(
+        timeline
+          .map((item) => item.stockCode)
+          .filter((code) => code !== DAILY_REVIEW_STOCK_CODE)
+      )]
       
       const codeToName = new Map<string, string>()
       const codesNeedingLookup: string[] = []
@@ -91,12 +96,11 @@ const Sidebar: React.FC = () => {
 
       if (!cancelled) {
         const stockList = stockCodes.map((code) => {
-          const item = timeline.find((timelineItem) => timelineItem.stockCode === code)
           const name = codeToName.get(code) || code
           return {
             code,
             name,
-            market: (item?.market || 'SH') as 'SH' | 'SZ' | 'BJ'
+            market: 'SH' as 'SH' | 'SZ' | 'BJ'
           }
         })
 

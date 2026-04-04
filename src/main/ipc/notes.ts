@@ -12,6 +12,31 @@ import type {
   NotesExportResult,
   NotesImportResult
 } from '../../shared/types'
+import { appLogger } from '../services/app-logger'
+
+const withIpcLog = async <T>(
+  channel: string,
+  context: Record<string, unknown>,
+  handler: () => Promise<T>
+): Promise<T> => {
+  const startedAt = Date.now()
+  appLogger.info('IPC:Notes', `${channel} started`, context)
+  try {
+    const result = await handler()
+    appLogger.info('IPC:Notes', `${channel} succeeded`, {
+      durationMs: Date.now() - startedAt,
+      ...context
+    })
+    return result
+  } catch (error) {
+    appLogger.error('IPC:Notes', `${channel} failed`, {
+      durationMs: Date.now() - startedAt,
+      ...context,
+      error
+    })
+    throw error
+  }
+}
 
 ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   content: string
@@ -26,27 +51,55 @@ ipcMain.handle('notes:addEntry', async (_, stockCode: string, data: {
   audioFile?: string
   audioDuration?: number
 }): Promise<TimeEntry> => {
-  return notesAppService.addEntry(stockCode, data)
+  return withIpcLog(
+    'notes:addEntry',
+    { stockCode, category: data.category, inputType: data.inputType },
+    () => notesAppService.addEntry(stockCode, data)
+  )
 })
 
 ipcMain.handle('notes:getStockNote', async (_, stockCode: string): Promise<StockNote | null> => {
-  return notesAppService.getStockNote(stockCode)
+  return withIpcLog(
+    'notes:getStockNote',
+    { stockCode },
+    () => notesAppService.getStockNote(stockCode)
+  )
 })
 
 ipcMain.handle('notes:getEntries', async (_, stockCode: string): Promise<TimeEntry[]> => {
-  return notesAppService.getEntries(stockCode)
+  return withIpcLog(
+    'notes:getEntries',
+    { stockCode },
+    () => notesAppService.getEntries(stockCode)
+  )
 })
 
 ipcMain.handle('notes:getEntriesByTimeRange', async (_, stockCode: string, start: Date, end: Date): Promise<TimeEntry[]> => {
-  return notesAppService.getEntriesByTimeRange(stockCode, start, end)
+  return withIpcLog(
+    'notes:getEntriesByTimeRange',
+    {
+      stockCode,
+      start: start instanceof Date ? start.toISOString() : start,
+      end: end instanceof Date ? end.toISOString() : end
+    },
+    () => notesAppService.getEntriesByTimeRange(stockCode, start, end)
+  )
 })
 
 ipcMain.handle('notes:updateEntry', async (_, stockCode: string, entryId: string, data: Partial<TimeEntry>): Promise<TimeEntry> => {
-  return notesAppService.updateEntry(stockCode, entryId, data)
+  return withIpcLog(
+    'notes:updateEntry',
+    { stockCode, entryId },
+    () => notesAppService.updateEntry(stockCode, entryId, data)
+  )
 })
 
 ipcMain.handle('notes:deleteEntry', async (_, stockCode: string, entryId: string): Promise<void> => {
-  return notesAppService.deleteEntry(stockCode, entryId)
+  return withIpcLog(
+    'notes:deleteEntry',
+    { stockCode, entryId },
+    () => notesAppService.deleteEntry(stockCode, entryId)
+  )
 })
 
 ipcMain.handle('notes:getTimeline', async (_, filters?: {
@@ -56,17 +109,37 @@ ipcMain.handle('notes:getTimeline', async (_, filters?: {
   viewpoint?: string
   category?: NoteCategory
 }): Promise<TimelineItem[]> => {
-  return notesAppService.getTimeline(filters)
+  return withIpcLog(
+    'notes:getTimeline',
+    {
+      stockCode: filters?.stockCode,
+      category: filters?.category,
+      hasRange: Boolean(filters?.startDate || filters?.endDate)
+    },
+    () => notesAppService.getTimeline(filters)
+  )
 })
 
 ipcMain.handle('notes:exportStock', async (_, stockCode: string, outputDir: string): Promise<NotesExportResult> => {
-  return notesAppService.exportStockNote(stockCode, outputDir)
+  return withIpcLog(
+    'notes:exportStock',
+    { stockCode, outputDir },
+    () => notesAppService.exportStockNote(stockCode, outputDir)
+  )
 })
 
 ipcMain.handle('notes:exportAll', async (_, outputDir: string): Promise<NotesExportResult> => {
-  return notesAppService.exportAllNotes(outputDir)
+  return withIpcLog(
+    'notes:exportAll',
+    { outputDir },
+    () => notesAppService.exportAllNotes(outputDir)
+  )
 })
 
 ipcMain.handle('notes:importFromDirectory', async (_, sourceDir: string, mode: 'skip' | 'replace' = 'skip'): Promise<NotesImportResult> => {
-  return notesAppService.importNotesFromDirectory(sourceDir, mode)
+  return withIpcLog(
+    'notes:importFromDirectory',
+    { sourceDir, mode },
+    () => notesAppService.importNotesFromDirectory(sourceDir, mode)
+  )
 })

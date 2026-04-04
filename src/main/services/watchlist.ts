@@ -3,6 +3,7 @@ import path from 'path'
 import { stockDatabase, type StockInfo } from './stock-db'
 import type { WatchlistImportResult } from '../../shared/types'
 import { getDataPath } from './data-paths'
+import { appLogger } from './app-logger'
 
 interface WatchlistPayload {
   codes: string[]
@@ -41,6 +42,7 @@ class WatchlistService {
   }
 
   async importFromText(rawInput: string, mode: 'append' | 'replace' = 'append'): Promise<WatchlistImportResult> {
+    const startedAt = Date.now()
     const parsed = this.parseCodes(rawInput)
     const current = await this.ensureLoaded()
     const currentSet = new Set(current.codes)
@@ -71,6 +73,15 @@ class WatchlistService {
     await stockDatabase.ensureLoaded()
     const knownStocks = nextCodes.reduce((sum, code) => sum + (stockDatabase.getByCode(code) ? 1 : 0), 0)
 
+    appLogger.info('Watchlist', 'Watchlist import completed', {
+      mode,
+      imported: importedCodes.length,
+      duplicated: duplicatedCodes.length,
+      invalid: parsed.invalidTokens.length,
+      totalCodes: nextCodes.length,
+      durationMs: Date.now() - startedAt
+    })
+
     return {
       mode,
       totalCodes: nextCodes.length,
@@ -86,6 +97,7 @@ class WatchlistService {
       codes: [],
       updatedAt: new Date().toISOString()
     })
+    appLogger.info('Watchlist', 'Watchlist cleared')
   }
 
   private async ensureLoaded(): Promise<WatchlistPayload> {
@@ -113,6 +125,7 @@ class WatchlistService {
     } catch (error: any) {
       if (error?.code !== 'ENOENT') {
         console.error('[Watchlist] load failed:', error?.message || String(error))
+        appLogger.warn('Watchlist', 'Failed to load watchlist, fallback to empty payload', { error })
       }
       const emptyPayload: WatchlistPayload = {
         codes: [],

@@ -32,3 +32,27 @@ body {
 .no-drag {
   -webkit-app-region: no-drag;
 }
+
+.app-scroll-pane {
+  scrollbar-gutter: stable;
+}
+
+.app-scroll-pane::-webkit-scrollbar {
+  width: 10px;
+}
+
+.app-scroll-pane::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.app-scroll-pane::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.55);
+  border-radius: 999px;
+  border: 2px solid rgba(0, 0, 0, 0);
+  background-clip: padding-box;
+}
+
+.app-scroll-pane::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.72);
+  background-clip: padding-box;
+}

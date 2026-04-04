@@ -1,51 +1,84 @@
 import type { IAIService, TranscribeResult, OptimizeResult, ViewpointResult, HealthStatus } from '../../../shared/types'
 import fs from 'fs/promises'
 import path from 'path'
+import { appConfigService } from '../app-config'
+import { appLogger } from '../app-logger'
 
 export class CloudAIAdapter implements IAIService {
   readonly provider = 'openai'
   readonly mode = 'cloud' as const
 
   private apiKey: string
-  private baseUrl: string = 'https://api.openai.com/v1'
-  private chatModel: string = 'gpt-4o-mini'
+  private baseUrl: string
+  private chatModel: string
 
   constructor() {
-    this.apiKey = process.env.OPENAI_API_KEY || ''
+    this.baseUrl = process.env.OPENAI_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1'
+    this.chatModel = process.env.MINIMAX_MODEL || 'MiniMax-M2.7-highspeed'
+    this.apiKey = process.env.MINIMAX_API_KEY || process.env.OPENAI_API_KEY || ''
   }
 
   async initialize(): Promise<void> {
+    await this.refreshRuntimeConfig()
     if (!this.apiKey) {
-      console.warn('OpenAI API Key not configured')
+      console.warn('[CloudAIAdapter] API Key not configured')
     }
+    appLogger.info('CloudAIAdapter', 'Cloud adapter initialized', {
+      baseUrl: this.baseUrl,
+      chatModel: this.chatModel,
+      hasApiKey: Boolean(this.apiKey)
+    })
   }
 
   async transcribe(audioPath: string): Promise<TranscribeResult> {
     const startTime = Date.now()
+    let runtimeBaseUrl = this.baseUrl
     
     try {
+      const runtime = await this.getASRRuntimeConfig()
+      runtimeBaseUrl = runtime.baseUrl
+      if (!runtime.apiKey) {
+        throw new Error('云端语音识别 API Key 未配置，请在设置中填写')
+      }
+
+      appLogger.info('CloudAIAdapter', 'ASR request started', {
+        baseUrl: runtime.baseUrl,
+        model: runtime.model,
+        audioFile: path.basename(audioPath)
+      })
+
       const audioBuffer = await fs.readFile(audioPath)
       const formData = new FormData()
       
       const audioBlob = new Blob([audioBuffer], { type: 'audio/webm' })
       formData.append('file', audioBlob, path.basename(audioPath))
-      formData.append('model', 'whisper-1')
+      formData.append('model', runtime.model || 'whisper-1')
       formData.append('language', 'zh')
 
-      const response = await fetch(`${this.baseUrl}/audio/transcriptions`, {
+      const response = await fetch(`${runtime.baseUrl}/audio/transcriptions`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`
+          'Authorization': `Bearer ${runtime.apiKey}`
         },
         body: formData
       })
 
       if (!response.ok) {
         const errorText = await response.text()
+        appLogger.warn('CloudAIAdapter', 'ASR request failed with non-2xx response', {
+          baseUrl: runtime.baseUrl,
+          status: response.status,
+          responseBodyPreview: errorText.slice(0, 300)
+        })
         throw new Error(`Whisper API error: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
+      appLogger.info('CloudAIAdapter', 'ASR request completed', {
+        baseUrl: runtime.baseUrl,
+        processingTimeMs: Date.now() - startTime,
+        textChars: String(data?.text || '').length
+      })
       
       return {
         text: data.text || '',
@@ -54,7 +87,11 @@ export class CloudAIAdapter implements IAIService {
       }
     } catch (error: any) {
       console.error('[CloudAIAdapter] Transcribe failed:', error)
-      throw error
+      appLogger.error('CloudAIAdapter', 'ASR request threw exception', {
+        baseUrl: runtimeBaseUrl,
+        error
+      })
+      throw this.normalizeError(error, runtimeBaseUrl, '语音识别')
     }
   }
 
@@ -108,16 +145,11 @@ ${text}
   }
 
   async summarize(text: string): Promise<string> {
-    const prompt = `请为以下投资笔记生成一个简洁的摘要（不超过100字）：
-
-${text}
-
-摘要：`
-
-    return this.chat(prompt)
+    return this.chat(text)
   }
 
   async isAvailable(): Promise<boolean> {
+    await this.refreshRuntimeConfig()
     return !!this.apiKey
   }
 
@@ -130,24 +162,121 @@ ${text}
   }
 
   private async chat(prompt: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: this.chatModel,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`)
+    const runtime = await this.getTextRuntimeConfig()
+    if (!runtime.apiKey) {
+      throw new Error('AI 文本分析 API Key 未配置，请在设置 > 偏好设置 > 文本分析中填写')
     }
 
-    const data = await response.json()
-    return data.choices[0].message.content
+    try {
+      appLogger.debug('CloudAIAdapter', 'Text analysis request started', {
+        baseUrl: runtime.baseUrl,
+        model: runtime.model,
+        promptChars: prompt.length
+      })
+
+      const response = await fetch(`${runtime.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${runtime.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: runtime.model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3
+        })
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        appLogger.warn('CloudAIAdapter', 'Text analysis request failed with non-2xx response', {
+          baseUrl: runtime.baseUrl,
+          model: runtime.model,
+          status: response.status,
+          responseBodyPreview: errorText.slice(0, 300)
+        })
+        throw new Error(`AI API 响应异常 (${response.status}) ${errorText}`)
+      }
+
+      const data = await response.json()
+      const content = data?.choices?.[0]?.message?.content || ''
+      appLogger.debug('CloudAIAdapter', 'Text analysis request completed', {
+        baseUrl: runtime.baseUrl,
+        model: runtime.model,
+        responseChars: String(content).length
+      })
+      return content
+    } catch (error: any) {
+      appLogger.error('CloudAIAdapter', 'Text analysis request threw exception', {
+        baseUrl: runtime.baseUrl,
+        model: runtime.model,
+        error
+      })
+      throw this.normalizeError(error, runtime.baseUrl, '文本分析')
+    }
+  }
+
+  private async refreshRuntimeConfig(): Promise<void> {
+    try {
+      const settings = await appConfigService.getAll()
+      this.baseUrl = this.normalizeBaseUrl(
+        settings?.textAnalysis?.baseUrl || this.baseUrl
+      )
+      this.chatModel = settings?.textAnalysis?.model || this.chatModel
+      this.apiKey = settings?.textAnalysis?.apiKey || this.apiKey
+    } catch (error) {
+      console.warn('[CloudAIAdapter] Failed to load runtime config, fallback to env:', error)
+      appLogger.warn('CloudAIAdapter', 'Failed to load runtime config, fallback to env', { error })
+    }
+  }
+
+  private async getTextRuntimeConfig(): Promise<{ baseUrl: string; model: string; apiKey: string }> {
+    await this.refreshRuntimeConfig()
+    return {
+      baseUrl: this.baseUrl,
+      model: this.chatModel,
+      apiKey: this.apiKey
+    }
+  }
+
+  private async getASRRuntimeConfig(): Promise<{ baseUrl: string; model: string; apiKey: string }> {
+    try {
+      const settings = await appConfigService.getAll()
+      return {
+        baseUrl: this.normalizeBaseUrl(
+          settings?.cloudASR?.baseUrl || this.baseUrl
+        ),
+        model: settings?.cloudASR?.model || 'whisper-1',
+        apiKey: settings?.cloudASR?.apiKey || this.apiKey
+      }
+    } catch {
+      return {
+        baseUrl: this.baseUrl,
+        model: 'whisper-1',
+        apiKey: this.apiKey
+      }
+    }
+  }
+
+  private normalizeBaseUrl(baseUrl: string): string {
+    return String(baseUrl || '').replace(/\/+$/, '')
+  }
+
+  private normalizeError(error: any, baseUrl: string, scene: string): Error {
+    const rawMessage = String(error?.message || error || '').trim()
+    if (rawMessage.toLowerCase().includes('fetch failed')) {
+      appLogger.warn('CloudAIAdapter', 'Detected fetch failed error', {
+        scene,
+        baseUrl,
+        rawMessage
+      })
+      return new Error(`${scene}请求失败：无法连接到服务地址 ${baseUrl}，请检查网络或在设置中更换 baseUrl`)
+    }
+    appLogger.warn('CloudAIAdapter', 'Normalized upstream error', {
+      scene,
+      baseUrl,
+      rawMessage
+    })
+    return error instanceof Error ? error : new Error(rawMessage || `${scene}请求失败`)
   }
 }

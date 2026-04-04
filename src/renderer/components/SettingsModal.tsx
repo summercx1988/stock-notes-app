@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Divider, Form, Input, Modal, Select, Space, Tabs, Tag, Typography, message } from 'antd'
+import { Alert, Button, Checkbox, Divider, Form, Input, InputNumber, Modal, Select, Space, Tabs, Tag, Typography, message } from 'antd'
 import type { NoteCategoryConfig, UserSettings } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
-  initialTab?: 'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'feishu'
+  initialTab?: 'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'
 }
 
 interface WatchlistStock {
@@ -34,6 +34,24 @@ const DEFAULT_SETTINGS: UserSettings = {
     style: '轻量',
     categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
   },
+  dailyReview: {
+    enabled: true,
+    analysisLookbackDays: 3,
+    analysisMaxItems: 120,
+    reminder: {
+      enabled: true,
+      time: '09:00',
+      weekdaysOnly: true,
+      autoGeneratePreMarket: true,
+      includeSections: {
+        yesterdaySummary: true,
+        pendingItems: true,
+        keyLevels: true,
+        watchlist: true,
+        riskReminders: true
+      }
+    }
+  },
   feishu: {
     enabled: true,
     appId: 'cli_a9496c7813a1dbc8',
@@ -43,6 +61,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   }
 }
 
+type SettingsTab = 'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'
+
 const isMissingHandlerError = (error: unknown) =>
   String((error as { message?: string })?.message || error).includes('No handler registered')
 
@@ -51,7 +71,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
   const [loading, setLoading] = useState(false)
   const [watchlistInput, setWatchlistInput] = useState('')
   const [watchlist, setWatchlist] = useState<WatchlistStock[]>([])
-  const [activeTab, setActiveTab] = useState<'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'feishu'>(initialTab)
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab)
   const [categoryConfigs, setCategoryConfigs] = useState<NoteCategoryConfig[]>(DEFAULT_NOTE_CATEGORY_CONFIGS)
 
   const watchlistHint = useMemo(() => {
@@ -63,6 +83,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
     return `已导入 ${watchlist.length} 个代码，ASR 会优先匹配这些股票。`
   }, [watchlist])
 
+  const mergeSettingsWithDefaults = (raw: UserSettings): UserSettings => {
+    const normalizedCategories = normalizeNoteCategoryConfigs(raw?.notes?.categoryConfigs)
+    return {
+      ...DEFAULT_SETTINGS,
+      ...raw,
+      notes: {
+        ...DEFAULT_SETTINGS.notes,
+        ...raw?.notes,
+        categoryConfigs: normalizedCategories
+      },
+      dailyReview: {
+        ...DEFAULT_SETTINGS.dailyReview,
+        ...raw?.dailyReview,
+        reminder: {
+          ...DEFAULT_SETTINGS.dailyReview.reminder,
+          ...raw?.dailyReview?.reminder,
+          includeSections: {
+            ...DEFAULT_SETTINGS.dailyReview.reminder.includeSections,
+            ...raw?.dailyReview?.reminder?.includeSections
+          }
+        }
+      },
+      feishu: {
+        ...DEFAULT_SETTINGS.feishu,
+        ...raw?.feishu
+      }
+    }
+  }
+
   const loadData = async () => {
     setLoading(true)
     try {
@@ -70,28 +119,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
         window.api.config.getAll(),
         window.api.watchlist.get()
       ])
-      const normalizedCategories = normalizeNoteCategoryConfigs(settings?.notes?.categoryConfigs)
-      const nextSettings: UserSettings = {
-        ...settings,
-        notes: {
-          ...settings.notes,
-          categoryConfigs: normalizedCategories
-        }
-      }
+      const nextSettings = mergeSettingsWithDefaults(settings as UserSettings)
       form.setFieldsValue(nextSettings)
-      setCategoryConfigs(normalizedCategories)
+      setCategoryConfigs(nextSettings.notes.categoryConfigs)
       setWatchlist(watchlistStocks || [])
     } catch (error: any) {
       if (isMissingHandlerError(error)) {
-        const fallbackCategories = normalizeNoteCategoryConfigs(DEFAULT_SETTINGS.notes.categoryConfigs)
-        form.setFieldsValue({
-          ...DEFAULT_SETTINGS,
-          notes: {
-            ...DEFAULT_SETTINGS.notes,
-            categoryConfigs: fallbackCategories
-          }
-        })
-        setCategoryConfigs(fallbackCategories)
+        const fallbackSettings = mergeSettingsWithDefaults(DEFAULT_SETTINGS)
+        form.setFieldsValue(fallbackSettings)
+        setCategoryConfigs(fallbackSettings.notes.categoryConfigs)
         setWatchlist([])
         message.warning('主进程配置模块未就绪，已使用默认设置。请重启应用后重试。')
         return
@@ -113,14 +149,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
       const values = await form.validateFields()
       const normalizedCategories = normalizeNoteCategoryConfigs(categoryConfigs)
       const nextSettings: UserSettings = {
+        ...DEFAULT_SETTINGS,
         ...values,
         notes: {
+          ...DEFAULT_SETTINGS.notes,
           ...values.notes,
           defaultCategory: '看盘预测',
           defaultDirection: '未知',
           defaultTimeHorizon: '短线',
           style: '轻量',
           categoryConfigs: normalizedCategories
+        },
+        dailyReview: {
+          ...DEFAULT_SETTINGS.dailyReview,
+          ...values.dailyReview,
+          reminder: {
+            ...DEFAULT_SETTINGS.dailyReview.reminder,
+            ...values.dailyReview?.reminder,
+            includeSections: {
+              ...DEFAULT_SETTINGS.dailyReview.reminder.includeSections,
+              ...values.dailyReview?.reminder?.includeSections
+            }
+          }
+        },
+        feishu: {
+          ...DEFAULT_SETTINGS.feishu,
+          ...values.feishu
         }
       }
       setLoading(true)
@@ -186,7 +240,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
       <Form form={form} layout="vertical">
         <Tabs
           activeKey={activeTab}
-          onChange={(key) => setActiveTab(key as 'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'feishu')}
+          onChange={(key) => setActiveTab(key as SettingsTab)}
           items={[
             {
               key: 'text-ai',
@@ -297,6 +351,99 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
                         ))}
                       </Space>
                     )}
+                  </div>
+                </>
+              )
+            },
+            {
+              key: 'daily-review',
+              label: '每日复盘',
+              children: (
+                <>
+                  <Alert
+                    type="info"
+                    showIcon
+                    className="mb-3"
+                    message="用于控制每日复盘分析范围、次日提醒时间与提醒卡片展示内容。"
+                  />
+                  <Form.Item
+                    label="启用每日复盘功能"
+                    name={['dailyReview', 'enabled']}
+                    valuePropName="checked"
+                  >
+                    <Checkbox>启用</Checkbox>
+                  </Form.Item>
+
+                  <Space className="w-full" size="large" align="start">
+                    <Form.Item
+                      label="分析窗口（天）"
+                      name={['dailyReview', 'analysisLookbackDays']}
+                      tooltip="默认 3，表示只分析最近 T-3 的笔记"
+                    >
+                      <InputNumber min={1} max={7} precision={0} />
+                    </Form.Item>
+                    <Form.Item
+                      label="分析最多条数"
+                      name={['dailyReview', 'analysisMaxItems']}
+                      tooltip="限制送入 AI 的最大笔记条数，避免 prompt 过大"
+                    >
+                      <InputNumber min={20} max={300} step={10} precision={0} />
+                    </Form.Item>
+                  </Space>
+
+                  <Divider className="my-3" />
+                  <Typography.Text strong>次日提醒</Typography.Text>
+                  <div className="mt-2">
+                    <Form.Item
+                      label="启用次日提醒"
+                      name={['dailyReview', 'reminder', 'enabled']}
+                      valuePropName="checked"
+                    >
+                      <Checkbox>启用</Checkbox>
+                    </Form.Item>
+                    <Space className="w-full" size="large" align="start">
+                      <Form.Item
+                        label="提醒时间"
+                        name={['dailyReview', 'reminder', 'time']}
+                        rules={[{ pattern: /^([01]?\d|2[0-3]):([0-5]\d)$/, message: '请输入 HH:mm，例如 09:00' }]}
+                      >
+                        <Input placeholder="09:00" style={{ width: 120 }} />
+                      </Form.Item>
+                      <Form.Item
+                        label="仅工作日提醒"
+                        name={['dailyReview', 'reminder', 'weekdaysOnly']}
+                        valuePropName="checked"
+                      >
+                        <Checkbox>仅工作日</Checkbox>
+                      </Form.Item>
+                      <Form.Item
+                        label="无盘前卡片时自动生成"
+                        name={['dailyReview', 'reminder', 'autoGeneratePreMarket']}
+                        valuePropName="checked"
+                      >
+                        <Checkbox>自动生成</Checkbox>
+                      </Form.Item>
+                    </Space>
+                  </div>
+
+                  <Divider className="my-3" />
+                  <Typography.Text strong>提醒卡片内容（可勾选）</Typography.Text>
+                  <div className="mt-2 grid grid-cols-2 gap-y-2">
+                    <Form.Item name={['dailyReview', 'reminder', 'includeSections', 'yesterdaySummary']} valuePropName="checked" className="mb-0">
+                      <Checkbox>昨日概要</Checkbox>
+                    </Form.Item>
+                    <Form.Item name={['dailyReview', 'reminder', 'includeSections', 'pendingItems']} valuePropName="checked" className="mb-0">
+                      <Checkbox>待跟进事项</Checkbox>
+                    </Form.Item>
+                    <Form.Item name={['dailyReview', 'reminder', 'includeSections', 'keyLevels']} valuePropName="checked" className="mb-0">
+                      <Checkbox>关键位</Checkbox>
+                    </Form.Item>
+                    <Form.Item name={['dailyReview', 'reminder', 'includeSections', 'watchlist']} valuePropName="checked" className="mb-0">
+                      <Checkbox>观察列表</Checkbox>
+                    </Form.Item>
+                    <Form.Item name={['dailyReview', 'reminder', 'includeSections', 'riskReminders']} valuePropName="checked" className="mb-0">
+                      <Checkbox>风险提醒</Checkbox>
+                    </Form.Item>
                   </div>
                 </>
               )

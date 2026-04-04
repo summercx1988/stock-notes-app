@@ -375,8 +375,8 @@ const StockNoteView: React.FC = () => {
         </Space>
       </div>
 
-      <Spin spinning={loading}>
-        <div className="flex-1 overflow-auto p-4">
+      <div className="app-scroll-pane flex-1 min-h-0 overflow-y-scroll overflow-x-hidden p-4">
+        <Spin spinning={loading}>
           {isAdding && (
             <div className="mb-4 p-4 border border-blue-200 rounded-lg bg-blue-50">
               <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -569,8 +569,8 @@ const StockNoteView: React.FC = () => {
               ))}
             </div>
           )}
-        </div>
-      </Spin>
+        </Spin>
+      </div>
     </div>
   )
 }

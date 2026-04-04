@@ -6,6 +6,7 @@ import { alignReviewMarkers, type ReviewVisualEventInput } from '../core/review-
 import { createTraceId, logPipelineEvent } from '../services/pipeline-logger'
 import { appConfigService } from '../services/app-config'
 import { notifyNotesChanged } from '../services/notes-events'
+import { reviewGenerationStateService } from '../services/review-generation-state'
 import type {
   Action,
   NoteCategory,
@@ -137,8 +138,12 @@ export class NotesAppService {
     return this.notesService.exportAllNotes(outputDir)
   }
 
-  importNotesFromDirectory(sourceDir: string, mode: 'skip' | 'replace' = 'skip'): Promise<NotesImportResult> {
-    return this.notesService.importNotesFromDirectory(sourceDir, mode)
+  async importNotesFromDirectory(sourceDir: string, mode: 'skip' | 'replace' = 'skip'): Promise<NotesImportResult> {
+    const result = await this.notesService.importNotesFromDirectory(sourceDir, mode)
+    if (result.imported > 0) {
+      await reviewGenerationStateService.markNotesUpdated()
+    }
+    return result
   }
 
   async getReviewSnapshot(request: ReviewSnapshotRequest): Promise<ReviewSnapshotResponse> {

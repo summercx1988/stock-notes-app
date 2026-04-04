@@ -240,8 +240,8 @@ const StockTimelineView: React.FC = () => {
         </Space>
       </div>
 
-      <Spin spinning={loading}>
-        <div className="flex-1 overflow-auto p-4">
+      <div className="app-scroll-pane flex-1 min-h-0 overflow-y-scroll overflow-x-hidden p-4">
+        <Spin spinning={loading}>
           {filteredEntries.length === 0 ? (
             <Empty description="当前筛选条件下暂无事件" />
           ) : (
@@ -280,8 +280,8 @@ const StockTimelineView: React.FC = () => {
               }))}
             />
           )}
-        </div>
-      </Spin>
+        </Spin>
+      </div>
     </div>
   )
 }
