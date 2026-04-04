@@ -205,6 +205,47 @@ export interface VoiceServiceStatus {
   lastError?: string
 }
 
+export interface DailyReviewReminderIncludeSections {
+  yesterdaySummary: boolean
+  pendingItems: boolean
+  keyLevels: boolean
+  watchlist: boolean
+  riskReminders: boolean
+}
+
+export interface DailyReviewGenerationProgress {
+  operation: 'daily-summary' | 'pre-market' | 'weekly' | 'regenerate' | 'collect-to-notes'
+  stage: 'start' | 'collecting' | 'building-prompt' | 'ai-processing' | 'parsing' | 'saving' | 'processing' | 'completed' | 'error'
+  progress: number
+  message: string
+  detail?: Record<string, unknown>
+}
+
+export interface DailyReviewGenerationStatus {
+  notesLastUpdatedAt: string | null
+  dailySummaryLastGeneratedAt: string | null
+  dailySummaryLastGeneratedFromUpdatedAt: string | null
+  hasPendingChanges: boolean
+}
+
+export interface DailyReviewReminderPayload {
+  entry: TimeEntry
+  includeSections: DailyReviewReminderIncludeSections
+}
+
+export interface DailyReviewSettings {
+  enabled: boolean
+  analysisLookbackDays: number
+  analysisMaxItems: number
+  reminder: {
+    enabled: boolean
+    time: string
+    weekdaysOnly: boolean
+    autoGeneratePreMarket: boolean
+    includeSections: DailyReviewReminderIncludeSections
+  }
+}
+
 export interface UserSettings {
   textAnalysis: {
     baseUrl: string
@@ -224,6 +265,7 @@ export interface UserSettings {
     style: NoteStyle
     categoryConfigs: NoteCategoryConfig[]
   }
+  dailyReview: DailyReviewSettings
   feishu: FeishuConfig
 }
 

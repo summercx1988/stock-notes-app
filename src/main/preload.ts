@@ -13,7 +13,10 @@ import type {
   UserSettings,
   FeishuStatus,
   NotesChangedEvent,
-  VoiceServiceStatus
+  VoiceServiceStatus,
+  DailyReviewGenerationProgress,
+  DailyReviewGenerationStatus,
+  DailyReviewReminderPayload
 } from '../shared/types'
 
 interface VoiceCommandResult {
@@ -160,6 +163,34 @@ const api = {
       const handler = (_: unknown, status: FeishuStatus) => callback(status)
       ipcRenderer.on('feishu:statusChanged', handler)
       return () => ipcRenderer.removeListener('feishu:statusChanged', handler)
+    }
+  },
+
+  dailyReview: {
+    generateSummary: (options?: { force?: boolean }) => ipcRenderer.invoke('daily-review:generate-summary', options),
+    generatePreMarket: () => ipcRenderer.invoke('daily-review:generate-premarket'),
+    getToday: () => ipcRenderer.invoke('daily-review:get-today'),
+    getPending: () => ipcRenderer.invoke('daily-review:get-pending'),
+    getHistory: (startDate?: string, endDate?: string) =>
+      ipcRenderer.invoke('daily-review:get-history', startDate, endDate),
+    getGenerationStatus: (): Promise<{ success: boolean; data?: DailyReviewGenerationStatus; error?: string }> =>
+      ipcRenderer.invoke('daily-review:get-generation-status'),
+    markAsRead: (entryId: string) => ipcRenderer.invoke('daily-review:mark-read', entryId),
+    markAllAsRead: () => ipcRenderer.invoke('daily-review:mark-all-read'),
+    deleteEntry: (entryId: string) => ipcRenderer.invoke('daily-review:delete-entry', entryId),
+    deleteEntries: (entryIds: string[]) => ipcRenderer.invoke('daily-review:delete-entries', entryIds),
+    regenerate: (entryId: string) => ipcRenderer.invoke('daily-review:regenerate', entryId),
+    collectToNotes: (entryId: string) => ipcRenderer.invoke('daily-review:collect-to-notes', entryId),
+    getUnreadCount: () => ipcRenderer.invoke('daily-review:get-unread-count'),
+    onGenerationProgress: (callback: (payload: DailyReviewGenerationProgress) => void) => {
+      const handler = (_: unknown, payload: DailyReviewGenerationProgress) => callback(payload)
+      ipcRenderer.on('daily-review:generation-progress', handler)
+      return () => ipcRenderer.removeListener('daily-review:generation-progress', handler)
+    },
+    onReminder: (callback: (payload: DailyReviewReminderPayload) => void) => {
+      const handler = (_: unknown, payload: DailyReviewReminderPayload) => callback(payload)
+      ipcRenderer.on('daily-review:reminder', handler)
+      return () => ipcRenderer.removeListener('daily-review:reminder', handler)
     }
   }
 }

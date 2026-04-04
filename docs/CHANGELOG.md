@@ -2,6 +2,124 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-04-03 (每日复盘链路重构与可用性修复)
+
+### Changed
+- 每日复盘页面重构为“左侧日志列表 + 右侧详情面板”：
+  - 复盘日志成为页面主体，不再依赖弹窗查看详情。
+  - 日志展示范围改为固定最近 30 天，和“近 3 天分析窗口”彻底解耦。
+  - 页面补充 `notes:changed` 监听，普通笔记或复盘笔记变更后会自动刷新。
+- 每日总结/盘前复习生成链路改为“本地先落草稿，AI 再增强”：
+  - 点击按钮后先生成一条本地可读复盘日志，避免长时间无结果。
+  - AI 增强失败时保留本地结果并标记失败原因，不再整条生成报错丢失。
+  - 同日重复生成默认更新当日已有日志，而不是静默复用或无提示跳过。
+- 每日复盘数据采集从全量 `TimelineExplorer` 扫描切换为轻量“最近笔记候选”读取：
+  - 仅解析最近时间窗口内有变更的股票笔记文件。
+  - `notesLastUpdatedAt` 初始化改为读取普通笔记文件修改时间，避免页面打开即触发全量扫描。
+- 每日总结提示词新增“近期优先”约束：
+  - T0/T-1 作为主体。
+  - T-2/T-3 只做延续性提醒，避免旧笔记稀释当日复盘重点。
+
+### Fixed
+- 修复“点击生成今日复盘反馈很慢、最后也未必生成笔记”的核心问题：
+  - 生成过程中会先写入本地日志。
+  - AI 不可用时仍会保留可读复盘。
+- 修复“历史日志容易消失”的问题：
+  - 历史列表不再跟随分析窗口缩短到仅近 3 天。
+- 修复“无变化”逻辑的误导体验：
+  - 页面继续展示更新时间状态，但不再静默复用旧结果冒充新生成。
+
+## 2026-04-03 (每日总结无变化跳过与状态可视化)
+
+### Added
+- 新增每日总结生成状态存储：`runtime/review-generation-state.json`
+  - 记录 `notesLastUpdatedAt`
+  - 记录 `dailySummaryLastGeneratedAt`
+  - 记录 `dailySummaryLastGeneratedFromUpdatedAt`
+- 新增 `daily-review:get-generation-status` IPC 接口，前端可展示上述三项时间状态。
+
+### Changed
+- 每当股票笔记发生新增/编辑/删除（排除 `__DAILY_REVIEW__` 系统笔记）时，自动更新 `notesLastUpdatedAt`。
+- 每日总结生成前增加“无变化门禁”：
+  - 当检测到笔记未变化时，复用最近一次每日总结，不重复生成。
+  - 生成成功后回写本次生成基准时间。
+- Daily Review 页面新增“更新时间状态卡”，并将生成按钮改为小尺寸，突出复盘内容主体。
+
+## 2026-04-03 (每日复盘聚焦与详情兼容修复)
+
+### Changed
+- 每日复盘历史数据改为仅返回“每日总结 / 盘前复习”，默认不再展示“周回顾 / 月回顾”颗粒度。
+- 停用 `daily-review:generate-weekly` 生成功能，统一回传“仅保留每日总结与盘前复习”的提示。
+- 预加载层移除 `dailyReview.generateWeekly` 暴露，避免前端误调用周回顾接口。
+
+### Fixed
+- 修复历史条目详情弹窗“可弹出但无内容”的兼容问题：
+  - 对老格式 JSON、普通文本、非结构化条目增加回退渲染。
+  - 无法按结构化字段解析时，展示原始内容或完整 JSON，避免空白弹窗。
+
+## 2026-04-02 (每日复盘性能与管理能力补齐)
+
+### Added
+- 每日复盘生成进度事件通道 `daily-review:generation-progress`：
+  - 覆盖“今日总结 / 盘前复习 / 周回顾 / 重新生成 / 收录到笔记”。
+  - 前端新增进度条展示，减少长耗时操作“无反馈”问题。
+- 每日复盘管理能力补齐：
+  - 新增单条删除 `daily-review:delete-entry`。
+  - 新增批量删除 `daily-review:delete-entries`。
+  - 页面新增历史记录勾选与批量管理操作。
+
+### Changed
+- 每日复盘分析范围改为受设置驱动（默认近 3 天）：
+  - `DailyReviewService.collectDayNotes()` 支持 `analysisLookbackDays` 与 `analysisMaxItems`。
+  - 默认仅分析近 T-3，并限制送入 AI 的条数，避免长历史数据导致耗时过久。
+- 每日复盘页面历史加载改为按设置范围查询（默认近 3 天），避免全量历史读取。
+- 盘前提醒调度器改为完全受配置控制：
+  - 支持 `enabled`、`time`、`weekdaysOnly`、`autoGeneratePreMarket`。
+  - 提醒弹窗内容支持 `includeSections` 勾选控制（昨日概要/待跟进/关键位/观察列表/风险提醒）。
+- 提醒弹窗内容结构增强，补充“关键位”和“观察列表”展示。
+
+## 2026-04-02 (每日复盘提醒与卡片收录改进)
+
+### Added
+- 新增主进程离线文件日志能力：
+  - 统一将 `console.log/info/warn/error/debug` 写入 `~/Library/Application Support/stock-notes-app/data/logs/app.log`。
+  - 新增日志敏感字段脱敏（`apiKey/token/secret` 等）与按大小轮转（保留最近 3 份历史日志）。
+- 新增每日复盘盘前提醒调度器（主进程）：
+  - 工作日 09:00 后自动检查并触发盘前复习提醒。
+  - 当日无盘前复习卡片时自动生成，并通过 `daily-review:reminder` 推送到前端。
+- 新增全局盘前提醒弹窗卡片：
+  - 支持查看昨日概要、待跟进事项、风险提醒。
+  - 支持“标记已读”“收录到笔记”“查看每日复盘”操作。
+- 新增每日复盘卡片“收录到笔记”能力：
+  - 支持从“每日总结/盘前复习/周回顾”抽取关联股票。
+  - 自动写入对应股票的普通笔记，进入现有笔记编辑与管理链路。
+
+### Changed
+- 为关键业务链路补充结构化日志（便于离线排障）：
+  - `DailyReviewService`：生成每日总结/盘前复习/周回顾、收录到笔记的开始/完成/失败日志。
+  - `CloudAIAdapter`：文本分析/语音识别请求的开始、响应状态、异常归一化日志。
+  - `IPC`（daily-review/ai/notes）：调用入口统一记录耗时与错误上下文。
+  - `NotesService`、`AppConfigService`、`WatchlistService`：关键读写操作与失败场景日志补齐。
+- 每日复盘数据采集由 timeline 摘要改为 explorer 数据源，AI 总结可读取正文预览信息，提升生成质量。
+- 每日复盘写入与已读状态变更时，补齐 `notes:changed` 通知，确保界面联动更新。
+- `DailyReviewView` 操作区新增“收录到笔记”入口，并修复风险提醒渲染逻辑。
+- 主布局接入提醒监听与启动检查，应用在 09:00 后启动也可展示当日未读盘前提醒。
+- 默认将 `__DAILY_REVIEW__` 系统股票从通用 timeline/explorer/Sidebar 数据流中排除，减少对其它模块的干扰。
+
+### Fixed
+- 修复每日复盘页面的编译错误（类型引用路径、变量作用域、未使用变量等）。
+- 修复主进程与公共服务中的 TypeScript 报错，恢复 `npm run typecheck` 与 `npm run build` 通过。
+- 修复“生成今日总结”报 `fetch failed`：
+  - `CloudAIAdapter` 改为读取设置页中的文本分析配置（`baseUrl/model/apiKey`），不再硬编码 OpenAI 默认地址。
+  - 网络不可达时提供可读错误信息，提示检查网络与服务地址配置。
+- 修复每日复盘 JSON 解析失败（`Unexpected token '<', "<think>..."`）：
+  - 解析器新增对 `<think>...</think>`、Markdown 代码块、前后自然语言包裹的容错提取。
+  - 支持从响应文本中提取首个完整 JSON 对象，避免模型额外输出导致生成失败。
+
+### Removed
+- 删除旧版每日复盘需求文档：`docs/features/daily-review-feature-spec.md`
+- 删除旧版每日复盘方案草案：`plans/daily-review-feature.md`
+
 ## 2026-03-31 (v3.6 应用打包发布)
 
 ### Added
@@ -31,6 +149,11 @@ All notable changes to this project will be documented in this file.
 - 修复打包后应用无法启动的问题（路径编码、sandbox 配置）。
 - 修复打包后语音服务路径错误的问题。
 - 修复删除笔记后 sidebar 笔记数量不更新的问题（添加 `notifyNotesChanged` 调用）。
+- 修复退出时后台进程未完全停止的问题（改进 `before-quit` 处理）。
+
+### Added
+- 新增应用菜单，支持 `Cmd+Q` 快捷键退出。
+- 新增退出时清理所有后台服务的逻辑。
 
 ### Notes
 - 首次打开应用时，如提示"无法验证开发者"，需右键点击应用选择"打开"确认。

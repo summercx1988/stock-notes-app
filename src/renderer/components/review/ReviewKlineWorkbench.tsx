@@ -137,10 +137,11 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
   }), [scope, stockCode, startDate, endDate, interval])
 
   const scheduleRelayout = useCallback(() => {
-    if (rafRef.current) {
+    if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current)
     }
     rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null
       setLayoutVersion((value) => value + 1)
     })
   }, [])
@@ -272,8 +273,9 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
       chart.unsubscribeAction(ActionType.OnScroll, onRangeChanged)
       chart.unsubscribeAction(ActionType.OnDataReady, onRangeChanged)
       resizeObserverRef.current?.disconnect()
-      if (rafRef.current) {
+      if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
       }
       dispose(chart)
       chartRef.current = null

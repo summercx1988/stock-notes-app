@@ -12,7 +12,7 @@ import type { FeishuStatus } from '../../shared/types'
 const Header: React.FC = () => {
   const { activeModule, setActiveModule } = useAppStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsTab, setSettingsTab] = useState<'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'feishu'>('text-ai')
+  const [settingsTab, setSettingsTab] = useState<'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'>('text-ai')
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferMode, setTransferMode] = useState<TransferMode>('export-all')
   const [feishuStatus, setFeishuStatus] = useState<FeishuStatus>({ enabled: false, connected: false })
@@ -87,7 +87,8 @@ const Header: React.FC = () => {
             { label: '盯盘笔记', value: 'notes' },
             { label: '事件时间轴', value: 'timeline' },
             { label: '事件纵览', value: 'explorer' },
-            { label: '复盘分析', value: 'review' }
+            { label: '复盘分析', value: 'review' },
+            { label: '每日复盘', value: 'daily-review' }
           ]}
         />
       </div>

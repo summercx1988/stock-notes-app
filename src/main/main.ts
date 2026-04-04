@@ -4,8 +4,21 @@ import { voiceTranscriberClient } from './services/VoiceTranscriberClient'
 import { feishuBotService } from './services/feishu-bot'
 import { appConfigService } from './services/app-config'
 import { sharedNotesService } from './application/container'
+import { AIService } from './services/ai'
+import { DailyReviewService } from './services/daily-review'
+import { DailyReviewReminderScheduler } from './services/daily-review/reminder-scheduler'
+import { registerDailyReviewIPC } from './ipc/daily-review'
+import { appLogger, installConsoleFileTransport } from './services/app-logger'
+
+installConsoleFileTransport()
+appLogger.info('Main', 'Main process bootstrapping', {
+  pid: process.pid,
+  nodeEnv: process.env.NODE_ENV || 'production',
+  logFilePath: appLogger.getLogFilePath()
+})
 
 let mainWindow: BrowserWindow | null = null
+let dailyReviewReminderScheduler: DailyReviewReminderScheduler | null = null
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 
 if (!hasSingleInstanceLock) {
@@ -51,7 +64,7 @@ function createWindow() {
     console.log('[Main] Window content loaded successfully')
   })
 
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     console.error('[Main] Failed to load:', errorCode, errorDescription)
   })
 
@@ -133,7 +146,26 @@ if (hasSingleInstanceLock) {
 
 app.whenReady().then(async () => {
   console.log('[Main] App is ready')
+  appLogger.info('Main', 'Electron app ready', {
+    logFilePath: appLogger.getLogFilePath()
+  })
   createWindow()
+
+  const aiService = new AIService()
+  const dailyReviewService = new DailyReviewService(sharedNotesService, aiService)
+  
+  try {
+    await aiService.initialize()
+    console.log('[Main] AI service initialized')
+  } catch (error) {
+    console.warn('[Main] AI service initialization failed:', error)
+  }
+
+  registerDailyReviewIPC(dailyReviewService)
+  console.log('[Main] Daily review service registered')
+  dailyReviewReminderScheduler = new DailyReviewReminderScheduler(dailyReviewService)
+  dailyReviewReminderScheduler.start()
+  console.log('[Main] Daily review reminder scheduler started')
 
   setTimeout(async () => {
     try {
@@ -182,6 +214,7 @@ app.on('before-quit', async (event) => {
       voiceTranscriberClient.stop(),
       feishuBotService.stop()
     ])
+    dailyReviewReminderScheduler?.stop()
     console.log('[Main] All services stopped')
   } catch (error) {
     console.error('[Main] Error stopping services:', error)
@@ -199,3 +232,4 @@ import './ipc/timeline'
 import './ipc/config'
 import './ipc/system'
 import './ipc/feishu'
+import './ipc/daily-review'
