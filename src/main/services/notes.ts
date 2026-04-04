@@ -25,6 +25,7 @@ import { getDataPath } from './data-paths'
 import { appLogger } from './app-logger'
 
 const SYSTEM_STOCK_CODES = new Set(['__DAILY_REVIEW__'])
+const DAILY_REVIEW_CATEGORIES = new Set(['每日总结', '盘前复习', '周回顾'])
 
 interface EntryMeta {
   id?: string
@@ -1277,6 +1278,7 @@ export class NotesService {
     if (!normalized) return this.createDefaultCategory()
     if (normalized === '看盘预测') return normalized
     if (normalized === '普通笔记') return normalized
+    if (DAILY_REVIEW_CATEGORIES.has(normalized)) return normalized
     // 历史类别统一归并为“普通笔记”，保证双类别模型一致
     return '普通笔记'
   }
@@ -1516,6 +1518,13 @@ export class NotesService {
     const basename = fileName.replace(/\.md$/i, '')
     const directCode = basename.match(/^(\d{6})$/)
     if (directCode) return directCode[1]
+
+    if (SYSTEM_STOCK_CODES.has(basename)) {
+      return basename
+    }
+
+    const systemCode = basename.match(/[（(](__[A-Z0-9_]+__)[)）]$/)
+    if (systemCode) return systemCode[1]
 
     const newStyleCode = basename.match(/[（(](\d{6})[)）]$/)
     if (newStyleCode) return newStyleCode[1]

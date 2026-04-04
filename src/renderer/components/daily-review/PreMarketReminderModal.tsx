@@ -5,6 +5,13 @@ import { ClockCircleOutlined, InboxOutlined } from '@ant-design/icons'
 import type { DailyReviewReminderIncludeSections, TimeEntry } from '../../../shared/types'
 
 const { Text, Paragraph } = Typography
+const DEFAULT_INCLUDE_SECTIONS: DailyReviewReminderIncludeSections = {
+  yesterdaySummary: true,
+  pendingItems: true,
+  keyLevels: true,
+  watchlist: true,
+  riskReminders: true
+}
 
 interface PreMarketData {
   generatedAt?: string
@@ -75,6 +82,10 @@ const PreMarketReminderModal: React.FC<PreMarketReminderModalProps> = ({
   onOpenDailyReview
 }) => {
   const data = parseData(entry)
+  const safeSections: DailyReviewReminderIncludeSections = {
+    ...DEFAULT_INCLUDE_SECTIONS,
+    ...(includeSections || {})
+  }
 
   return (
     <Modal
@@ -123,7 +134,7 @@ const PreMarketReminderModal: React.FC<PreMarketReminderModalProps> = ({
             description={data?.sourceSummaryDate ? `基于 ${data.sourceSummaryDate} 的总结生成` : '基于昨日复盘数据生成'}
           />
 
-          {includeSections.yesterdaySummary ? (
+          {safeSections.yesterdaySummary ? (
             <div>
               <Text strong>昨日概要</Text>
               <Paragraph className="mt-2 mb-0">
@@ -132,7 +143,7 @@ const PreMarketReminderModal: React.FC<PreMarketReminderModalProps> = ({
             </div>
           ) : null}
 
-          {includeSections.pendingItems && (data?.quickReview?.pendingItems || []).length > 0 ? (
+          {safeSections.pendingItems && (data?.quickReview?.pendingItems || []).length > 0 ? (
             <div>
               <Text strong>待跟进事项</Text>
               <Space direction="vertical" className="w-full mt-2">
@@ -150,7 +161,7 @@ const PreMarketReminderModal: React.FC<PreMarketReminderModalProps> = ({
             </div>
           ) : null}
 
-          {includeSections.keyLevels && (data?.quickReview?.keyLevels || []).length > 0 ? (
+          {safeSections.keyLevels && (data?.quickReview?.keyLevels || []).length > 0 ? (
             <div>
               <Text strong>关键位</Text>
               <Space direction="vertical" className="w-full mt-2">
@@ -165,7 +176,7 @@ const PreMarketReminderModal: React.FC<PreMarketReminderModalProps> = ({
             </div>
           ) : null}
 
-          {includeSections.watchlist && (data?.todayStrategy?.watchlist || []).length > 0 ? (
+          {safeSections.watchlist && (data?.todayStrategy?.watchlist || []).length > 0 ? (
             <div>
               <Text strong>观察列表</Text>
               <Space direction="vertical" className="w-full mt-2">
@@ -178,7 +189,7 @@ const PreMarketReminderModal: React.FC<PreMarketReminderModalProps> = ({
             </div>
           ) : null}
 
-          {includeSections.riskReminders && (data?.todayStrategy?.riskReminders || []).length > 0 ? (
+          {safeSections.riskReminders && (data?.todayStrategy?.riskReminders || []).length > 0 ? (
             <div>
               <Text strong>风险提醒</Text>
               <Space direction="vertical" className="w-full mt-2">

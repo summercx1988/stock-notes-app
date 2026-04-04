@@ -154,8 +154,9 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
       return
     }
 
-    if (!force && cacheRef.current.has(queryKey)) {
-      setData(cacheRef.current.get(queryKey) || null)
+    const cached = cacheRef.current.get(queryKey)
+    if (!force && cached && cached.candles.length > 0) {
+      setData(cached)
       setErrorMessage(null)
       scheduleRelayout()
       return
@@ -163,6 +164,9 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
 
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
+    setData(null)
+    setHoverInfo(null)
+    setActiveClusterTime(null)
     setLoading(true)
     setErrorMessage(null)
 
@@ -175,9 +179,10 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
         interval
       })
       if (requestId !== requestIdRef.current) return
-      cacheRef.current.set(queryKey, response)
+      if (response.candles.length > 0) {
+        cacheRef.current.set(queryKey, response)
+      }
       setData(response)
-      setActiveClusterTime(null)
       scheduleRelayout()
     } catch (error: any) {
       if (requestId !== requestIdRef.current) return
@@ -193,6 +198,16 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
   useEffect(() => {
     clustersRef.current = data?.clusters || []
   }, [data?.clusters])
+
+  useEffect(() => {
+    setAnchorTimestamp(null)
+    setHoverInfo(null)
+    setActiveClusterTime(null)
+    const chart = chartRef.current
+    if (!chart) return
+    chart.clearData()
+    scheduleRelayout()
+  }, [queryKey, scheduleRelayout])
 
   useEffect(() => {
     if (!chartHostRef.current) return

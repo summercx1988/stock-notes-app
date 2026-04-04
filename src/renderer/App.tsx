@@ -3,6 +3,7 @@ import { ConfigProvider, theme } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { useAppStore } from './stores/app'
 import MainLayout from './layouts/MainLayout'
+import AppErrorBoundary from './components/AppErrorBoundary'
 import './App.css'
 
 const App: React.FC = () => {
@@ -19,7 +20,9 @@ const App: React.FC = () => {
         },
       }}
     >
-      <MainLayout />
+      <AppErrorBoundary>
+        <MainLayout />
+      </AppErrorBoundary>
     </ConfigProvider>
   )
 }

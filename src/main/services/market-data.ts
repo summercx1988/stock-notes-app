@@ -60,7 +60,16 @@ export class MarketDataService {
       end
     })
     const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?${query.toString()}`
-    const response = await fetch(url)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json,text/plain,*/*'
+      }
+    }).finally(() => {
+      clearTimeout(timeout)
+    })
     if (!response.ok) {
       throw new Error(`kline API ${response.status}`)
     }

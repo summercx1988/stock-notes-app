@@ -628,7 +628,7 @@ export class DailyReviewService {
 
   async getReviewHistory(startDate: Date, endDate: Date): Promise<TimeEntry[]> {
     const entries = await this.getAllReviewEntries(startDate, endDate)
-    return entries.filter((entry) => this.isPrimaryReviewCategory(entry.category))
+    return entries.filter((entry) => this.isPrimaryReviewEntry(entry))
   }
 
   async getUnreadCount(): Promise<number> {
@@ -637,7 +637,7 @@ export class DailyReviewService {
       if (!note) return 0
 
       return note.entries.filter((entry) =>
-        this.isPrimaryReviewCategory(entry.category) && entry.trackingStatus === '未读'
+        this.isPrimaryReviewEntry(entry) && entry.trackingStatus === '未读'
       ).length
     } catch {
       return 0
@@ -831,7 +831,7 @@ export class DailyReviewService {
     const existingEntry = stockNote.entries.find(e => e.id === entryId)
     if (!existingEntry) throw new Error('复盘条目不存在')
 
-    const category = existingEntry.category as DailyReviewCategory
+    const category = (this.resolveReviewCategory(existingEntry) || existingEntry.category) as DailyReviewCategory
 
     switch (category) {
       case '每日总结':
@@ -849,9 +849,7 @@ export class DailyReviewService {
     try {
       const dayStart = new Date(dateStr + 'T00:00:00')
       const dayEnd = new Date(dateStr + 'T23:59:59')
-
-      const entries = await this.getReviewEntriesByCategory('每日总结', dayStart, dayEnd)
-      return entries.length > 0 ? entries[0] : null
+      return this.findLatestByCategory('每日总结', dayStart, dayEnd)
     } catch {
       return null
     }
@@ -861,8 +859,7 @@ export class DailyReviewService {
     try {
       const dayStart = new Date(dateStr + 'T00:00:00')
       const dayEnd = new Date(dateStr + 'T23:59:59')
-      const entries = await this.getReviewEntriesByCategory('盘前复习', dayStart, dayEnd)
-      return entries.length > 0 ? entries[0] : null
+      return this.findLatestByCategory('盘前复习', dayStart, dayEnd)
     } catch {
       return null
     }
@@ -873,7 +870,7 @@ export class DailyReviewService {
       const note = await this.notesService.getStockNote(DAILY_REVIEW_STOCK_CODE)
       if (!note) return []
 
-      let entries = note.entries.filter(entry => entry.category === category)
+      let entries = note.entries.filter((entry) => this.resolveReviewCategory(entry) === category)
 
       if (startDate) {
         entries = entries.filter(entry => {
@@ -1434,8 +1431,44 @@ export class DailyReviewService {
     return matched ? matched[1] : ''
   }
 
+  private async findLatestByCategory(
+    category: '每日总结' | '盘前复习' | '周回顾',
+    startDate: Date,
+    endDate: Date
+  ): Promise<TimeEntry | null> {
+    const entries = await this.getAllReviewEntries(startDate, endDate)
+    return entries.find((entry) => this.resolveReviewCategory(entry) === category) || null
+  }
+
   private isPrimaryReviewCategory(category: unknown): boolean {
     return category === '每日总结' || category === '盘前复习'
+  }
+
+  private isPrimaryReviewEntry(entry: TimeEntry): boolean {
+    return this.isPrimaryReviewCategory(this.resolveReviewCategory(entry))
+  }
+
+  private resolveReviewCategory(entry: TimeEntry): '每日总结' | '盘前复习' | '周回顾' | null {
+    if (this.isPrimaryReviewCategory(entry.category) || entry.category === '周回顾') {
+      return entry.category as '每日总结' | '盘前复习' | '周回顾'
+    }
+
+    const parsed = this.parseEntryContent(entry)
+    if (
+      parsed?.content?.overview &&
+      Array.isArray(parsed?.content?.keyDecisions) &&
+      Array.isArray(parsed?.content?.tomorrowFocus)
+    ) {
+      return '每日总结'
+    }
+    if (parsed?.quickReview && parsed?.todayStrategy) {
+      return '盘前复习'
+    }
+    if (parsed?.content?.performanceSummary || Array.isArray(parsed?.content?.nextWeekFocus)) {
+      return '周回顾'
+    }
+
+    return null
   }
 
   private async ensureNotesUpdatedAtInitialized(): Promise<void> {

@@ -130,6 +130,7 @@ interface ParsedCache {
   meta: ReviewGenerationMeta | null
   summaryData: DailySummaryData | null
   preMarketData: PreMarketData | null
+  resolvedCategory: '每日总结' | '盘前复习' | '周回顾' | '其他'
 }
 
 const parseJSONContent = <T,>(entry: TimeEntry): T | null => {
@@ -140,10 +141,32 @@ const parseJSONContent = <T,>(entry: TimeEntry): T | null => {
   }
 }
 
-const getEntryMeta = (entry: TimeEntry): ReviewGenerationMeta | null => {
-  const parsed = parseJSONContent<JsonObject>(entry)
-  if (!parsed || typeof parsed.meta !== 'object' || parsed.meta === null) return null
-  return parsed.meta as ReviewGenerationMeta
+const isDailySummaryData = (value: unknown): value is DailySummaryData => {
+  const data = value as DailySummaryData
+  return Boolean(
+    data &&
+    typeof data === 'object' &&
+    data.stats &&
+    data.content &&
+    typeof data.content.overview === 'string' &&
+    Array.isArray(data.content.keyDecisions) &&
+    Array.isArray(data.content.riskAlerts) &&
+    Array.isArray(data.content.tomorrowFocus)
+  )
+}
+
+const isPreMarketData = (value: unknown): value is PreMarketData => {
+  const data = value as PreMarketData
+  return Boolean(
+    data &&
+    typeof data === 'object' &&
+    data.quickReview &&
+    data.todayStrategy &&
+    Array.isArray(data.quickReview.pendingItems) &&
+    Array.isArray(data.todayStrategy.focusAreas) &&
+    Array.isArray(data.todayStrategy.watchlist) &&
+    Array.isArray(data.todayStrategy.riskReminders)
+  )
 }
 
 const DailyReviewView: React.FC = () => {
@@ -167,10 +190,17 @@ const DailyReviewView: React.FC = () => {
 
     const raw = parseJSONContent<JsonObject>(entry)
     const meta = raw && typeof raw.meta === 'object' && raw.meta !== null ? raw.meta as ReviewGenerationMeta : null
-    const summaryData = parseJSONContent<DailySummaryData>(entry)
-    const preMarketData = parseJSONContent<PreMarketData>(entry)
+    const summaryData = isDailySummaryData(raw) ? raw : null
+    const preMarketData = isPreMarketData(raw) ? raw : null
+    const resolvedCategory: ParsedCache['resolvedCategory'] = entry.category === '每日总结' || entry.category === '盘前复习' || entry.category === '周回顾'
+      ? entry.category
+      : summaryData
+        ? '每日总结'
+        : preMarketData
+          ? '盘前复习'
+          : '其他'
 
-    const result: ParsedCache = { raw, meta, summaryData, preMarketData }
+    const result: ParsedCache = { raw, meta, summaryData, preMarketData, resolvedCategory }
     parsedCacheRef.current.set(entry.id, result)
     return result
   }, [])
@@ -242,6 +272,15 @@ const DailyReviewView: React.FC = () => {
     [historyEntries, activeEntryId]
   )
 
+  const upsertHistoryEntry = useCallback((entry: TimeEntry) => {
+    parsedCacheRef.current.delete(entry.id)
+    setHistoryEntries((current) => {
+      const next = [entry, ...current.filter((item) => item.id !== entry.id)]
+      return next.sort((left, right) => dayjs(right.eventTime).valueOf() - dayjs(left.eventTime).valueOf())
+    })
+    setActiveEntryId(entry.id)
+  }, [])
+
   const showGenerationFeedback = useCallback((entry: TimeEntry, defaultText: string) => {
     const parsed = getOrParseEntry(entry)
     if (parsed.meta?.aiStatus === 'fallback') {
@@ -263,9 +302,9 @@ const DailyReviewView: React.FC = () => {
       const result = await window.api.dailyReview.generateSummary()
       if (result?.success) {
         const entry = result.data as TimeEntry
-        setActiveEntryId(entry.id)
+        upsertHistoryEntry(entry)
         showGenerationFeedback(entry, '今日复盘已生成')
-        await loadData()
+        void loadData()
       } else {
         message.error(`生成失败: ${result?.error || '未知错误'}`)
       }
@@ -274,7 +313,7 @@ const DailyReviewView: React.FC = () => {
     } finally {
       setGenerating(false)
     }
-  }, [loadData, showGenerationFeedback])
+  }, [loadData, showGenerationFeedback, upsertHistoryEntry])
 
   const handleGeneratePreMarket = useCallback(async () => {
     setGenerating(true)
@@ -288,9 +327,9 @@ const DailyReviewView: React.FC = () => {
       const result = await window.api.dailyReview.generatePreMarket()
       if (result?.success) {
         const entry = result.data as TimeEntry
-        setActiveEntryId(entry.id)
+        upsertHistoryEntry(entry)
         showGenerationFeedback(entry, '盘前复习已生成')
-        await loadData()
+        void loadData()
       } else {
         message.error(`生成失败: ${result?.error || '未知错误'}`)
       }
@@ -299,7 +338,7 @@ const DailyReviewView: React.FC = () => {
     } finally {
       setGenerating(false)
     }
-  }, [loadData, showGenerationFeedback])
+  }, [loadData, showGenerationFeedback, upsertHistoryEntry])
 
   const handleMarkAsRead = useCallback(async (entryId: string) => {
     try {
@@ -350,9 +389,9 @@ const DailyReviewView: React.FC = () => {
       const result = await window.api.dailyReview.regenerate(entryId)
       if (result?.success) {
         const entry = result.data as TimeEntry
-        setActiveEntryId(entry.id)
+        upsertHistoryEntry(entry)
         showGenerationFeedback(entry, '复盘内容已更新')
-        await loadData()
+        void loadData()
       } else {
         message.error(`重新生成失败: ${result?.error || '未知错误'}`)
       }
@@ -361,7 +400,7 @@ const DailyReviewView: React.FC = () => {
     } finally {
       setGenerating(false)
     }
-  }, [loadData, showGenerationFeedback])
+  }, [loadData, showGenerationFeedback, upsertHistoryEntry])
 
   const handleDeleteEntry = useCallback(async (entryId: string) => {
     try {
@@ -482,8 +521,9 @@ const DailyReviewView: React.FC = () => {
 
   const renderDetailContent = useCallback((entry: TimeEntry) => {
     const parsed = getOrParseEntry(entry)
+    const displayCategory = parsed.resolvedCategory
 
-    if (entry.category === '每日总结') {
+    if (displayCategory === '每日总结') {
       const data = parsed.summaryData
       if (!data) {
         return (
@@ -581,7 +621,7 @@ const DailyReviewView: React.FC = () => {
       )
     }
 
-    if (entry.category === '盘前复习') {
+    if (displayCategory === '盘前复习') {
       const data = parsed.preMarketData
       if (!data) {
         return (
@@ -714,6 +754,14 @@ const DailyReviewView: React.FC = () => {
     return historyEntries.map((entry) => {
       const parsed = getOrParseEntry(entry)
       const meta = parsed.meta
+      const displayCategory = parsed.resolvedCategory
+      const categoryColor = displayCategory === '每日总结'
+        ? 'blue'
+        : displayCategory === '盘前复习'
+          ? 'green'
+          : displayCategory === '周回顾'
+            ? 'purple'
+            : 'default'
 
       return (
         <div
@@ -731,7 +779,7 @@ const DailyReviewView: React.FC = () => {
               />
               <div className="cursor-pointer" onClick={() => setActiveEntryId(entry.id)}>
                 <Space wrap size={[6, 6]}>
-                  <Tag color={entry.category === '每日总结' ? 'blue' : 'green'}>{entry.category}</Tag>
+                  <Tag color={categoryColor}>{displayCategory === '其他' ? entry.category : displayCategory}</Tag>
                   {entry.trackingStatus === '未读' ? <Tag color="processing">未读</Tag> : null}
                   {meta?.generationMode === 'local' ? <Tag>本地</Tag> : null}
                   {meta?.aiStatus === 'fallback' ? <Tag color="warning">AI失败</Tag> : null}
@@ -918,8 +966,25 @@ const DailyReviewView: React.FC = () => {
           <Card
             title={activeEntry ? (
               <Space wrap size={[8, 8]}>
-                <span>{activeEntry.title || '复盘详情'}</span>
-                <Tag color={activeEntry.category === '每日总结' ? 'blue' : 'green'}>{activeEntry.category}</Tag>
+                {(() => {
+                  const activeParsed = getOrParseEntry(activeEntry)
+                  const activeCategory = activeParsed.resolvedCategory
+                  const activeCategoryColor = activeCategory === '每日总结'
+                    ? 'blue'
+                    : activeCategory === '盘前复习'
+                      ? 'green'
+                      : activeCategory === '周回顾'
+                        ? 'purple'
+                        : 'default'
+                  return (
+                    <>
+                      <span>{activeEntry.title || '复盘详情'}</span>
+                      <Tag color={activeCategoryColor}>
+                        {activeCategory === '其他' ? activeEntry.category : activeCategory}
+                      </Tag>
+                    </>
+                  )
+                })()}
                 {activeEntry.trackingStatus === '未读' ? <Tag color="processing">未读</Tag> : null}
                 <Text type="secondary">{dayjs(activeEntry.eventTime).format('YYYY-MM-DD HH:mm')}</Text>
               </Space>

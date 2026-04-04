@@ -28,6 +28,40 @@ const DEFAULT_REMINDER_SECTIONS: DailyReviewReminderIncludeSections = {
   riskReminders: true
 }
 
+const DEFAULT_REMINDER_CONFIG = {
+  enabled: true,
+  time: '09:00',
+  weekdaysOnly: true,
+  autoGeneratePreMarket: true
+}
+
+const normalizeReminderSections = (
+  value?: Partial<DailyReviewReminderIncludeSections> | null
+): DailyReviewReminderIncludeSections => ({
+  yesterdaySummary: Boolean(value?.yesterdaySummary ?? DEFAULT_REMINDER_SECTIONS.yesterdaySummary),
+  pendingItems: Boolean(value?.pendingItems ?? DEFAULT_REMINDER_SECTIONS.pendingItems),
+  keyLevels: Boolean(value?.keyLevels ?? DEFAULT_REMINDER_SECTIONS.keyLevels),
+  watchlist: Boolean(value?.watchlist ?? DEFAULT_REMINDER_SECTIONS.watchlist),
+  riskReminders: Boolean(value?.riskReminders ?? DEFAULT_REMINDER_SECTIONS.riskReminders)
+})
+
+const normalizeReminderConfig = (
+  value?: UserSettings['dailyReview'] | null
+): {
+  config: typeof DEFAULT_REMINDER_CONFIG
+  sections: DailyReviewReminderIncludeSections
+} => ({
+  config: {
+    enabled: Boolean(value?.reminder?.enabled ?? DEFAULT_REMINDER_CONFIG.enabled),
+    time: String(value?.reminder?.time || DEFAULT_REMINDER_CONFIG.time),
+    weekdaysOnly: Boolean(value?.reminder?.weekdaysOnly ?? DEFAULT_REMINDER_CONFIG.weekdaysOnly),
+    autoGeneratePreMarket: Boolean(
+      value?.reminder?.autoGeneratePreMarket ?? DEFAULT_REMINDER_CONFIG.autoGeneratePreMarket
+    )
+  },
+  sections: normalizeReminderSections(value?.reminder?.includeSections || null)
+})
+
 const MainLayout: React.FC = () => {
   const { activeModule, setActiveModule } = useAppStore()
   const showSidebar = activeModule !== 'explorer'
@@ -45,12 +79,7 @@ const MainLayout: React.FC = () => {
   const [reminderOpen, setReminderOpen] = useState(false)
   const [reminderEntry, setReminderEntry] = useState<TimeEntry | null>(null)
   const [reminderSections, setReminderSections] = useState<DailyReviewReminderIncludeSections>(DEFAULT_REMINDER_SECTIONS)
-  const [reminderConfig, setReminderConfig] = useState({
-    enabled: true,
-    time: '09:00',
-    weekdaysOnly: true,
-    autoGeneratePreMarket: true
-  })
+  const [reminderConfig, setReminderConfig] = useState(DEFAULT_REMINDER_CONFIG)
   const [markingReminderRead, setMarkingReminderRead] = useState(false)
   const [collectingReminder, setCollectingReminder] = useState(false)
   const layoutRef = useRef<HTMLDivElement | null>(null)
@@ -110,22 +139,15 @@ const MainLayout: React.FC = () => {
     const loadReminderConfig = async () => {
       try {
         const dailyReview = await window.api.config.get('dailyReview') as UserSettings['dailyReview'] | undefined
-        if (cancelled || !dailyReview?.reminder) return
-        setReminderConfig({
-          enabled: Boolean(dailyReview.reminder.enabled),
-          time: String(dailyReview.reminder.time || '09:00'),
-          weekdaysOnly: Boolean(dailyReview.reminder.weekdaysOnly),
-          autoGeneratePreMarket: Boolean(dailyReview.reminder.autoGeneratePreMarket)
-        })
-        setReminderSections({
-          yesterdaySummary: Boolean(dailyReview.reminder.includeSections?.yesterdaySummary ?? true),
-          pendingItems: Boolean(dailyReview.reminder.includeSections?.pendingItems ?? true),
-          keyLevels: Boolean(dailyReview.reminder.includeSections?.keyLevels ?? true),
-          watchlist: Boolean(dailyReview.reminder.includeSections?.watchlist ?? true),
-          riskReminders: Boolean(dailyReview.reminder.includeSections?.riskReminders ?? true)
-        })
+        if (cancelled) return
+        const normalized = normalizeReminderConfig(dailyReview)
+        setReminderConfig(normalized.config)
+        setReminderSections(normalized.sections)
       } catch (error) {
         console.error('[MainLayout] Failed to load reminder settings:', error)
+        if (cancelled) return
+        setReminderConfig(DEFAULT_REMINDER_CONFIG)
+        setReminderSections(DEFAULT_REMINDER_SECTIONS)
       }
     }
 
@@ -140,9 +162,7 @@ const MainLayout: React.FC = () => {
       const entry = payload?.entry as TimeEntry | undefined
       if (!entry) return
       setReminderEntry(entry)
-      if (payload?.includeSections) {
-        setReminderSections(payload.includeSections)
-      }
+      setReminderSections(normalizeReminderSections(payload?.includeSections))
       setReminderOpen(true)
     })
     return () => { unsubscribe() }

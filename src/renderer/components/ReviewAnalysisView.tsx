@@ -369,6 +369,7 @@ const ReviewAnalysisView: React.FC = () => {
 
         <Card title="K线与笔记对齐验证（独立模块）" size="small" className="mb-4">
           <ReviewKlineWorkbench
+            key={`${scope}-${currentStockCode || 'overall'}-${timeRange?.[0]?.toISOString() || 'start'}-${timeRange?.[1]?.toISOString() || 'end'}`}
             scope={scope}
             stockCode={scope === 'single' ? currentStockCode || undefined : undefined}
             stockName={scope === 'single' ? currentStockName || undefined : undefined}
