@@ -15,10 +15,6 @@ import {
 import {
   ReloadOutlined,
   ClockCircleOutlined,
-  CheckCircleOutlined,
-  AlertOutlined,
-  BulbOutlined,
-  EyeOutlined,
   DeleteOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -28,146 +24,13 @@ import type {
   TimeEntry,
   UserSettings
 } from '../../shared/types'
+import DailyReviewDetailContent from './daily-review/DailyReviewDetailContent'
+import DailyReviewHistoryList from './daily-review/DailyReviewHistoryList'
+import { parseReviewEntry, type ParsedCache } from './daily-review/types'
 
-const { Title, Text, Paragraph } = Typography
+const { Title, Text } = Typography
 const HISTORY_LOOKBACK_DAYS = 14
 const ARCHIVE_VIEW_LOOKBACK_DAYS = 180
-
-interface ReviewGenerationMeta {
-  generationMode?: 'local' | 'hybrid'
-  aiStatus?: 'pending' | 'completed' | 'fallback'
-  lookbackDays?: number
-  note?: string
-}
-
-interface DailySummaryData {
-  version: string
-  generatedAt: string
-  meta?: ReviewGenerationMeta
-  stats: {
-    totalNotes: number
-    stocksCount: number
-    buyActions: number
-    sellActions: number
-    bullishNotes: number
-    bearishNotes: number
-  }
-  content: {
-    overview: string
-    keyDecisions: Array<{
-      stockCode: string
-      stockName: string
-      action: string
-      reason: string
-      confidence: number
-      entryId: string
-    }>
-    riskAlerts: Array<{
-      level: string
-      description: string
-      relatedStocks: string[]
-      suggestion: string
-    }>
-    tomorrowFocus: Array<{
-      stockCode: string
-      stockName: string
-      reason: string
-      actionType: string
-      sourceEntryId?: string
-    }>
-    marketSentiment: string
-  }
-  relatedEntries?: Array<{
-    entryId: string
-    stockCode: string
-    stockName: string
-    eventTime: string
-    category: string
-    viewpoint: string
-    preview: string
-  }>
-}
-
-interface PreMarketData {
-  version: string
-  generatedAt: string
-  sourceSummaryDate: string
-  meta?: ReviewGenerationMeta
-  quickReview: {
-    yesterdaySummary: string
-    pendingItems: Array<{
-      stockCode: string
-      stockName: string
-      description: string
-      priority: string
-      dueDate: string
-      sourceEntryId: string
-    }>
-    keyLevels: Array<{
-      stockCode: string
-      stockName: string
-      level: string
-      price: number
-      note: string
-    }>
-  }
-  todayStrategy: {
-    focusAreas: string[]
-    watchlist: Array<{
-      stockCode: string
-      stockName: string
-      reason: string
-      expectedAction: string
-    }>
-    riskReminders: string[]
-  }
-}
-
-type JsonObject = Record<string, unknown>
-
-interface ParsedCache {
-  raw: JsonObject | null
-  meta: ReviewGenerationMeta | null
-  summaryData: DailySummaryData | null
-  preMarketData: PreMarketData | null
-  resolvedCategory: '每日总结' | '盘前复习' | '周回顾' | '其他'
-}
-
-const parseJSONContent = <T,>(entry: TimeEntry): T | null => {
-  try {
-    return JSON.parse(entry.content) as T
-  } catch {
-    return null
-  }
-}
-
-const isDailySummaryData = (value: unknown): value is DailySummaryData => {
-  const data = value as DailySummaryData
-  return Boolean(
-    data &&
-    typeof data === 'object' &&
-    data.stats &&
-    data.content &&
-    typeof data.content.overview === 'string' &&
-    Array.isArray(data.content.keyDecisions) &&
-    Array.isArray(data.content.riskAlerts) &&
-    Array.isArray(data.content.tomorrowFocus)
-  )
-}
-
-const isPreMarketData = (value: unknown): value is PreMarketData => {
-  const data = value as PreMarketData
-  return Boolean(
-    data &&
-    typeof data === 'object' &&
-    data.quickReview &&
-    data.todayStrategy &&
-    Array.isArray(data.quickReview.pendingItems) &&
-    Array.isArray(data.todayStrategy.focusAreas) &&
-    Array.isArray(data.todayStrategy.watchlist) &&
-    Array.isArray(data.todayStrategy.riskReminders)
-  )
-}
 
 const DailyReviewView: React.FC = () => {
   const [historyEntries, setHistoryEntries] = useState<TimeEntry[]>([])
@@ -191,19 +54,7 @@ const DailyReviewView: React.FC = () => {
     const cached = parsedCacheRef.current.get(entry.id)
     if (cached) return cached
 
-    const raw = parseJSONContent<JsonObject>(entry)
-    const meta = raw && typeof raw.meta === 'object' && raw.meta !== null ? raw.meta as ReviewGenerationMeta : null
-    const summaryData = isDailySummaryData(raw) ? raw : null
-    const preMarketData = isPreMarketData(raw) ? raw : null
-    const resolvedCategory: ParsedCache['resolvedCategory'] = entry.category === '每日总结' || entry.category === '盘前复习' || entry.category === '周回顾'
-      ? entry.category
-      : summaryData
-        ? '每日总结'
-        : preMarketData
-          ? '盘前复习'
-          : '其他'
-
-    const result: ParsedCache = { raw, meta, summaryData, preMarketData, resolvedCategory }
+    const result = parseReviewEntry(entry)
     parsedCacheRef.current.set(entry.id, result)
     return result
   }, [])
@@ -520,294 +371,6 @@ const DailyReviewView: React.FC = () => {
     })
   }, [])
 
-  const sentimentColorMap: Record<string, string> = useMemo(() => ({
-    '乐观': 'red', '谨慎': 'orange', '悲观': 'green', '中性': 'blue'
-  }), [])
-
-  const riskLevelColorMap: Record<string, string> = useMemo(() => ({
-    'high': 'red', 'medium': 'orange', 'low': 'blue'
-  }), [])
-
-  const riskLevelLabelMap: Record<string, string> = useMemo(() => ({
-    'high': '高风险', 'medium': '中风险', 'low': '低风险'
-  }), [])
-
-  const actionColorMap: Record<string, string> = useMemo(() => ({
-    '买入': 'red', '卖出': 'green', '观望': 'default'
-  }), [])
-
-  const renderSentimentTag = useCallback((sentiment: string) => {
-    return <Tag color={sentimentColorMap[sentiment] || 'default'}>{sentiment}</Tag>
-  }, [sentimentColorMap])
-
-  const renderRiskLevel = useCallback((level: string) => {
-    return <Tag color={riskLevelColorMap[level] || 'default'}>{riskLevelLabelMap[level] || level}</Tag>
-  }, [riskLevelColorMap, riskLevelLabelMap])
-
-  const renderActionTag = useCallback((action: string) => {
-    return <Tag color={actionColorMap[action] || 'default'}>{action}</Tag>
-  }, [actionColorMap])
-
-  const renderGenerationMeta = useCallback((entry: TimeEntry) => {
-    const parsed = getOrParseEntry(entry)
-    const meta = parsed.meta
-    if (!meta) return null
-
-    return (
-      <Space wrap size={[8, 8]}>
-        <Tag color={meta.generationMode === 'hybrid' ? 'processing' : 'default'}>
-          {meta.generationMode === 'hybrid' ? 'AI 增强' : '本地复盘'}
-        </Tag>
-        <Tag color={meta.aiStatus === 'completed' ? 'success' : meta.aiStatus === 'fallback' ? 'warning' : 'default'}>
-          {meta.aiStatus === 'completed' ? '增强完成' : meta.aiStatus === 'fallback' ? 'AI 失败已保留本地结果' : '本地草稿'}
-        </Tag>
-        {meta.lookbackDays ? <Tag>分析窗口 T-{meta.lookbackDays}</Tag> : null}
-        {meta.note ? <Text type="secondary">{meta.note}</Text> : null}
-      </Space>
-    )
-  }, [getOrParseEntry])
-
-  const renderRelatedEntries = useCallback((data: DailySummaryData) => {
-    if (!Array.isArray(data.relatedEntries) || data.relatedEntries.length === 0) return null
-    return (
-      <div>
-        <Text strong>📚 关联近期笔记</Text>
-        <div className="mt-2 space-y-2">
-          {data.relatedEntries.slice(0, 8).map((item) => (
-            <div key={item.entryId} className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
-              <Space wrap>
-                <Tag>{item.category}</Tag>
-                <Text strong>{item.stockName}</Text>
-                <Text type="secondary">({item.stockCode})</Text>
-                <Text type="secondary">{dayjs(item.eventTime).format('MM-DD HH:mm')}</Text>
-              </Space>
-              <div className="mt-1">
-                <Text type="secondary">{item.preview}</Text>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }, [])
-
-  const renderDetailContent = useCallback((entry: TimeEntry) => {
-    const parsed = getOrParseEntry(entry)
-    const displayCategory = parsed.resolvedCategory
-
-    if (displayCategory === '每日总结') {
-      const data = parsed.summaryData
-      if (!data) {
-        return (
-          <pre className="bg-gray-50 p-3 rounded overflow-auto max-h-[560px] text-xs whitespace-pre-wrap">
-            {getEntryRawText(entry) || '无内容'}
-          </pre>
-        )
-      }
-
-      return (
-        <Space direction="vertical" className="w-full" size="large">
-          {renderGenerationMeta(entry)}
-          <Descriptions size="small" column={5}>
-            <Descriptions.Item label="笔记数">{data.stats.totalNotes}</Descriptions.Item>
-            <Descriptions.Item label="股票数">{data.stats.stocksCount}</Descriptions.Item>
-            <Descriptions.Item label="买入">{data.stats.buyActions}</Descriptions.Item>
-            <Descriptions.Item label="卖出">{data.stats.sellActions}</Descriptions.Item>
-            <Descriptions.Item label="市场情绪">
-              {renderSentimentTag(data.content.marketSentiment)}
-            </Descriptions.Item>
-          </Descriptions>
-
-          <div>
-            <Text strong>📝 复盘概述</Text>
-            <Paragraph className="mt-2 mb-0">{data.content.overview}</Paragraph>
-          </div>
-
-          {data.content.keyDecisions.length > 0 && (
-            <div>
-              <Text strong>🔑 关键决策</Text>
-              <div className="mt-2 space-y-2">
-                {data.content.keyDecisions.map((decision, index) => (
-                  <Card key={`${decision.entryId}-${index}`} size="small" className="bg-gray-50">
-                    <Space wrap>
-                      {renderActionTag(decision.action)}
-                      <Text strong>{decision.stockName}</Text>
-                      <Text type="secondary">({decision.stockCode})</Text>
-                      <Text type="secondary">信心 {(decision.confidence * 100).toFixed(0)}%</Text>
-                    </Space>
-                    <div className="mt-2">
-                      <Text>{decision.reason}</Text>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {data.content.riskAlerts.length > 0 && (
-            <div>
-              <Text strong>⚠️ 风险提示</Text>
-              <div className="mt-2 space-y-2">
-                {data.content.riskAlerts.map((risk, index) => (
-                  <div key={`${risk.description}-${index}`} className="rounded border border-amber-200 bg-amber-50 px-3 py-2">
-                    <Space wrap>
-                      {renderRiskLevel(risk.level)}
-                      <Text>{risk.description}</Text>
-                    </Space>
-                    {risk.suggestion ? (
-                      <div className="mt-1">
-                        <Text type="secondary">建议：{risk.suggestion}</Text>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {data.content.tomorrowFocus.length > 0 && (
-            <div>
-              <Text strong>🎯 明日关注</Text>
-              <div className="mt-2 space-y-2">
-                {data.content.tomorrowFocus.map((focus, index) => (
-                  <div key={`${focus.stockCode}-${index}`} className="flex items-start gap-2 rounded border border-gray-200 px-3 py-2">
-                    <BulbOutlined className="mt-1" />
-                    <div>
-                      <Space wrap>
-                        <Text strong>{focus.stockName}</Text>
-                        <Text type="secondary">({focus.stockCode})</Text>
-                        <Tag>{focus.actionType}</Tag>
-                      </Space>
-                      <div className="mt-1">
-                        <Text>{focus.reason}</Text>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {renderRelatedEntries(data)}
-        </Space>
-      )
-    }
-
-    if (displayCategory === '盘前复习') {
-      const data = parsed.preMarketData
-      if (!data) {
-        return (
-          <pre className="bg-gray-50 p-3 rounded overflow-auto max-h-[560px] text-xs whitespace-pre-wrap">
-            {getEntryRawText(entry) || '无内容'}
-          </pre>
-        )
-      }
-
-      return (
-        <Space direction="vertical" className="w-full" size="large">
-          {renderGenerationMeta(entry)}
-          <Descriptions size="small" column={3}>
-            <Descriptions.Item label="来源复盘日">{data.sourceSummaryDate || '暂无'}</Descriptions.Item>
-            <Descriptions.Item label="待跟进">{data.quickReview.pendingItems.length}</Descriptions.Item>
-            <Descriptions.Item label="观察列表">{data.todayStrategy.watchlist.length}</Descriptions.Item>
-          </Descriptions>
-
-          <div>
-            <Text strong>📋 昨日概要</Text>
-            <Paragraph className="mt-2 mb-0">{data.quickReview.yesterdaySummary}</Paragraph>
-          </div>
-
-          {data.quickReview.pendingItems.length > 0 && (
-            <div>
-              <Text strong>🔴 待跟进事项</Text>
-              <div className="mt-2 space-y-2">
-                {data.quickReview.pendingItems.map((item, index) => (
-                  <div key={`${item.sourceEntryId}-${index}`} className="rounded border border-gray-200 px-3 py-2">
-                    <Space wrap>
-                      <Tag color={item.priority === 'high' ? 'red' : item.priority === 'medium' ? 'orange' : 'blue'}>
-                        {item.priority === 'high' ? '高' : item.priority === 'medium' ? '中' : '低'}
-                      </Tag>
-                      <Text strong>{item.stockName}</Text>
-                      <Text type="secondary">({item.stockCode})</Text>
-                    </Space>
-                    <div className="mt-1">
-                      <Text>{item.description}</Text>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {data.todayStrategy.focusAreas.length > 0 && (
-            <div>
-              <Text strong>🎯 今日重点</Text>
-              <div className="mt-2 space-y-1">
-                {data.todayStrategy.focusAreas.map((item, index) => (
-                  <div key={`${item}-${index}`} className="flex items-center gap-2">
-                    <BulbOutlined />
-                    <Text>{item}</Text>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {data.todayStrategy.watchlist.length > 0 && (
-            <div>
-              <Text strong>👀 观察列表</Text>
-              <div className="mt-2 space-y-2">
-                {data.todayStrategy.watchlist.map((item, index) => (
-                  <div key={`${item.stockCode}-${index}`} className="rounded border border-gray-200 px-3 py-2">
-                    <Space wrap>
-                      <EyeOutlined />
-                      <Text strong>{item.stockName}</Text>
-                      <Text type="secondary">({item.stockCode})</Text>
-                    </Space>
-                    <div className="mt-1">
-                      <Text>{item.reason}</Text>
-                    </div>
-                    <div className="mt-1">
-                      <Text type="secondary">预期动作：{item.expectedAction}</Text>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {data.todayStrategy.riskReminders.length > 0 && (
-            <div>
-              <Text strong>⚠️ 风险提醒</Text>
-              <div className="mt-2 space-y-1">
-                {data.todayStrategy.riskReminders.map((item, index) => (
-                  <div key={`${item}-${index}`} className="flex items-start gap-2">
-                    <AlertOutlined className="mt-1" />
-                    <Text>{item}</Text>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </Space>
-      )
-    }
-
-    if (parsed.raw) {
-      return (
-        <pre className="bg-gray-50 p-3 rounded overflow-auto max-h-[560px] text-xs whitespace-pre-wrap">
-          {JSON.stringify(parsed.raw, null, 2)}
-        </pre>
-      )
-    }
-
-    return (
-      <pre className="bg-gray-50 p-3 rounded overflow-auto max-h-[560px] text-xs whitespace-pre-wrap">
-        {getEntryRawText(entry) || '无内容'}
-      </pre>
-    )
-  }, [getOrParseEntry, getEntryRawText, renderGenerationMeta, renderSentimentTag, renderActionTag, renderRiskLevel, renderRelatedEntries])
-
   const operationLabelMap = useMemo(() => ({
     'daily-summary': '今日复盘',
     'pre-market': '盘前复习',
@@ -821,106 +384,6 @@ const DailyReviewView: React.FC = () => {
     const formatted = dayjs(value)
     return formatted.isValid() ? formatted.format('YYYY-MM-DD HH:mm:ss') : '暂无'
   }, [])
-
-  const historyRowRenderers = useMemo(() => {
-    return historyEntries.map((entry) => {
-      const parsed = getOrParseEntry(entry)
-      const meta = parsed.meta
-      const displayCategory = parsed.resolvedCategory
-      const categoryColor = displayCategory === '每日总结'
-        ? 'blue'
-        : displayCategory === '盘前复习'
-          ? 'green'
-          : displayCategory === '周回顾'
-            ? 'purple'
-            : 'default'
-
-      return (
-        <div
-          key={entry.id}
-          className={`rounded border p-3 transition-colors ${
-            activeEntryId === entry.id ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-          }`}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <Space align="start">
-              <Checkbox
-                checked={selectedEntryIds.includes(entry.id)}
-                onChange={(event) => handleToggleSelected(entry.id, event.target.checked)}
-                onClick={(event) => event.stopPropagation()}
-              />
-              <div className="cursor-pointer" onClick={() => setActiveEntryId(entry.id)}>
-                <Space wrap size={[6, 6]}>
-                  <Tag color={categoryColor}>{displayCategory === '其他' ? entry.category : displayCategory}</Tag>
-                  {entry.trackingStatus === '已归档' ? <Tag>已归档</Tag> : null}
-                  {entry.trackingStatus === '未读' ? <Tag color="processing">未读</Tag> : null}
-                  {meta?.generationMode === 'local' ? <Tag>本地</Tag> : null}
-                  {meta?.aiStatus === 'fallback' ? <Tag color="warning">AI失败</Tag> : null}
-                </Space>
-                <div className="mt-1">
-                  <Text strong>{entry.title || '无标题'}</Text>
-                </div>
-                <div className="mt-1">
-                  <Text type="secondary">{dayjs(entry.eventTime).format('YYYY-MM-DD HH:mm')}</Text>
-                </div>
-              </div>
-            </Space>
-
-            <Space>
-              <Button size="small" type="link" onClick={() => setActiveEntryId(entry.id)}>
-                查看
-              </Button>
-              {entry.trackingStatus !== '已归档' ? (
-                <CheckCircleOutlined
-                  className="text-gray-400 hover:text-green-500 cursor-pointer"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void handleMarkAsRead(entry.id)
-                  }}
-                />
-              ) : null}
-              <Button
-                size="small"
-                type="link"
-                loading={archivingEntryId === entry.id}
-                onClick={() => {
-                  if (entry.trackingStatus === '已归档') {
-                    void handleUnarchiveEntry(entry.id)
-                  } else {
-                    void handleArchiveEntry(entry.id)
-                  }
-                }}
-              >
-                {entry.trackingStatus === '已归档' ? '取消归档' : '归档'}
-              </Button>
-              <Popconfirm
-                title="确认删除这条复盘记录？"
-                okText="删除"
-                cancelText="取消"
-                onConfirm={() => void handleDeleteEntry(entry.id)}
-              >
-                <DeleteOutlined
-                  className="text-gray-400 hover:text-red-500 cursor-pointer"
-                  onClick={(event) => event.stopPropagation()}
-                />
-              </Popconfirm>
-            </Space>
-          </div>
-        </div>
-      )
-    })
-  }, [
-    historyEntries,
-    activeEntryId,
-    selectedEntryIds,
-    handleToggleSelected,
-    handleMarkAsRead,
-    handleDeleteEntry,
-    handleArchiveEntry,
-    handleUnarchiveEntry,
-    getOrParseEntry,
-    archivingEntryId
-  ])
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -1062,7 +525,19 @@ const DailyReviewView: React.FC = () => {
           >
             {historyEntries.length > 0 ? (
               <div className="app-scroll-pane h-full min-h-0 space-y-2 overflow-y-scroll overflow-x-hidden pr-1">
-                {historyRowRenderers}
+                <DailyReviewHistoryList
+                  entries={historyEntries}
+                  activeEntryId={activeEntryId}
+                  selectedEntryIds={selectedEntryIds}
+                  archivingEntryId={archivingEntryId}
+                  getParsed={getOrParseEntry}
+                  onToggleSelect={handleToggleSelected}
+                  onSelectEntry={(entryId) => setActiveEntryId(entryId)}
+                  onMarkRead={(entryId) => void handleMarkAsRead(entryId)}
+                  onArchive={(entryId) => void handleArchiveEntry(entryId)}
+                  onUnarchive={(entryId) => void handleUnarchiveEntry(entryId)}
+                  onDelete={(entryId) => void handleDeleteEntry(entryId)}
+                />
               </div>
             ) : (
               <div className="flex h-full items-center justify-center">
@@ -1151,7 +626,11 @@ const DailyReviewView: React.FC = () => {
             bodyStyle={{ height: 'calc(100% - 57px)', overflow: 'auto' }}
           >
             {activeEntry ? (
-              renderDetailContent(activeEntry)
+              <DailyReviewDetailContent
+                entry={activeEntry}
+                parsed={getOrParseEntry(activeEntry)}
+                getEntryRawText={getEntryRawText}
+              />
             ) : (
               <div className="flex h-full items-center justify-center">
                 <Empty description="选择左侧一条复盘日志查看详情" />

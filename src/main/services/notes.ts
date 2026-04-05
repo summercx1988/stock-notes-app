@@ -24,19 +24,10 @@ import { createTraceId, logPipelineEvent } from './pipeline-logger'
 import { normalizeNoteContent, normalizeStockNameText } from '../../shared/text-normalizer'
 import { getDataPath } from './data-paths'
 import { appLogger } from './app-logger'
+import { formatEntryToMarkdown, parseEntriesFromMarkdown } from './notes-entry-codec'
 
 const SYSTEM_STOCK_CODES = new Set(['__DAILY_REVIEW__'])
 const DAILY_REVIEW_CATEGORIES = new Set(['每日总结', '盘前复习', '周回顾'])
-
-interface EntryMeta {
-  id?: string
-  eventTime?: string
-  createdAt?: string
-  inputType?: string
-  category?: string
-  operationTag?: string
-  trackingStatus?: string
-}
 
 export interface ReviewCandidateEntry {
   entryId: string
@@ -755,6 +746,33 @@ export class NotesService {
     return this.toLocalMinuteText(eventTime)
   }
 
+  private getEntryFormatDeps() {
+    return {
+      buildEventTitle: this.buildEventTitle.bind(this),
+      getEntryCreatedAt: this.getEntryCreatedAt.bind(this),
+      getEntryEventTime: this.getEntryEventTime.bind(this),
+      detectInputType: this.detectInputType.bind(this),
+      normalizeOperationTag: this.normalizeOperationTag.bind(this),
+      normalizeTrackingStatus: this.normalizeTrackingStatus.bind(this),
+      normalizeViewpoint: this.normalizeViewpoint.bind(this),
+      createDefaultViewpoint: this.createDefaultViewpoint.bind(this),
+      toLocalMinuteText: this.toLocalMinuteText.bind(this)
+    }
+  }
+
+  private getEntryParseDeps() {
+    return {
+      normalizeDate: this.normalizeDate.bind(this),
+      normalizeInputType: this.normalizeInputType.bind(this),
+      detectInputType: this.detectInputType.bind(this),
+      normalizeCategory: this.normalizeCategory.bind(this),
+      normalizeOperationTag: this.normalizeOperationTag.bind(this),
+      normalizeTrackingStatus: this.normalizeTrackingStatus.bind(this),
+      normalizeViewpoint: this.normalizeViewpoint.bind(this),
+      createDefaultViewpoint: this.createDefaultViewpoint.bind(this)
+    }
+  }
+
   private async appendEntryToStockFile(stockCode: string, entry: TimeEntry): Promise<void> {
     try {
       const existing = await this.getStockNote(stockCode)
@@ -794,7 +812,7 @@ export class NotesService {
     let content = `---\n${yamlStr}---\n`
 
     if (entry) {
-      content += `\n\n${this.entryToMarkdown(entry, stockCode)}`
+      content += `\n\n${formatEntryToMarkdown(entry, this.getEntryFormatDeps(), stockCode)}`
     }
 
     await fs.writeFile(filePath, content, 'utf-8')
@@ -840,7 +858,7 @@ export class NotesService {
         content += `\n---\n\n## 📅 ${entryDate}\n`
         currentDate = entryDate
       }
-      content += this.entryToMarkdown(entry, note.stockCode)
+      content += formatEntryToMarkdown(entry, this.getEntryFormatDeps(), note.stockCode)
     }
 
     await fs.mkdir(path.dirname(preferredPath), { recursive: true })
@@ -853,56 +871,6 @@ export class NotesService {
     this.cache.delete(note.stockCode)
   }
 
-  private entryToMarkdown(entry: TimeEntry, stockCode?: string): string {
-    const eventTime = this.getEntryEventTime(entry)
-    const createdAt = this.getEntryCreatedAt(entry)
-    const inputType = entry.inputType ?? this.detectInputType(entry.audioFile)
-    const title = this.buildEventTitle(eventTime)
-    const operationTag = this.normalizeOperationTag(entry.operationTag, entry.action)
-
-    let md = `\n<!-- entry-id: ${entry.id} -->\n`
-    md += `<!-- event-time: ${eventTime.toISOString()} -->\n`
-    md += `<!-- created-at: ${createdAt.toISOString()} -->\n`
-    md += `<!-- input-type: ${inputType} -->\n`
-    md += `<!-- category: ${entry.category} -->\n`
-    md += `<!-- operation-tag: ${operationTag} -->\n`
-    md += `<!-- tracking-status: ${this.normalizeTrackingStatus(entry.trackingStatus)} -->\n`
-    md += `### 🕐 ${title}\n\n`
-    md += `> **事件时间**: ${this.toLocalMinuteText(eventTime)}\n`
-    md += `> **记录时间**: ${this.toLocalMinuteText(createdAt)}\n`
-    md += `> **记录来源**: ${inputType}\n`
-    md += `> **笔记类别**: ${entry.category}\n`
-    md += `> **操作打标**: ${operationTag}\n`
-    md += `> **跟踪状态**: ${this.normalizeTrackingStatus(entry.trackingStatus)}\n`
-
-    const viewpoint = this.normalizeViewpoint(entry.viewpoint ?? this.createDefaultViewpoint())
-    md += `> **观点**: ${viewpoint.direction} (信心: ${viewpoint.confidence}) | **周期**: ${viewpoint.timeHorizon}\n`
-
-    if (entry.keywords.length > 0) {
-      md += `> **关键词**: ${entry.keywords.join(', ')}\n`
-    }
-
-    md += `\n${entry.content.trim()}\n`
-
-    if (entry.action) {
-      md += '\n**操作记录**:\n'
-      const actionParts: string[] = []
-      if (entry.action.quantity !== undefined) actionParts.push(`${entry.action.quantity}股`)
-      if (entry.action.price !== undefined) actionParts.push(`@ ${entry.action.price}元`)
-      md += `- **${entry.action.type}**: ${actionParts.join(' ').trim()}\n`
-      if (entry.action.reason) {
-        md += `- **理由**: ${entry.action.reason}\n`
-      }
-    }
-
-    if (entry.audioFile && stockCode) {
-      const audioFileName = path.basename(entry.audioFile)
-      md += `\n*音频: [${audioFileName}](../audio/${stockCode}/${audioFileName}) (${entry.audioDuration || 0}秒)*\n`
-    }
-
-    return md
-  }
-
   private async parseStockNote(content: string): Promise<{ note: StockNote; needsBackfill: boolean }> {
     const normalized = content.replace(/\r\n/g, '\n')
     const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
@@ -911,7 +879,7 @@ export class NotesService {
     const frontMatter = yaml.load(match[1]) as Record<string, any>
     const body = match[2].trimStart()
     const fallbackDate = this.normalizeDate(frontMatter.updated_at, new Date())
-    const entries = this.parseEntries(body, fallbackDate)
+    const entries = parseEntriesFromMarkdown(body, fallbackDate, this.getEntryParseDeps())
     const stockCode = String(frontMatter.stock_code || '').trim()
     const rawStockName = String(frontMatter.stock_name || '').trim()
     const normalizedRawName = this.normalizeStockNameCandidate(rawStockName, stockCode)
@@ -937,286 +905,6 @@ export class NotesService {
       },
       needsBackfill
     }
-  }
-
-  private parseEntries(body: string, fallbackDate: Date): TimeEntry[] {
-    const lines = body.split('\n')
-    const entries: TimeEntry[] = []
-    let currentDate = ''
-    let pendingMeta: EntryMeta = {}
-
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i]
-      const dateMatch = line.match(/^## 📅\s+(\d{4}-\d{2}-\d{2})\s*$/)
-      if (dateMatch) {
-        currentDate = dateMatch[1]
-        continue
-      }
-
-      const metaMatch = line.match(/^<!--\s*(entry-id|event-time|created-at|input-type|category|operation-tag|tracking-status):\s*(.+?)\s*-->$/)
-      if (metaMatch) {
-        const key = metaMatch[1]
-        const value = metaMatch[2].trim()
-        if (key === 'entry-id') pendingMeta.id = value
-        if (key === 'event-time') pendingMeta.eventTime = value
-        if (key === 'created-at') pendingMeta.createdAt = value
-        if (key === 'input-type') pendingMeta.inputType = value
-        if (key === 'category') pendingMeta.category = value
-        if (key === 'operation-tag') pendingMeta.operationTag = value
-        if (key === 'tracking-status') pendingMeta.trackingStatus = value
-        continue
-      }
-
-      let headingTime = ''
-      let title = ''
-
-      const datetimeHeaderMatch = line.match(/^### 🕐\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*$/)
-      if (datetimeHeaderMatch) {
-        const fullDateTime = datetimeHeaderMatch[1]
-        headingTime = fullDateTime.slice(11, 16)
-        title = fullDateTime
-        if (!pendingMeta.eventTime) {
-          pendingMeta.eventTime = fullDateTime
-        }
-      } else {
-        const legacyHeaderMatch = line.match(/^### 🕐\s+(\d{2}:\d{2})\s+(.+)$/)
-        if (!legacyHeaderMatch) continue
-        headingTime = legacyHeaderMatch[1]
-        title = legacyHeaderMatch[2].trim()
-      }
-
-      const blockLines: string[] = []
-      let cursor = i + 1
-      while (cursor < lines.length) {
-        const nextLine = lines[cursor]
-        if (
-          nextLine.startsWith('### 🕐 ') ||
-          nextLine.startsWith('## 📅 ') ||
-          nextLine.startsWith('<!-- entry-id:') ||
-          nextLine.trim() === '---'
-        ) {
-          break
-        }
-        blockLines.push(nextLine)
-        cursor += 1
-      }
-
-      const entry = this.parseEntryBlock({
-        title,
-        headingTime,
-        currentDate,
-        fallbackDate,
-        lines: blockLines,
-        meta: pendingMeta
-      })
-
-      entries.push(entry)
-      pendingMeta = {}
-      i = cursor - 1
-    }
-
-    return entries
-  }
-
-  private parseEntryBlock(params: {
-    title: string
-    headingTime: string
-    currentDate: string
-    fallbackDate: Date
-    lines: string[]
-    meta: EntryMeta
-  }): TimeEntry {
-    const { title, headingTime, currentDate, fallbackDate, lines, meta } = params
-
-    let viewpoint: Viewpoint | undefined
-    let action: Action | undefined
-    let audioFile: string | undefined
-    let audioDuration: number | undefined
-    const keywords: string[] = []
-    const contentLines: string[] = []
-
-    let eventTimeLabel: string | undefined
-    let createdAtLabel: string | undefined
-    let inputTypeLabel: string | undefined
-    let categoryLabel: string | undefined
-    let operationTagLabel: string | undefined
-    let trackingStatusLabel: string | undefined
-
-    let inActionSection = false
-
-    for (const rawLine of lines) {
-      const line = rawLine.trimEnd()
-      const trimmed = line.trim()
-
-      if (trimmed === '---') {
-        continue
-      }
-
-      const eventTimeMatch = trimmed.match(/^>\s*\*\*事件时间\*\*:\s*(.+)$/)
-      if (eventTimeMatch) {
-        eventTimeLabel = eventTimeMatch[1].trim()
-        continue
-      }
-
-      const createdAtMatch = trimmed.match(/^>\s*\*\*记录时间\*\*:\s*(.+)$/)
-      if (createdAtMatch) {
-        createdAtLabel = createdAtMatch[1].trim()
-        continue
-      }
-
-      const inputTypeMatch = trimmed.match(/^>\s*\*\*记录来源\*\*:\s*(.+)$/)
-      if (inputTypeMatch) {
-        inputTypeLabel = inputTypeMatch[1].trim()
-        continue
-      }
-
-      const categoryMatch = trimmed.match(/^>\s*\*\*笔记类别\*\*:\s*(.+)$/)
-      if (categoryMatch) {
-        categoryLabel = categoryMatch[1].trim()
-        continue
-      }
-
-      const operationTagMatch = trimmed.match(/^>\s*\*\*操作打标\*\*:\s*(.+)$/)
-      if (operationTagMatch) {
-        operationTagLabel = operationTagMatch[1].trim()
-        continue
-      }
-
-      const trackingStatusMatch = trimmed.match(/^>\s*\*\*跟踪状态\*\*:\s*(.+)$/)
-      if (trackingStatusMatch) {
-        trackingStatusLabel = trackingStatusMatch[1].trim()
-        continue
-      }
-
-      const viewpointMatch = trimmed.match(
-        /^>\s*\*\*观点\*\*:\s*([^()|]+?)(?:\s*\(信心:\s*([0-9.]+)\))?(?:\s*\|\s*\*\*周期\*\*:\s*(.+))?$/
-      )
-      if (viewpointMatch) {
-        viewpoint = {
-          direction: viewpointMatch[1].trim(),
-          confidence: Number(viewpointMatch[2] || 0),
-          timeHorizon: viewpointMatch[3]?.trim() || '短线'
-        }
-        continue
-      }
-
-      const keywordMatch = trimmed.match(/^>\s*\*\*关键词\*\*:\s*(.+)$/)
-      if (keywordMatch) {
-        keywords.push(...keywordMatch[1].split(',').map((item) => item.trim()).filter(Boolean))
-        continue
-      }
-
-      if (trimmed === '**操作记录**:') {
-        inActionSection = true
-        action = action || { type: '观望' }
-        continue
-      }
-
-      if (inActionSection) {
-        const actionLineMatch = trimmed.match(/^- \*\*(买入|卖出|持有|观望)\*\*:\s*(.*)$/)
-        if (actionLineMatch) {
-          const details = actionLineMatch[2]
-          const quantityMatch = details.match(/(\d+)\s*股/)
-          const priceMatch = details.match(/@\s*([0-9.]+)/)
-          action = {
-            ...(action || { type: '观望' }),
-            type: actionLineMatch[1] as Action['type'],
-            quantity: quantityMatch ? Number(quantityMatch[1]) : undefined,
-            price: priceMatch ? Number(priceMatch[1]) : undefined
-          }
-          continue
-        }
-
-        const reasonMatch = trimmed.match(/^- \*\*理由\*\*:\s*(.+)$/)
-        if (reasonMatch) {
-          action = {
-            ...(action || { type: '观望' }),
-            reason: reasonMatch[1].trim()
-          }
-          continue
-        }
-
-        if (!trimmed) {
-          inActionSection = false
-          continue
-        }
-      }
-
-      const audioMatch = trimmed.match(/^\*音频:\s+\[(.+?)\]\((.+?)\)\s+\((\d+)秒\)\*$/)
-      if (audioMatch) {
-        audioFile = audioMatch[1]
-        audioDuration = Number(audioMatch[3])
-        continue
-      }
-
-      contentLines.push(rawLine)
-    }
-
-    const normalizedContent = normalizeNoteContent(this.stripTrailingSeparators(contentLines).join('\n').trim())
-    const eventTime = this.resolveEventTime({
-      metaEventTime: meta.eventTime,
-      lineEventTime: eventTimeLabel,
-      currentDate,
-      headingTime,
-      fallbackDate
-    })
-    const createdAt = this.normalizeDate(meta.createdAt ?? createdAtLabel, eventTime)
-    const inputType = this.normalizeInputType(meta.inputType ?? inputTypeLabel) ?? this.detectInputType(audioFile)
-
-    return {
-      id: meta.id || uuidv4(),
-      timestamp: eventTime,
-      eventTime,
-      createdAt,
-      inputType,
-      category: this.normalizeCategory(meta.category ?? categoryLabel),
-      operationTag: this.normalizeOperationTag(meta.operationTag ?? operationTagLabel, action),
-      trackingStatus: this.normalizeTrackingStatus(meta.trackingStatus ?? trackingStatusLabel),
-      title,
-      content: normalizedContent || title,
-      viewpoint: this.normalizeViewpoint(viewpoint ?? this.createDefaultViewpoint()),
-      action,
-      keywords,
-      audioFile,
-      audioDuration,
-      aiProcessed: false
-    }
-  }
-
-  private resolveEventTime(params: {
-    metaEventTime?: string
-    lineEventTime?: string
-    currentDate: string
-    headingTime: string
-    fallbackDate: Date
-  }): Date {
-    const { metaEventTime, lineEventTime, currentDate, headingTime, fallbackDate } = params
-
-    if (metaEventTime) {
-      return this.normalizeDate(metaEventTime, fallbackDate)
-    }
-    if (lineEventTime) {
-      return this.normalizeDate(lineEventTime, fallbackDate)
-    }
-    if (currentDate) {
-      return this.normalizeDate(`${currentDate} ${headingTime}`, fallbackDate)
-    }
-
-    const fallbackDateText = fallbackDate.toISOString().split('T')[0]
-    return this.normalizeDate(`${fallbackDateText} ${headingTime}`, fallbackDate)
-  }
-
-  private stripTrailingSeparators(lines: string[]): string[] {
-    const normalized = [...lines]
-    while (normalized.length > 0) {
-      const last = normalized[normalized.length - 1].trim()
-      if (!last || last === '---') {
-        normalized.pop()
-        continue
-      }
-      break
-    }
-    return normalized
   }
 
   private createDefaultViewpoint(): Viewpoint {

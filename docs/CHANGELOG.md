@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-04-05 (架构清理第三批：大文件职责拆分)
+
+### Changed
+- `DailyReviewService` 拆分摘要构建职责：
+  - 新增 `src/main/services/daily-review/content-factory.ts`，承接本地摘要构建、盘前草稿构建与 AI 合并逻辑（纯函数）。
+  - `daily-review/index.ts` 聚焦流程编排与 IO 调用，降低单文件认知负担。
+- `NotesService` 拆分条目编解码职责：
+  - 新增 `src/main/services/notes-entry-codec.ts`，承接条目 Markdown 序列化与反序列化解析。
+  - `notes.ts` 保留存储索引、读写流程与查询逻辑，减少混杂解析细节。
+- `DailyReviewView` 拆分 UI 渲染职责：
+  - 新增 `src/renderer/components/daily-review/types.ts`（类型与解析器）。
+  - 新增 `src/renderer/components/daily-review/DailyReviewDetailContent.tsx`（右侧详情渲染）。
+  - 新增 `src/renderer/components/daily-review/DailyReviewHistoryList.tsx`（左侧日志列表渲染）。
+  - 主视图 `DailyReviewView.tsx` 聚焦状态管理与交互事件。
+
+### Verification
+- `npm run build` 通过（`tsc + vite build`）。
+
 ## 2026-04-05 (架构清理第二批：Timeline 软下线收口与依赖瘦身)
 
 ### Changed
