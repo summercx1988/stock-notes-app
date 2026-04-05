@@ -3,6 +3,7 @@ import { notesAppService } from '../application/container'
 import type {
   TimeEntry,
   StockNote,
+  StockNoteSummary,
   TimelineItem,
   Viewpoint,
   Action,
@@ -117,6 +118,14 @@ ipcMain.handle('notes:getTimeline', async (_, filters?: {
       hasRange: Boolean(filters?.startDate || filters?.endDate)
     },
     () => notesAppService.getTimeline(filters)
+  )
+})
+
+ipcMain.handle('notes:getStockSummaries', async (): Promise<StockNoteSummary[]> => {
+  return withIpcLog(
+    'notes:getStockSummaries',
+    {},
+    () => notesAppService.getStockSummaries()
   )
 })
 

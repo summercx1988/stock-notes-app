@@ -2,16 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Input, List, Empty, Spin, message } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { useAppStore } from '../stores/app'
+import type { StockNoteSummary } from '../../shared/types'
 
 const Sidebar: React.FC = () => {
-  const DAILY_REVIEW_STOCK_CODE = '__DAILY_REVIEW__'
   const {
     stocks,
-    stockNotes,
     currentStockCode,
     setCurrentStock,
-    timeline,
-    setTimeline,
     setStocks,
     searchResults,
     setSearchResults,
@@ -20,6 +17,8 @@ const Sidebar: React.FC = () => {
 
   const [searchText, setSearchText] = useState('')
   const [localSearching, setLocalSearching] = useState(false)
+  const [stockSummaries, setStockSummaries] = useState<StockNoteSummary[]>([])
+  const [summariesLoading, setSummariesLoading] = useState(false)
 
   const normalizeStockCode = (value: string) => {
     const normalized = String(value || '').trim()
@@ -37,102 +36,37 @@ const Sidebar: React.FC = () => {
       .trim()
   }
 
-  const refreshTimeline = useCallback(async () => {
+  const refreshStockSummaries = useCallback(async () => {
+    setSummariesLoading(true)
     try {
-      const items = await window.api.notes.getTimeline()
-      setTimeline(items)
+      const summaries = await window.api.notes.getStockSummaries()
+      setStockSummaries(summaries)
+      const nextStocks = summaries.map((item) => ({
+        code: item.stockCode,
+        name: item.stockName,
+        market: item.market
+      }))
+      setStocks(nextStocks)
+      if (!currentStockCode && nextStocks.length > 0) {
+        setCurrentStock(nextStocks[0].code, nextStocks[0].name)
+      }
     } catch (error) {
-      console.error('Failed to refresh timeline:', error)
+      console.error('Failed to refresh stock summaries:', error)
+    } finally {
+      setSummariesLoading(false)
     }
-  }, [setTimeline])
+  }, [currentStockCode, setCurrentStock, setStocks])
 
   useEffect(() => {
-    refreshTimeline()
-  }, [refreshTimeline, stockNotes])
+    void refreshStockSummaries()
+  }, [refreshStockSummaries])
 
   useEffect(() => {
     const unsubscribe = window.api.notes.onChanged(() => {
-      void refreshTimeline()
+      void refreshStockSummaries()
     })
     return () => { unsubscribe() }
-  }, [refreshTimeline])
-
-  useEffect(() => {
-    let cancelled = false
-
-    const syncStocks = async () => {
-      const stockCodes = [...new Set(
-        timeline
-          .map((item) => item.stockCode)
-          .filter((code) => code !== DAILY_REVIEW_STOCK_CODE)
-      )]
-      
-      const codeToName = new Map<string, string>()
-      const codesNeedingLookup: string[] = []
-      
-      for (const code of stockCodes) {
-        const item = timeline.find((timelineItem) => timelineItem.stockCode === code)
-        const timelineName = item?.stockName || code
-        if (timelineName && timelineName !== code) {
-          codeToName.set(code, timelineName)
-        } else {
-          codesNeedingLookup.push(code)
-        }
-      }
-
-      if (codesNeedingLookup.length > 0) {
-        try {
-          const stockMap = await window.api.stock.getByCodes(codesNeedingLookup)
-          for (const code of codesNeedingLookup) {
-            const stock = stockMap[code]
-            if (stock) {
-              codeToName.set(code, stock.name)
-            }
-          }
-        } catch (error) {
-          console.error('Failed to batch lookup stocks:', error)
-        }
-      }
-
-      if (!cancelled) {
-        const stockList = stockCodes.map((code) => {
-          const name = codeToName.get(code) || code
-          return {
-            code,
-            name,
-            market: 'SH' as 'SH' | 'SZ' | 'BJ'
-          }
-        })
-
-        const uniqueByCode = new Map<string, { code: string; name: string; market: 'SH' | 'SZ' | 'BJ' }>()
-        for (const stock of stockList) {
-          const normalizedCode = normalizeStockCode(stock.code)
-          const normalizedName = normalizeStockName(stock.name, normalizedCode)
-          const existing = uniqueByCode.get(normalizedCode)
-          if (!existing || normalizedName.length > existing.name.length) {
-            uniqueByCode.set(normalizedCode, {
-              code: normalizedCode,
-              name: normalizedName || normalizedCode,
-              market: stock.market
-            })
-          }
-        }
-        const nextStocks = Array.from(uniqueByCode.values())
-        setStocks(nextStocks)
-        if (!currentStockCode && nextStocks.length > 0) {
-          setCurrentStock(nextStocks[0].code, nextStocks[0].name)
-        }
-      }
-    }
-
-    syncStocks().catch((error) => {
-      console.error('Failed to sync stocks:', error)
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [currentStockCode, setCurrentStock, setStocks, timeline])
+  }, [refreshStockSummaries])
 
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
@@ -175,12 +109,16 @@ const Sidebar: React.FC = () => {
 
   const noteCountByCode = useMemo(() => {
     const map = new Map<string, number>()
-    for (const item of timeline) {
+    for (const item of stockSummaries) {
       const code = normalizeStockCode(item.stockCode)
-      map.set(code, (map.get(code) || 0) + 1)
+      map.set(code, Number(item.noteCount || 0))
     }
     return map
-  }, [timeline])
+  }, [stockSummaries])
+
+  const totalNoteCount = useMemo(() => {
+    return stockSummaries.reduce((sum, item) => sum + Number(item.noteCount || 0), 0)
+  }, [stockSummaries])
 
   const getDisplayName = (item: { code: string; name: string }) => {
     const normalizedCode = normalizeStockCode(item.code)
@@ -227,38 +165,40 @@ const Sidebar: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-auto p-2">
-        {displayItems.length > 0 ? (
-          <List
-            dataSource={displayItems}
-            renderItem={(item: any) => (
-              <List.Item
-                className={`px-1 py-1 border-none bg-transparent cursor-pointer ${
-                  currentStockCode === item.code ? '' : ''
-                }`}
-                onClick={() => handleSelectStock(item.code, item.name)}
-              >
-                <div
-                  className={`w-full rounded-xl border px-3 py-3 text-center transition-all ${
-                    currentStockCode === item.code
-                      ? 'border-blue-300 bg-blue-50 shadow-sm'
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+        <Spin spinning={summariesLoading}>
+          {displayItems.length > 0 ? (
+            <List
+              dataSource={displayItems}
+              renderItem={(item: any) => (
+                <List.Item
+                  className={`px-1 py-1 border-none bg-transparent cursor-pointer ${
+                    currentStockCode === item.code ? '' : ''
                   }`}
+                  onClick={() => handleSelectStock(item.code, item.name)}
                 >
-                  <div className="font-medium text-slate-800">{getDisplayName(item)}</div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    共 {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
+                  <div
+                    className={`w-full rounded-xl border px-3 py-3 text-center transition-all ${
+                      currentStockCode === item.code
+                        ? 'border-blue-300 bg-blue-50 shadow-sm'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="font-medium text-slate-800">{getDisplayName(item)}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      共 {getNoteCount(item.code)} 条事件 · {item.market === 'SH' ? '沪' : item.market === 'SZ' ? '深' : '北'}
+                    </div>
                   </div>
-                </div>
-              </List.Item>
-            )}
-          />
-        ) : (
-          <Empty description="搜索股票开始记录" className="mt-8" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        )}
+                </List.Item>
+              )}
+            />
+          ) : (
+            <Empty description="搜索股票开始记录" className="mt-8" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          )}
+        </Spin>
       </div>
 
       <div className="p-2 border-t border-slate-200 text-xs text-slate-400 text-center">
-        {stocks.length} 只股票 · {timeline.length} 条笔记
+        {stocks.length} 只股票 · {totalNoteCount} 条笔记
       </div>
     </div>
   )

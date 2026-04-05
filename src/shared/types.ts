@@ -96,6 +96,15 @@ export interface Stock {
   sector?: string
 }
 
+export interface StockNoteSummary {
+  stockCode: string
+  stockName: string
+  market: 'SH' | 'SZ' | 'BJ'
+  noteCount: number
+  latestEventTime: string | null
+  latestTrackingStatus: TrackingStatus
+}
+
 export interface AIMode {
   current: 'local' | 'cloud' | 'auto'
   forced: boolean
@@ -214,7 +223,7 @@ export interface DailyReviewReminderIncludeSections {
 }
 
 export interface DailyReviewGenerationProgress {
-  operation: 'daily-summary' | 'pre-market' | 'weekly' | 'regenerate' | 'collect-to-notes' | 'archive'
+  operation: 'daily-summary' | 'pre-market' | 'weekly' | 'regenerate' | 'archive'
   stage: 'start' | 'collecting' | 'building-prompt' | 'ai-processing' | 'parsing' | 'saving' | 'processing' | 'completed' | 'error'
   progress: number
   message: string

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   NotesExportResult,
   NotesImportResult,
+  StockNoteSummary,
   ReviewEvaluateRequest,
   ReviewEvaluateResponse,
   ReviewSnapshotRequest,
@@ -44,6 +45,8 @@ const api = {
       ipcRenderer.invoke('notes:deleteEntry', stockCode, entryId),
     getTimeline: (filters?: unknown) =>
       ipcRenderer.invoke('notes:getTimeline', filters),
+    getStockSummaries: (): Promise<StockNoteSummary[]> =>
+      ipcRenderer.invoke('notes:getStockSummaries'),
     exportStock: (stockCode: string, outputDir: string): Promise<NotesExportResult> =>
       ipcRenderer.invoke('notes:exportStock', stockCode, outputDir),
     exportAll: (outputDir: string): Promise<NotesExportResult> =>
@@ -183,7 +186,6 @@ const api = {
     unarchiveEntry: (entryId: string) => ipcRenderer.invoke('daily-review:unarchive-entry', entryId),
     archiveBefore: (cutoffIso: string) => ipcRenderer.invoke('daily-review:archive-before', cutoffIso),
     regenerate: (entryId: string) => ipcRenderer.invoke('daily-review:regenerate', entryId),
-    collectToNotes: (entryId: string) => ipcRenderer.invoke('daily-review:collect-to-notes', entryId),
     getUnreadCount: () => ipcRenderer.invoke('daily-review:get-unread-count'),
     onGenerationProgress: (callback: (payload: DailyReviewGenerationProgress) => void) => {
       const handler = (_: unknown, payload: DailyReviewGenerationProgress) => callback(payload)

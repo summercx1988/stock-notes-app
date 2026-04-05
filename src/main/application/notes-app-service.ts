@@ -22,6 +22,7 @@ import type {
   ReviewVisualRequest,
   ReviewVisualResponse,
   StockNote,
+  StockNoteSummary,
   TimeEntry,
   TimelineItem,
   TimelineExplorerFilters,
@@ -113,6 +114,10 @@ export class NotesAppService {
 
   getTimeline(filters?: TimelineFilters): Promise<TimelineItem[]> {
     return this.notesService.getTimeline(filters)
+  }
+
+  getStockSummaries(): Promise<StockNoteSummary[]> {
+    return this.notesService.getStockSummaries()
   }
 
   getTimelineExplorer(filters?: TimelineExplorerFilters): Promise<TimelineExplorerResponse> {

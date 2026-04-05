@@ -813,7 +813,6 @@ const DailyReviewView: React.FC = () => {
     'pre-market': '盘前复习',
     'weekly': '周回顾',
     'regenerate': '重新生成',
-    'collect-to-notes': '收录笔记',
     'archive': '复盘归档'
   }), [])
 

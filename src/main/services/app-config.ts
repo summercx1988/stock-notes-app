@@ -45,9 +45,9 @@ const DEFAULT_SETTINGS: UserSettings = {
     }
   },
   feishu: {
-    enabled: true,
-    appId: 'cli_a9496c7813a1dbc8',
-    appSecret: '1CF9rURs8T1KD65oEvJzYbZktfeVzwLB',
+    enabled: false,
+    appId: '',
+    appSecret: '',
     encryptKey: '',
     verificationToken: ''
   }

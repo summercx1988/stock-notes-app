@@ -167,25 +167,6 @@ export function registerDailyReviewIPC(dailyReviewService: DailyReviewService): 
     }
   })
 
-  ipcMain.handle('daily-review:collect-to-notes', async (event, entryId: string) => {
-    if (!service) throw new Error('DailyReview service not initialized')
-    const startedAt = logStart('daily-review:collect-to-notes', { entryId })
-    try {
-      const result = await service.collectToNotes(entryId, (progress) => {
-        emitProgress(event, progress)
-      })
-      logSuccess('daily-review:collect-to-notes', startedAt, {
-        entryId,
-        created: result.created,
-        stockCodes: result.stockCodes
-      })
-      return { success: true, data: result }
-    } catch (error: any) {
-      logFailure('daily-review:collect-to-notes', startedAt, error, { entryId })
-      return { success: false, error: errorMessage(error) }
-    }
-  })
-
   ipcMain.handle('daily-review:get-unread-count', async () => {
     if (!service) throw new Error('DailyReview service not initialized')
     const startedAt = logStart('daily-review:get-unread-count')

@@ -16,7 +16,8 @@ import type {
   OperationTag,
   TrackingStatus,
   NotesExportResult,
-  NotesImportResult
+  NotesImportResult,
+  StockNoteSummary
 } from '../../shared/types'
 import { stockDatabase } from './stock-db'
 import { createTraceId, logPipelineEvent } from './pipeline-logger'
@@ -499,6 +500,38 @@ export class NotesService {
       extra: { total_items: sorted.length }
     })
     return sorted
+  }
+
+  async getStockSummaries(): Promise<StockNoteSummary[]> {
+    const stockCodes = await this.getAllStockCodes()
+    const summaries: StockNoteSummary[] = []
+
+    for (const stockCode of stockCodes) {
+      if (SYSTEM_STOCK_CODES.has(stockCode)) continue
+      const note = await this.getStockNote(stockCode)
+      if (!note || note.entries.length === 0) continue
+
+      const latestEntry = this.getLatestEntry(note.entries)
+      const latestEventTime = latestEntry ? this.getEntryEventTime(latestEntry).toISOString() : null
+
+      summaries.push({
+        stockCode: note.stockCode || stockCode,
+        stockName: note.stockName || stockCode,
+        market: note.market || 'SH',
+        noteCount: note.entries.length,
+        latestEventTime,
+        latestTrackingStatus: this.normalizeTrackingStatus(latestEntry?.trackingStatus)
+      })
+    }
+
+    summaries.sort((left, right) => {
+      const rightTime = right.latestEventTime ? new Date(right.latestEventTime).getTime() : 0
+      const leftTime = left.latestEventTime ? new Date(left.latestEventTime).getTime() : 0
+      if (rightTime !== leftTime) return rightTime - leftTime
+      return left.stockCode.localeCompare(right.stockCode)
+    })
+
+    return summaries
   }
 
   async getTimelineExplorer(filters?: TimelineExplorerFilters): Promise<TimelineExplorerResponse> {

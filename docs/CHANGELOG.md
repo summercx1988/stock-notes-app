@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-04-05 (架构清理第一批：侧栏轻量化与遗留能力收口)
+
+### Added
+- 新增轻量摘要接口 `notes:getStockSummaries`（`NotesService -> NotesAppService -> IPC -> preload`）：
+  - 返回每只股票的笔记总数、最近事件时间、最新跟踪状态等摘要信息。
+  - 为侧栏等轻量展示场景提供替代全量 timeline 的数据源。
+
+### Changed
+- 侧栏改为基于股票摘要刷新，不再通过 `notes:getTimeline` 做全量事件扫描来计算股票数和笔记数：
+  - 降低笔记变更后的主进程读取与渲染压力。
+  - 底部统计改为摘要聚合后的“股票数 / 笔记数”。
+- 默认配置中的飞书凭据改为空值，并默认关闭远程录入，避免明文默认密钥进入运行配置。
+
+### Removed
+- 清理每日复盘 `collect-to-notes` 遗留链路：
+  - 移除主进程 `daily-review:collect-to-notes` IPC 处理。
+  - 移除 preload 暴露的 `dailyReview.collectToNotes`。
+  - 移除 `DailyReviewService` 中对应收录实现及相关辅助方法。
+  - 移除进度类型与页面标签中的 `collect-to-notes` 操作项。
+
 ## 2026-04-05 (事件纵览重建为事件日历，时间轴入口下线)
 
 ### Changed
