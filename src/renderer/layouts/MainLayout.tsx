@@ -4,7 +4,6 @@ import { useAppStore } from '../stores/app'
 import Sidebar from '../components/Sidebar'
 import Header from '../components/Header'
 import StockNoteView from '../components/StockNoteView'
-import StockTimelineView from '../components/StockTimelineView'
 import TimelineExplorerView from '../components/TimelineExplorerView'
 import ReviewAnalysisView from '../components/ReviewAnalysisView'
 import DailyReviewView from '../components/DailyReviewView'
@@ -232,7 +231,6 @@ const MainLayout: React.FC = () => {
             ) : null}
             <Content className="min-w-0 overflow-hidden bg-white">
               {activeModule === 'notes' && <StockNoteView />}
-              {activeModule === 'timeline' && <StockTimelineView />}
               {activeModule === 'explorer' && <TimelineExplorerView />}
               {activeModule === 'review' && <ReviewAnalysisView />}
               {activeModule === 'daily-review' && <DailyReviewView />}

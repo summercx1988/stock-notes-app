@@ -124,17 +124,6 @@ export class NotesAppService {
     return this.notesService.getTimelineExplorer(filters)
   }
 
-  async updateLatestTrackingStatus(stockCode: string, trackingStatus?: TrackingStatus): Promise<TimeEntry> {
-    const entry = await this.notesService.updateLatestTrackingStatus(stockCode, trackingStatus)
-    notifyNotesChanged({
-      stockCode,
-      entryId: entry.id,
-      action: 'updated',
-      source: 'local'
-    })
-    return entry
-  }
-
   exportStockNote(stockCode: string, outputDir: string): Promise<NotesExportResult> {
     return this.notesService.exportStockNote(stockCode, outputDir)
   }

@@ -606,20 +606,6 @@ export class NotesService {
     }
   }
 
-  async updateLatestTrackingStatus(stockCode: string, trackingStatus?: TrackingStatus): Promise<TimeEntry> {
-    const stockNote = await this.getStockNote(stockCode)
-    if (!stockNote || stockNote.entries.length === 0) {
-      throw new Error(`Stock note not found: ${stockCode}`)
-    }
-    const latestEntry = this.getLatestEntry(stockNote.entries)
-    if (!latestEntry) {
-      throw new Error(`Latest entry not found: ${stockCode}`)
-    }
-    return this.updateEntry(stockCode, latestEntry.id, {
-      trackingStatus: this.normalizeTrackingStatus(trackingStatus)
-    })
-  }
-
   async exportStockNote(stockCode: string, outputDir: string): Promise<NotesExportResult> {
     const note = await this.getStockNote(stockCode)
     if (!note) {

@@ -1,8 +1,8 @@
 import { create } from 'zustand'
-import type { StockNote, TimeEntry, Stock, TimelineItem, SearchResult } from '../../shared/types'
+import type { StockNote, TimeEntry, Stock, SearchResult } from '../../shared/types'
 
 export type RecordingStatus = 'idle' | 'requesting' | 'recording' | 'processing' | 'error'
-export type AppModule = 'notes' | 'timeline' | 'explorer' | 'review' | 'daily-review'
+export type AppModule = 'notes' | 'explorer' | 'review' | 'daily-review'
 
 interface RecordingState {
   status: RecordingStatus
@@ -17,7 +17,6 @@ interface AppState {
   currentStockCode: string | null
   currentStockName: string | null
   currentEntry: TimeEntry | null
-  timeline: TimelineItem[]
   stocks: Stock[]
   darkMode: boolean
   loading: boolean
@@ -31,7 +30,6 @@ interface AppState {
   getStockNote: (stockCode: string) => StockNote | undefined
   setCurrentStock: (code: string | null, name?: string | null) => void
   setCurrentEntry: (entry: TimeEntry | null) => void
-  setTimeline: (items: TimelineItem[]) => void
   setStocks: (stocks: Stock[]) => void
   setDarkMode: (dark: boolean) => void
   setLoading: (loading: boolean) => void
@@ -58,7 +56,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentStockCode: null,
   currentStockName: null,
   currentEntry: null,
-  timeline: [],
   stocks: [],
   darkMode: false,
   loading: false,
@@ -82,8 +79,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
 
   setCurrentEntry: (entry) => set({ currentEntry: entry }),
-
-  setTimeline: (items) => set({ timeline: items }),
 
   setStocks: (stocks) => set({ stocks }),
 

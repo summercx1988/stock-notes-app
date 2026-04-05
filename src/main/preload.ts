@@ -145,9 +145,7 @@ const api = {
 
   timeline: {
     queryExplorer: (filters?: TimelineExplorerFilters): Promise<TimelineExplorerResponse> =>
-      ipcRenderer.invoke('timeline:queryExplorer', filters),
-    updateLatestTrackingStatus: (stockCode: string, trackingStatus?: string) =>
-      ipcRenderer.invoke('timeline:updateLatestTrackingStatus', stockCode, trackingStatus)
+      ipcRenderer.invoke('timeline:queryExplorer', filters)
   },
 
   system: {

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-04-05 (架构清理第二批：Timeline 软下线收口与依赖瘦身)
+
+### Changed
+- 渲染主布局移除 `timeline` 模块渲染分支，`AppModule` 与状态存储同步下线 `timeline`，避免隐藏入口残留路径继续参与页面切换。
+- `timeline` 预加载 API 收口为只读查询能力，移除 `updateLatestTrackingStatus` 暴露，降低跨进程写接口维护面。
+
+### Removed
+- 清理 `timeline:updateLatestTrackingStatus` 全链路：
+  - 移除 IPC handler。
+  - 移除 `NotesAppService` 对应桥接方法。
+  - 移除 `NotesService` 对应写入实现。
+- 删除未使用的 `echarts` 依赖，减少安装体积与依赖面。
+
 ## 2026-04-05 (架构清理第一批：侧栏轻量化与遗留能力收口)
 
 ### Added
