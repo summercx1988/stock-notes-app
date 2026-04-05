@@ -85,8 +85,7 @@ const Header: React.FC = () => {
           onChange={(value) => setActiveModule(value as AppModule)}
           options={[
             { label: '盯盘笔记', value: 'notes' },
-            { label: '事件时间轴', value: 'timeline' },
-            { label: '事件纵览', value: 'explorer' },
+            { label: '事件日历', value: 'explorer' },
             { label: '复盘分析', value: 'review' },
             { label: '每日复盘', value: 'daily-review' }
           ]}

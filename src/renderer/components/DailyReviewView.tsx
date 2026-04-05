@@ -183,6 +183,7 @@ const DailyReviewView: React.FC = () => {
 
   const parsedCacheRef = useRef<Map<string, ParsedCache>>(new Map())
   const loadDataRef = useRef<() => Promise<void>>()
+  const loadRequestSeqRef = useRef(0)
 
   const getEntryRawText = (entry: TimeEntry): string => String(entry.content || '').trim()
 
@@ -212,6 +213,7 @@ const DailyReviewView: React.FC = () => {
   }, [])
 
   const loadData = useCallback(async () => {
+    const requestSeq = ++loadRequestSeqRef.current
     try {
       const dailyReview = await window.api.config.get('dailyReview') as UserSettings['dailyReview'] | undefined
       const lookbackDays = Math.max(1, Number(dailyReview?.analysisLookbackDays || 3))
@@ -230,6 +232,7 @@ const DailyReviewView: React.FC = () => {
       const nextEntries = historyResult?.success && Array.isArray(historyResult.data)
         ? historyResult.data as TimeEntry[]
         : []
+      if (requestSeq !== loadRequestSeqRef.current) return
 
       clearParsedCache()
       setAnalysisLookbackDays(lookbackDays)
@@ -241,6 +244,7 @@ const DailyReviewView: React.FC = () => {
         return nextEntries[0]?.id || null
       })
     } catch (error) {
+      if (requestSeq !== loadRequestSeqRef.current) return
       console.error('[DailyReviewView] Failed to load data:', error)
     }
   }, [clearParsedCache, includeArchived])
@@ -474,6 +478,8 @@ const DailyReviewView: React.FC = () => {
         return
       }
       message.success('已删除复盘记录')
+      setHistoryEntries((current) => current.filter((entry) => entry.id !== entryId))
+      setSelectedEntryIds((current) => current.filter((id) => id !== entryId))
       if (activeEntryId === entryId) {
         setActiveEntryId(null)
       }
@@ -493,6 +499,8 @@ const DailyReviewView: React.FC = () => {
       }
       const deleted = Number(result?.data?.deleted || 0)
       message.success(`已删除 ${deleted} 条复盘记录`)
+      const selectedSet = new Set(selectedEntryIds)
+      setHistoryEntries((current) => current.filter((entry) => !selectedSet.has(entry.id)))
       setSelectedEntryIds([])
       if (activeEntryId && selectedEntryIds.includes(activeEntryId)) {
         setActiveEntryId(null)
