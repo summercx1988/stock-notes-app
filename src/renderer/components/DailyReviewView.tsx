@@ -19,7 +19,6 @@ import {
   AlertOutlined,
   BulbOutlined,
   EyeOutlined,
-  InboxOutlined,
   DeleteOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -31,7 +30,8 @@ import type {
 } from '../../shared/types'
 
 const { Title, Text, Paragraph } = Typography
-const HISTORY_LOOKBACK_DAYS = 30
+const HISTORY_LOOKBACK_DAYS = 14
+const ARCHIVE_VIEW_LOOKBACK_DAYS = 180
 
 interface ReviewGenerationMeta {
   generationMode?: 'local' | 'hybrid'
@@ -172,7 +172,9 @@ const isPreMarketData = (value: unknown): value is PreMarketData => {
 const DailyReviewView: React.FC = () => {
   const [historyEntries, setHistoryEntries] = useState<TimeEntry[]>([])
   const [generating, setGenerating] = useState(false)
-  const [collectingEntryId, setCollectingEntryId] = useState<string | null>(null)
+  const [archivingEntryId, setArchivingEntryId] = useState<string | null>(null)
+  const [archivingHistory, setArchivingHistory] = useState(false)
+  const [includeArchived, setIncludeArchived] = useState(false)
   const [analysisLookbackDays, setAnalysisLookbackDays] = useState(3)
   const [taskProgress, setTaskProgress] = useState<DailyReviewGenerationProgress | null>(null)
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([])
@@ -213,14 +215,15 @@ const DailyReviewView: React.FC = () => {
     try {
       const dailyReview = await window.api.config.get('dailyReview') as UserSettings['dailyReview'] | undefined
       const lookbackDays = Math.max(1, Number(dailyReview?.analysisLookbackDays || 3))
+      const historyWindowDays = includeArchived ? ARCHIVE_VIEW_LOOKBACK_DAYS : HISTORY_LOOKBACK_DAYS
       const historyStartDate = dayjs()
-        .subtract(HISTORY_LOOKBACK_DAYS - 1, 'day')
+        .subtract(historyWindowDays - 1, 'day')
         .startOf('day')
         .toISOString()
       const historyEndDate = new Date().toISOString()
 
       const [historyResult, generationStatusResult] = await Promise.all([
-        window.api.dailyReview.getHistory(historyStartDate, historyEndDate),
+        window.api.dailyReview.getHistory(historyStartDate, historyEndDate, includeArchived),
         window.api.dailyReview.getGenerationStatus()
       ])
 
@@ -240,7 +243,7 @@ const DailyReviewView: React.FC = () => {
     } catch (error) {
       console.error('[DailyReviewView] Failed to load data:', error)
     }
-  }, [clearParsedCache])
+  }, [clearParsedCache, includeArchived])
 
   loadDataRef.current = loadData
 
@@ -354,28 +357,89 @@ const DailyReviewView: React.FC = () => {
     }
   }, [loadData])
 
-  const handleCollectToNotes = useCallback(async (entryId: string) => {
-    setCollectingEntryId(entryId)
+  const handleArchiveEntry = useCallback(async (entryId: string) => {
+    setArchivingEntryId(entryId)
     setTaskProgress({
-      operation: 'collect-to-notes',
+      operation: 'archive',
       stage: 'start',
       progress: 1,
-      message: '准备收录到股票笔记'
+      message: '准备归档复盘记录'
     })
     try {
-      const result = await window.api.dailyReview.collectToNotes(entryId)
-      if (result?.success) {
-        const created = Number(result.data?.created || 0)
-        message.success(created > 0 ? `已收录到 ${created} 条股票笔记` : '收录完成')
-      } else {
-        message.error(`收录失败: ${result?.error || '未知错误'}`)
+      const result = await window.api.dailyReview.archiveEntry(entryId)
+      if (!result?.success) {
+        const errorText = result?.error || '未知错误'
+        message.error(`归档失败: ${errorText}`)
+        setTaskProgress({
+          operation: 'archive',
+          stage: 'error',
+          progress: 100,
+          message: `归档失败: ${errorText}`
+        })
+        return
       }
+      message.success('已归档复盘记录')
+      if (activeEntryId === entryId && !includeArchived) {
+        setActiveEntryId(null)
+      }
+      await loadData()
+      setTaskProgress({
+        operation: 'archive',
+        stage: 'completed',
+        progress: 100,
+        message: '归档完成'
+      })
     } catch (error: any) {
-      message.error(`收录失败: ${error.message}`)
+      message.error(`归档失败: ${error.message}`)
+      setTaskProgress({
+        operation: 'archive',
+        stage: 'error',
+        progress: 100,
+        message: `归档失败: ${error.message}`
+      })
     } finally {
-      setCollectingEntryId(null)
+      setArchivingEntryId(null)
+      window.setTimeout(() => {
+        setTaskProgress((current) => (current?.operation === 'archive' ? null : current))
+      }, 1200)
     }
-  }, [])
+  }, [activeEntryId, includeArchived, loadData])
+
+  const handleUnarchiveEntry = useCallback(async (entryId: string) => {
+    setArchivingEntryId(entryId)
+    try {
+      const result = await window.api.dailyReview.unarchiveEntry(entryId)
+      if (!result?.success) {
+        message.error(`取消归档失败: ${result?.error || '未知错误'}`)
+        return
+      }
+      message.success('已取消归档')
+      await loadData()
+    } catch (error: any) {
+      message.error(`取消归档失败: ${error.message}`)
+    } finally {
+      setArchivingEntryId(null)
+    }
+  }, [loadData])
+
+  const handleArchiveOlderEntries = useCallback(async () => {
+    setArchivingHistory(true)
+    try {
+      const cutoffIso = dayjs().subtract(HISTORY_LOOKBACK_DAYS - 1, 'day').startOf('day').toISOString()
+      const result = await window.api.dailyReview.archiveBefore(cutoffIso)
+      if (!result?.success) {
+        message.error(`归档失败: ${result?.error || '未知错误'}`)
+        return
+      }
+      const archived = Number(result?.data?.archived || 0)
+      message.success(archived > 0 ? `已归档 ${archived} 条两周前复盘` : '没有可归档的历史复盘')
+      await loadData()
+    } catch (error: any) {
+      message.error(`归档失败: ${error.message}`)
+    } finally {
+      setArchivingHistory(false)
+    }
+  }, [loadData])
 
   const handleRegenerate = useCallback(async (entryId: string) => {
     setGenerating(true)
@@ -741,7 +805,8 @@ const DailyReviewView: React.FC = () => {
     'pre-market': '盘前复习',
     'weekly': '周回顾',
     'regenerate': '重新生成',
-    'collect-to-notes': '收录笔记'
+    'collect-to-notes': '收录笔记',
+    'archive': '复盘归档'
   }), [])
 
   const formatStatusTime = useCallback((value: string | null | undefined): string => {
@@ -780,6 +845,7 @@ const DailyReviewView: React.FC = () => {
               <div className="cursor-pointer" onClick={() => setActiveEntryId(entry.id)}>
                 <Space wrap size={[6, 6]}>
                   <Tag color={categoryColor}>{displayCategory === '其他' ? entry.category : displayCategory}</Tag>
+                  {entry.trackingStatus === '已归档' ? <Tag>已归档</Tag> : null}
                   {entry.trackingStatus === '未读' ? <Tag color="processing">未读</Tag> : null}
                   {meta?.generationMode === 'local' ? <Tag>本地</Tag> : null}
                   {meta?.aiStatus === 'fallback' ? <Tag color="warning">AI失败</Tag> : null}
@@ -797,13 +863,29 @@ const DailyReviewView: React.FC = () => {
               <Button size="small" type="link" onClick={() => setActiveEntryId(entry.id)}>
                 查看
               </Button>
-              <CheckCircleOutlined
-                className="text-gray-400 hover:text-green-500 cursor-pointer"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  void handleMarkAsRead(entry.id)
+              {entry.trackingStatus !== '已归档' ? (
+                <CheckCircleOutlined
+                  className="text-gray-400 hover:text-green-500 cursor-pointer"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void handleMarkAsRead(entry.id)
+                  }}
+                />
+              ) : null}
+              <Button
+                size="small"
+                type="link"
+                loading={archivingEntryId === entry.id}
+                onClick={() => {
+                  if (entry.trackingStatus === '已归档') {
+                    void handleUnarchiveEntry(entry.id)
+                  } else {
+                    void handleArchiveEntry(entry.id)
+                  }
                 }}
-              />
+              >
+                {entry.trackingStatus === '已归档' ? '取消归档' : '归档'}
+              </Button>
               <Popconfirm
                 title="确认删除这条复盘记录？"
                 okText="删除"
@@ -820,7 +902,18 @@ const DailyReviewView: React.FC = () => {
         </div>
       )
     })
-  }, [historyEntries, activeEntryId, selectedEntryIds, handleToggleSelected, handleMarkAsRead, handleDeleteEntry, getOrParseEntry])
+  }, [
+    historyEntries,
+    activeEntryId,
+    selectedEntryIds,
+    handleToggleSelected,
+    handleMarkAsRead,
+    handleDeleteEntry,
+    handleArchiveEntry,
+    handleUnarchiveEntry,
+    getOrParseEntry,
+    archivingEntryId
+  ])
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -829,7 +922,10 @@ const DailyReviewView: React.FC = () => {
           <Space direction="vertical" size={2}>
             <Title level={4} className="m-0">📋 每日复盘</Title>
             <Text type="secondary">
-              复盘分析只看近 {analysisLookbackDays} 天（T-{analysisLookbackDays}），日志展示最近 {HISTORY_LOOKBACK_DAYS} 天
+              复盘分析只看近 {analysisLookbackDays} 天（T-{analysisLookbackDays}），
+              {includeArchived
+                ? `日志查看近 ${ARCHIVE_VIEW_LOOKBACK_DAYS} 天（含归档）`
+                : `日志默认展示近 ${HISTORY_LOOKBACK_DAYS} 天（未归档）`}
             </Text>
           </Space>
 
@@ -897,12 +993,26 @@ const DailyReviewView: React.FC = () => {
         ) : null}
       </div>
 
-      <div className="flex-1 overflow-hidden p-4">
-        <div className="grid h-full gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="flex-1 min-h-0 overflow-hidden p-4">
+        <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
           <Card
             title={`🗂️ 复盘日志 (${historyEntries.length})`}
             extra={
               <Space>
+                <Checkbox checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)}>
+                  显示归档
+                </Checkbox>
+                <Popconfirm
+                  title={`确认归档 ${HISTORY_LOOKBACK_DAYS} 天前复盘记录？`}
+                  description="归档后默认不显示，但仍可在“显示归档”中查看与删除。"
+                  okText="归档"
+                  cancelText="取消"
+                  onConfirm={() => void handleArchiveOlderEntries()}
+                >
+                  <Button size="small" loading={archivingHistory}>
+                    归档两周前
+                  </Button>
+                </Popconfirm>
                 <Button
                   size="small"
                   onClick={async () => {
@@ -940,16 +1050,16 @@ const DailyReviewView: React.FC = () => {
               </Space>
             }
             size="small"
-            className="h-full"
-            bodyStyle={{ height: 'calc(100% - 57px)', padding: 12 }}
+            className="h-full min-h-0"
+            bodyStyle={{ height: 'calc(100% - 57px)', padding: 12, overflow: 'hidden' }}
           >
             {historyEntries.length > 0 ? (
-              <div className="h-full space-y-2 overflow-auto pr-1">
+              <div className="app-scroll-pane h-full min-h-0 space-y-2 overflow-y-scroll overflow-x-hidden pr-1">
                 {historyRowRenderers}
               </div>
             ) : (
               <div className="flex h-full items-center justify-center">
-                <Empty description="最近 30 天暂无复盘日志">
+                <Empty description={includeArchived ? `最近 ${ARCHIVE_VIEW_LOOKBACK_DAYS} 天暂无复盘日志` : `最近 ${HISTORY_LOOKBACK_DAYS} 天暂无复盘日志`}>
                   <Button
                     type="primary"
                     icon={<ReloadOutlined />}
@@ -991,16 +1101,23 @@ const DailyReviewView: React.FC = () => {
             ) : '复盘详情'}
             extra={activeEntry ? (
               <Space wrap>
-                <Button size="small" onClick={() => void handleMarkAsRead(activeEntry.id)}>
-                  标记已读
-                </Button>
+                {activeEntry.trackingStatus !== '已归档' ? (
+                  <Button size="small" onClick={() => void handleMarkAsRead(activeEntry.id)}>
+                    标记已读
+                  </Button>
+                ) : null}
                 <Button
                   size="small"
-                  icon={<InboxOutlined />}
-                  loading={collectingEntryId === activeEntry.id}
-                  onClick={() => void handleCollectToNotes(activeEntry.id)}
+                  loading={archivingEntryId === activeEntry.id}
+                  onClick={() => {
+                    if (activeEntry.trackingStatus === '已归档') {
+                      void handleUnarchiveEntry(activeEntry.id)
+                    } else {
+                      void handleArchiveEntry(activeEntry.id)
+                    }
+                  }}
                 >
-                  收录到笔记
+                  {activeEntry.trackingStatus === '已归档' ? '取消归档' : '复盘归档'}
                 </Button>
                 <Button
                   size="small"
@@ -1023,7 +1140,7 @@ const DailyReviewView: React.FC = () => {
               </Space>
             ) : null}
             size="small"
-            className="h-full"
+            className="h-full min-h-0"
             bodyStyle={{ height: 'calc(100% - 57px)', overflow: 'auto' }}
           >
             {activeEntry ? (

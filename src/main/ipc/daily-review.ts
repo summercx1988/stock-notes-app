@@ -106,17 +106,19 @@ export function registerDailyReviewIPC(dailyReviewService: DailyReviewService): 
     }
   })
 
-  ipcMain.handle('daily-review:get-history', async (_event, startDate?: string, endDate?: string) => {
+  ipcMain.handle('daily-review:get-history', async (_event, startDate?: string, endDate?: string, includeArchived?: boolean) => {
     if (!service) throw new Error('DailyReview service not initialized')
-    const startedAt = logStart('daily-review:get-history', { startDate, endDate })
+    const startedAt = logStart('daily-review:get-history', { startDate, endDate, includeArchived: Boolean(includeArchived) })
     try {
       const start = startDate ? new Date(startDate) : undefined
       const end = endDate ? new Date(endDate) : undefined
-      const entries = await service.getReviewHistory(start || new Date(0), end || new Date())
+      const entries = await service.getReviewHistory(start || new Date(0), end || new Date(), {
+        includeArchived: Boolean(includeArchived)
+      })
       logSuccess('daily-review:get-history', startedAt, { count: entries.length })
       return { success: true, data: entries }
     } catch (error: any) {
-      logFailure('daily-review:get-history', startedAt, error, { startDate, endDate })
+      logFailure('daily-review:get-history', startedAt, error, { startDate, endDate, includeArchived: Boolean(includeArchived) })
       return { success: false, error: errorMessage(error) }
     }
   })
@@ -233,6 +235,49 @@ export function registerDailyReviewIPC(dailyReviewService: DailyReviewService): 
       return { success: true, data: { deleted } }
     } catch (error: any) {
       logFailure('daily-review:delete-entries', startedAt, error, { count: safeIds.length })
+      return { success: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('daily-review:archive-entry', async (_event, entryId: string) => {
+    if (!service) throw new Error('DailyReview service not initialized')
+    const startedAt = logStart('daily-review:archive-entry', { entryId })
+    try {
+      await service.archiveEntry(entryId)
+      logSuccess('daily-review:archive-entry', startedAt, { entryId })
+      return { success: true }
+    } catch (error: any) {
+      logFailure('daily-review:archive-entry', startedAt, error, { entryId })
+      return { success: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('daily-review:unarchive-entry', async (_event, entryId: string) => {
+    if (!service) throw new Error('DailyReview service not initialized')
+    const startedAt = logStart('daily-review:unarchive-entry', { entryId })
+    try {
+      await service.unarchiveEntry(entryId)
+      logSuccess('daily-review:unarchive-entry', startedAt, { entryId })
+      return { success: true }
+    } catch (error: any) {
+      logFailure('daily-review:unarchive-entry', startedAt, error, { entryId })
+      return { success: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('daily-review:archive-before', async (_event, cutoffIso: string) => {
+    if (!service) throw new Error('DailyReview service not initialized')
+    const startedAt = logStart('daily-review:archive-before', { cutoffIso })
+    try {
+      const cutoffDate = new Date(cutoffIso)
+      if (Number.isNaN(cutoffDate.getTime())) {
+        throw new Error('无效的归档时间参数')
+      }
+      const archived = await service.archiveEntriesBefore(cutoffDate)
+      logSuccess('daily-review:archive-before', startedAt, { cutoffIso, archived })
+      return { success: true, data: { archived } }
+    } catch (error: any) {
+      logFailure('daily-review:archive-before', startedAt, error, { cutoffIso })
       return { success: false, error: errorMessage(error) }
     }
   })

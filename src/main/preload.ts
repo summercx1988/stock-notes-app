@@ -171,14 +171,17 @@ const api = {
     generatePreMarket: () => ipcRenderer.invoke('daily-review:generate-premarket'),
     getToday: () => ipcRenderer.invoke('daily-review:get-today'),
     getPending: () => ipcRenderer.invoke('daily-review:get-pending'),
-    getHistory: (startDate?: string, endDate?: string) =>
-      ipcRenderer.invoke('daily-review:get-history', startDate, endDate),
+    getHistory: (startDate?: string, endDate?: string, includeArchived?: boolean) =>
+      ipcRenderer.invoke('daily-review:get-history', startDate, endDate, includeArchived),
     getGenerationStatus: (): Promise<{ success: boolean; data?: DailyReviewGenerationStatus; error?: string }> =>
       ipcRenderer.invoke('daily-review:get-generation-status'),
     markAsRead: (entryId: string) => ipcRenderer.invoke('daily-review:mark-read', entryId),
     markAllAsRead: () => ipcRenderer.invoke('daily-review:mark-all-read'),
     deleteEntry: (entryId: string) => ipcRenderer.invoke('daily-review:delete-entry', entryId),
     deleteEntries: (entryIds: string[]) => ipcRenderer.invoke('daily-review:delete-entries', entryIds),
+    archiveEntry: (entryId: string) => ipcRenderer.invoke('daily-review:archive-entry', entryId),
+    unarchiveEntry: (entryId: string) => ipcRenderer.invoke('daily-review:unarchive-entry', entryId),
+    archiveBefore: (cutoffIso: string) => ipcRenderer.invoke('daily-review:archive-before', cutoffIso),
     regenerate: (entryId: string) => ipcRenderer.invoke('daily-review:regenerate', entryId),
     collectToNotes: (entryId: string) => ipcRenderer.invoke('daily-review:collect-to-notes', entryId),
     getUnreadCount: () => ipcRenderer.invoke('daily-review:get-unread-count'),

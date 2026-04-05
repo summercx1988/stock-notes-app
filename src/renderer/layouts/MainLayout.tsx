@@ -81,7 +81,6 @@ const MainLayout: React.FC = () => {
   const [reminderSections, setReminderSections] = useState<DailyReviewReminderIncludeSections>(DEFAULT_REMINDER_SECTIONS)
   const [reminderConfig, setReminderConfig] = useState(DEFAULT_REMINDER_CONFIG)
   const [markingReminderRead, setMarkingReminderRead] = useState(false)
-  const [collectingReminder, setCollectingReminder] = useState(false)
   const layoutRef = useRef<HTMLDivElement | null>(null)
 
   const shouldShowReminderNow = (timeText: string, weekdaysOnly: boolean) => {
@@ -210,23 +209,6 @@ const MainLayout: React.FC = () => {
     }
   }
 
-  const handleCollectReminderToNotes = async (entryId: string) => {
-    setCollectingReminder(true)
-    try {
-      const result = await window.api.dailyReview.collectToNotes(entryId)
-      if (result?.success) {
-        const count = Number(result.data?.created || 0)
-        message.success(count > 0 ? `已收录到 ${count} 条股票笔记` : '收录完成')
-      } else {
-        message.error(`收录失败: ${result?.error || '未知错误'}`)
-      }
-    } catch (error: any) {
-      message.error(`收录失败: ${error.message}`)
-    } finally {
-      setCollectingReminder(false)
-    }
-  }
-
   return (
     <Layout className="h-screen bg-slate-100">
       <div className="h-full p-3 md:p-4">
@@ -263,10 +245,8 @@ const MainLayout: React.FC = () => {
         entry={reminderEntry}
         includeSections={reminderSections}
         marking={markingReminderRead}
-        collecting={collectingReminder}
         onClose={() => setReminderOpen(false)}
         onMarkRead={handleMarkReminderRead}
-        onCollect={handleCollectReminderToNotes}
         onOpenDailyReview={() => {
           setReminderOpen(false)
           setActiveModule('daily-review')

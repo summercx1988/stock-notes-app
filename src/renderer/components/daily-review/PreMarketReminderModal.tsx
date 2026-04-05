@@ -1,7 +1,7 @@
 import React from 'react'
 import { Alert, Button, Modal, Space, Tag, Typography } from 'antd'
 import dayjs from 'dayjs'
-import { ClockCircleOutlined, InboxOutlined } from '@ant-design/icons'
+import { ClockCircleOutlined } from '@ant-design/icons'
 import type { DailyReviewReminderIncludeSections, TimeEntry } from '../../../shared/types'
 
 const { Text, Paragraph } = Typography
@@ -48,10 +48,8 @@ interface PreMarketReminderModalProps {
   entry: TimeEntry | null
   includeSections: DailyReviewReminderIncludeSections
   marking: boolean
-  collecting: boolean
   onClose: () => void
   onMarkRead: (entryId: string) => void
-  onCollect: (entryId: string) => void
   onOpenDailyReview: () => void
 }
 
@@ -75,10 +73,8 @@ const PreMarketReminderModal: React.FC<PreMarketReminderModalProps> = ({
   entry,
   includeSections,
   marking,
-  collecting,
   onClose,
   onMarkRead,
-  onCollect,
   onOpenDailyReview
 }) => {
   const data = parseData(entry)
@@ -106,14 +102,6 @@ const PreMarketReminderModal: React.FC<PreMarketReminderModalProps> = ({
         </Button>,
         <Button key="open" onClick={onOpenDailyReview}>
           查看每日复盘
-        </Button>,
-        <Button
-          key="collect"
-          icon={<InboxOutlined />}
-          loading={collecting}
-          onClick={() => onCollect(entry.id)}
-        >
-          收录到笔记
         </Button>,
         <Button
           key="read"

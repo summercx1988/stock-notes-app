@@ -626,9 +626,14 @@ export class DailyReviewService {
     return null
   }
 
-  async getReviewHistory(startDate: Date, endDate: Date): Promise<TimeEntry[]> {
+  async getReviewHistory(
+    startDate: Date,
+    endDate: Date,
+    options?: { includeArchived?: boolean }
+  ): Promise<TimeEntry[]> {
+    const includeArchived = Boolean(options?.includeArchived)
     const entries = await this.getAllReviewEntries(startDate, endDate)
-    return entries.filter((entry) => this.isPrimaryReviewEntry(entry))
+    return entries.filter((entry) => this.isPrimaryReviewEntry(entry) && (includeArchived || !this.isArchivedEntry(entry)))
   }
 
   async getUnreadCount(): Promise<number> {
@@ -725,6 +730,63 @@ export class DailyReviewService {
       }
     }
     return deleted
+  }
+
+  async archiveEntry(entryId: string): Promise<void> {
+    const updatedEntry = await this.notesService.updateEntry(DAILY_REVIEW_STOCK_CODE, entryId, {
+      trackingStatus: '已归档' as any
+    })
+    notifyNotesChanged({
+      stockCode: DAILY_REVIEW_STOCK_CODE,
+      entryId: updatedEntry.id,
+      action: 'updated',
+      source: 'local'
+    })
+  }
+
+  async unarchiveEntry(entryId: string): Promise<void> {
+    const updatedEntry = await this.notesService.updateEntry(DAILY_REVIEW_STOCK_CODE, entryId, {
+      trackingStatus: '已读' as any
+    })
+    notifyNotesChanged({
+      stockCode: DAILY_REVIEW_STOCK_CODE,
+      entryId: updatedEntry.id,
+      action: 'updated',
+      source: 'local'
+    })
+  }
+
+  async archiveEntriesBefore(cutoffDate: Date): Promise<number> {
+    const startedAt = Date.now()
+    const note = await this.notesService.getStockNote(DAILY_REVIEW_STOCK_CODE)
+    if (!note) return 0
+
+    let archived = 0
+    for (const entry of note.entries) {
+      if (!this.isPrimaryReviewEntry(entry)) continue
+      if (this.isArchivedEntry(entry)) continue
+      const eventTime = entry.eventTime instanceof Date ? entry.eventTime : new Date(entry.eventTime)
+      if (eventTime >= cutoffDate) continue
+
+      const updatedEntry = await this.notesService.updateEntry(DAILY_REVIEW_STOCK_CODE, entry.id, {
+        trackingStatus: '已归档' as any
+      })
+      notifyNotesChanged({
+        stockCode: DAILY_REVIEW_STOCK_CODE,
+        entryId: updatedEntry.id,
+        action: 'updated',
+        source: 'local'
+      })
+      archived += 1
+    }
+
+    appLogger.info('DailyReview', 'Archive entries before cutoff completed', {
+      cutoffDate: cutoffDate.toISOString(),
+      archived,
+      durationMs: Date.now() - startedAt
+    })
+
+    return archived
   }
 
   async collectToNotes(entryId: string, reportProgress?: ProgressReporter): Promise<{ created: number; stockCodes: string[] }> {
@@ -1446,6 +1508,10 @@ export class DailyReviewService {
 
   private isPrimaryReviewEntry(entry: TimeEntry): boolean {
     return this.isPrimaryReviewCategory(this.resolveReviewCategory(entry))
+  }
+
+  private isArchivedEntry(entry: TimeEntry): boolean {
+    return String(entry.trackingStatus || '').trim() === '已归档'
   }
 
   private resolveReviewCategory(entry: TimeEntry): '每日总结' | '盘前复习' | '周回顾' | null {

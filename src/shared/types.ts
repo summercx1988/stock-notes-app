@@ -214,7 +214,7 @@ export interface DailyReviewReminderIncludeSections {
 }
 
 export interface DailyReviewGenerationProgress {
-  operation: 'daily-summary' | 'pre-market' | 'weekly' | 'regenerate' | 'collect-to-notes'
+  operation: 'daily-summary' | 'pre-market' | 'weekly' | 'regenerate' | 'collect-to-notes' | 'archive'
   stage: 'start' | 'collecting' | 'building-prompt' | 'ai-processing' | 'parsing' | 'saving' | 'processing' | 'completed' | 'error'
   progress: number
   message: string
