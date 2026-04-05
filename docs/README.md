@@ -1,262 +1,41 @@
-# 盯盘笔记系统 - 使用与开发说明 v3.6
+# 文档导航（2026-04-05 整理版）
 
-**版本：** v3.6  
-**更新日期：** 2026-03-31  
-**适用范围：** 当前主仓库 `stock-notes-app`
+本目录已完成一次“主文档整合 + 历史归档”清理。  
+当前阅读建议：先看主文档，再按需看 PRD/路线图，历史方案请到 `archive`。
 
----
+## 1. 核心主文档（建议优先）
 
-## 一、当前实现概览
+- [ENGINEERING_GUIDE.md](./ENGINEERING_GUIDE.md)
+  - 当前系统架构、数据模型、核心链路、复盘与缓存策略（技术总览）
+- [OPERATIONS_RUNBOOK.md](./OPERATIONS_RUNBOOK.md)
+  - 本地运行、飞书配置、故障排查、日志定位、发布前检查
+- [CHANGELOG.md](./CHANGELOG.md)
+  - 版本与功能演进记录（唯一变更日志入口）
 
-当前版本聚焦于两条稳定、轻量、可扩展的录入链路：
+## 2. 产品与规划文档
 
-```text
-录音 / 上传音频
-  -> 本地 whisper.cpp 转写
-  -> 极速解析（规则优先，必要时 1 次 LLM）
-  -> 保存到单股票 Markdown 文件
+- [PRD.md](./PRD.md)
+- [ROADMAP_STOCK_ANALYSIS.md](./ROADMAP_STOCK_ANALYSIS.md)
 
-飞书消息
-  -> JSON 2.0 卡片确认 / 编辑 / 候选股票确认
-  -> 极速解析（规则优先，必要时 1 次 LLM）
-  -> 保存到单股票 Markdown 文件
-```
+## 3. 回归与验证辅助
 
-说明：
+- `regression-cases.json`
 
-- 录音能力由子模块 `voice-transcriber-service` 提供
-- 转写优先本地 `whisper.cpp`
-- 本地录音与飞书都优先使用本地规则识别股票、观点、操作标签
-- AI 不写入“思考内容”，正文优先保留用户原文
-- 每只股票只有一个主笔记文件（文件即数据库）
+## 4. 未来规划区
 
----
+- `future_work/`  
+  当前用于孵化“trading-trainer”等未来模块，不作为现网实现依据。
 
-## 二、环境要求
+## 5. 历史归档区
 
-- macOS 13+
-- Node.js 18+ 与 npm
-- Swift 5.9+
-- 可执行的 `whisper.cpp/main`
-- 模型 `ggml-medium.bin`
+- `archive/`  
+  旧方案、评审稿、阶段性排障记录统一归档，不再作为“当前实现规范”直接引用。
 
----
+## 6. 文档维护约定
 
-## 三、开发环境启动
-
-### 3.1 Electron 应用
-
-```bash
-cd stock-notes-app
-npm install
-npm run electron:dev
-```
-
-### 3.2 Swift 语音服务
-
-```bash
-git submodule update --init --recursive
-cd voice-transcriber-service
-./scripts/setup-whisper.sh
-swift build
-cp .build/debug/voice-transcriber-service ./voice-transcriber-service
-```
-
-默认开发路径：
-
-```text
-voice-transcriber-service/voice-transcriber-service
-```
-
-### 3.3 CLI（复盘与回归）
-
-```bash
-# 复盘评估（示例）
-npm run cli:review -- --mode evaluate --scope overall --start 2026-03-01T00:00:00+08:00 --end 2026-03-24T23:59:59+08:00 --interval 5m
-
-# 回归测试（默认离线）
-npm run cli:regression
-```
-
----
-
-## 四、UI 与交互入口
-
-### 4.1 顶部核心入口
-
-- `录音`：看盘时快速录入（高频功能）
-
-### 4.2 顶部 `工具` 下拉入口
-
-- `偏好设置`
-- `自选股设置`
-- `笔记导入导出`
-  - 导出当前股票
-  - 导出全部笔记
-  - 导入笔记（跳过重复）
-  - 导入笔记（覆盖重复）
-
-这样做的目标是只暴露高频按钮，低频配置收敛到多层级菜单，减少主界面负担。
-
-### 4.3 飞书远程录入
-
-- 飞书机器人已接入 Electron 主进程
-- 远程录入默认走极速解析链路
-- 编辑卡片使用飞书 JSON 2.0 `form`
-- 卡片可编辑：
-  - 股票
-  - 笔记类型
-  - 正文
-  - 观点
-  - 操作标签
-  - 事件时间
-
----
-
-## 五、数据落盘与命名规范
-
-### 5.1 文件命名
-
-统一为：
-
-```text
-股票名称（股票代码）.md
-```
-
-示例：
-
-```text
-中远海能（600026）.md
-```
-
-### 5.2 数据目录
-
-应用数据统一存储在用户目录：
-
-```text
-~/Library/Application Support/stock-notes-app/data/
-├── stocks/
-│   ├── 中远海能（600026）.md
-│   ├── 贵州茅台(600519).md
-│   └── ...
-├── audio/
-│   ├── temp/
-│   └── 600026/
-├── config/
-│   └── settings.json
-└── stocks-database.json
-```
-
-**说明：**
-- 开发与部署使用同一数据目录
-- 首次运行自动创建
-- 重装应用不会丢失数据
-- 访问方式：访达按 `Cmd+Shift+G`，输入上述路径
-
-### 5.3 兼容策略
-
-- 历史命名（如 `600026.md`）仍可读取
-- 当文件被更新写回时，会自动迁移到新命名格式
-
----
-
-## 六、当前解析策略
-
-### 6.1 完整解析链路
-
-用于更复杂的文本场景，保留结构化抽取与候选校验能力：
-
-- `Normalize`
-- `Extract`
-- `Verify`
-- `CardDraft`
-- `Finalize`
-
-### 6.2 极速解析链路
-
-用于飞书远程录入与本地录音速记：
-
-- 本地规则优先识别：
-  - 6 位股票代码
-  - 自选股精确匹配
-  - 股票库精确匹配
-  - 模糊股票候选
-  - 观点关键词
-  - 操作标签关键词
-- 当本地规则已形成明确结果时：
-  - 直接出确认结果
-  - 不调用 LLM
-- 当存在候选但仍有歧义时：
-  - 直接进入候选股票确认
-  - 不调用 LLM
-- 仅在本地规则完全无法形成候选时：
-  - 触发 1 次轻量 LLM 兜底
-
-这样做的目标是优先保证“记录速度”，而不是让 AI 先做重写和总结。
-
----
-
-## 七、导入导出说明（GUI）
-
-### 6.1 导出结构
-
-导出目录内会生成：
-
-```text
-stock-notes-export-.../
-├── manifest.json
-├── stocks/
-└── audio/
-```
-
-`manifest.json` 包含导出范围、股票列表、命名规范版本等元信息。
-
-### 6.2 导入模式
-
-- `跳过重复`：目标中已有同股票代码则跳过
-- `覆盖重复`：目标中已有同股票代码则覆盖
-
-导入时支持两种来源目录：
-
-- 直接选择包含 `stocks/` 的导出包根目录
-- 直接选择仅含 `.md` 的股票目录
-
----
-
-## 八、常见问题
-
-### Q1：录音弹窗无法开始录音
-
-优先检查：
-
-- Swift 服务是否编译完成
-- 麦克风权限是否授予
-- `8765` 端口是否被占用
-
-### Q2：可以录音但无转写结果
-
-优先检查：
-
-- `whisper.cpp/main` 是否可执行
-- `ggml-medium.bin` 是否存在
-- 音频是否含有效语音
-
-### Q3：股票识别命中率不稳定
-
-当前策略：
-
-- 先本地候选匹配
-- 再结合轻量 LLM 兜底
-- 自选股列表会作为优先匹配上下文
-
-### Q4：飞书卡片修改后不生效
-
-优先检查：
-
-- 旧 Electron 主进程是否已退出
-- 飞书是否已订阅 `im.message.receive_v1` 与 `card.action.trigger`
-- 编辑卡片是否为 JSON 2.0 表单卡
-- 主进程终端里是否有 `Edit card form names` 与 `Interactive card sent` 日志
+1. 新功能方案优先落到主文档（`ENGINEERING_GUIDE` / `OPERATIONS_RUNBOOK`）对应章节。
+2. 历史内容不删库，统一移动到 `docs/archive/` 并在归档索引注明原因。
+3. 任何实现变更必须同步更新 `docs/CHANGELOG.md`。
 
 ---
 

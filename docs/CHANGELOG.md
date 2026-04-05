@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-04-05 (文档治理：主文档整合与历史归档)
+
+### Added
+- 新增统一技术总览文档：`docs/ENGINEERING_GUIDE.md`
+  - 合并系统架构、数据模型、录音链路、飞书链路、复盘/K 线、缓存与构建说明。
+- 新增统一运行排障手册：`docs/OPERATIONS_RUNBOOK.md`
+  - 合并本地运行、飞书配置、常见故障、日志定位、发布检查清单。
+- 新增归档索引：`docs/archive/2026-04-05-doc-consolidation/README.md`
+
+### Changed
+- 重写 `docs/README.md` 为文档导航页，明确主入口、规划区、归档区和维护约定。
+
+### Archived
+- 将分散的历史技术文档迁移至 `docs/archive/2026-04-05-doc-consolidation/`：
+  - `TECHNICAL_SPEC.md`
+  - `DATA_MODEL.md`
+  - `MODULAR_ARCHITECTURE.md`
+  - `UI_UX_TECH_PLAN.md`
+  - `RECORDING_TRANSCRIBE_SPEC.md`
+  - `REVIEW_KLINE_ALIGNMENT_SPEC.md`
+  - `VOICE_SERVICE_EXTERNAL_PATCH.md`
+  - `FEISHU_CARD_INTERACTION_LESSONS.md`
+  - `飞书机器人配置教程.md`
+
 ## 2026-04-05 (架构清理第三批：大文件职责拆分)
 
 ### Changed
