@@ -47,6 +47,31 @@ export interface ReviewCandidateEntry {
   hasAudio: boolean
 }
 
+export interface ReviewIndexedEntry {
+  entryId: string
+  stockCode: string
+  stockName: string
+  eventTime: string
+  category: NoteCategory
+  operationTag: OperationTag
+  trackingStatus: TrackingStatus
+  viewpointDirection: Viewpoint['direction']
+}
+
+interface NotesReviewIndexStockPayload {
+  stockCode: string
+  stockName: string
+  filePath: string
+  updatedAt: string
+  entries: ReviewIndexedEntry[]
+}
+
+interface NotesReviewIndexPayload {
+  version: number
+  generatedAt: string
+  stocks: Record<string, NotesReviewIndexStockPayload>
+}
+
 export class NotesService {
   private notesDir: string
   private audioDir: string
@@ -54,11 +79,18 @@ export class NotesService {
   private filePathIndex: Map<string, string> = new Map()
   private fileIndexLoaded: boolean = false
   private fileIndexPromise: Promise<void> | null = null
+  private readonly reviewIndexPath: string
+  private reviewIndexByStock: Map<string, NotesReviewIndexStockPayload> = new Map()
+  private reviewIndexLoaded: boolean = false
+  private reviewIndexPromise: Promise<void> | null = null
+  private reviewIndexDirtyAll: boolean = true
+  private reviewIndexDirtyStocks: Set<string> = new Set()
 
   constructor(notesDir?: string) {
     const defaultNotesDir = getDataPath('stocks')
     this.notesDir = notesDir || defaultNotesDir
     this.audioDir = path.join(path.dirname(this.notesDir), 'audio')
+    this.reviewIndexPath = getDataPath('runtime', 'notes-index.json')
   }
 
   getNotesDir(): string {
@@ -261,6 +293,57 @@ export class NotesService {
       const eventTime = this.getEntryEventTime(entry)
       return eventTime >= startDate && eventTime <= endDate
     })
+  }
+
+  async getReviewIndexedEntries(filters?: {
+    stockCode?: string
+    startDate?: Date
+    endDate?: Date
+    categories?: Set<NoteCategory>
+  }): Promise<{
+    items: ReviewIndexedEntry[]
+    stats: {
+      indexedHitCount: number
+      scannedStocks: number
+      matchedStocks: number
+    }
+  }> {
+    await this.ensureFilePathIndex()
+    await this.ensureReviewIndexReady()
+
+    const startMs = filters?.startDate ? filters.startDate.getTime() : Number.NEGATIVE_INFINITY
+    const endMs = filters?.endDate ? filters.endDate.getTime() : Number.POSITIVE_INFINITY
+    const categories = filters?.categories
+    const items: ReviewIndexedEntry[] = []
+    let scannedStocks = 0
+    let matchedStocks = 0
+
+    for (const [stockCode, stockPayload] of this.reviewIndexByStock.entries()) {
+      if (SYSTEM_STOCK_CODES.has(stockCode)) continue
+      if (filters?.stockCode && stockCode !== filters.stockCode) continue
+      scannedStocks += 1
+      let stockMatched = false
+      for (const entry of stockPayload.entries) {
+        const eventMs = new Date(entry.eventTime).getTime()
+        if (!Number.isFinite(eventMs)) continue
+        if (eventMs < startMs || eventMs > endMs) continue
+        if (categories && categories.size > 0 && !categories.has(entry.category)) continue
+        items.push(entry)
+        stockMatched = true
+      }
+      if (stockMatched) {
+        matchedStocks += 1
+      }
+    }
+
+    return {
+      items: items.sort((left, right) => new Date(right.eventTime).getTime() - new Date(left.eventTime).getTime()),
+      stats: {
+        indexedHitCount: items.length,
+        scannedStocks,
+        matchedStocks
+      }
+    }
   }
 
   async getLatestUserNoteModifiedAt(): Promise<Date | null> {
@@ -730,6 +813,7 @@ export class NotesService {
 
         this.filePathIndex.set(stockCode, targetPath)
         this.cache.delete(stockCode)
+        this.markReviewIndexDirty(stockCode)
         result.imported += 1
         result.importedStocks.push(stockCode)
       } catch (error: any) {
@@ -739,6 +823,9 @@ export class NotesService {
     }
 
     await this.ensureFilePathIndex(true)
+    if (result.imported > 0) {
+      this.reviewIndexDirtyAll = true
+    }
     return result
   }
 
@@ -819,6 +906,7 @@ export class NotesService {
     this.filePathIndex.set(stockCode, filePath)
     this.fileIndexLoaded = true
     this.cache.delete(stockCode)
+    this.markReviewIndexDirty(stockCode)
   }
 
   private async rewriteStockFile(stockCode: string, stockNote?: StockNote): Promise<void> {
@@ -869,6 +957,7 @@ export class NotesService {
     this.filePathIndex.set(note.stockCode, preferredPath)
     this.fileIndexLoaded = true
     this.cache.delete(note.stockCode)
+    this.markReviewIndexDirty(note.stockCode)
   }
 
   private async parseStockNote(content: string): Promise<{ note: StockNote; needsBackfill: boolean }> {
@@ -1219,6 +1308,170 @@ export class NotesService {
       this.filePathIndex.set(stockCode, info.filePath)
     }
     this.fileIndexLoaded = true
+  }
+
+  private markReviewIndexDirty(stockCode?: string): void {
+    if (!stockCode) {
+      this.reviewIndexDirtyAll = true
+      return
+    }
+    this.reviewIndexDirtyStocks.add(stockCode)
+  }
+
+  private async ensureReviewIndexReady(): Promise<void> {
+    await this.ensureReviewIndexLoaded()
+    await this.refreshReviewIndexIfNeeded()
+  }
+
+  private async ensureReviewIndexLoaded(): Promise<void> {
+    if (this.reviewIndexLoaded) {
+      return
+    }
+    if (this.reviewIndexPromise) {
+      return this.reviewIndexPromise
+    }
+    this.reviewIndexPromise = this.loadReviewIndexFromDisk().finally(() => {
+      this.reviewIndexPromise = null
+    })
+    await this.reviewIndexPromise
+  }
+
+  private async loadReviewIndexFromDisk(): Promise<void> {
+    try {
+      const raw = await fs.readFile(this.reviewIndexPath, 'utf-8')
+      const payload = JSON.parse(raw) as NotesReviewIndexPayload
+      if (!payload || payload.version !== 1 || !payload.stocks || typeof payload.stocks !== 'object') {
+        this.reviewIndexByStock.clear()
+        this.reviewIndexLoaded = true
+        this.reviewIndexDirtyAll = true
+        return
+      }
+      this.reviewIndexByStock.clear()
+      for (const [stockCode, stockPayload] of Object.entries(payload.stocks)) {
+        if (!stockPayload || stockPayload.stockCode !== stockCode) continue
+        const entries = Array.isArray(stockPayload.entries) ? stockPayload.entries : []
+        this.reviewIndexByStock.set(stockCode, {
+          stockCode,
+          stockName: String(stockPayload.stockName || stockCode),
+          filePath: String(stockPayload.filePath || ''),
+          updatedAt: String(stockPayload.updatedAt || new Date().toISOString()),
+          entries: entries.filter((entry): entry is ReviewIndexedEntry => (
+            Boolean(entry && entry.entryId && entry.stockCode && entry.eventTime)
+          ))
+        })
+      }
+      this.reviewIndexLoaded = true
+      this.reviewIndexDirtyAll = false
+    } catch {
+      this.reviewIndexByStock.clear()
+      this.reviewIndexLoaded = true
+      this.reviewIndexDirtyAll = true
+    }
+  }
+
+  private async refreshReviewIndexIfNeeded(): Promise<void> {
+    const knownStockCodes = new Set(this.filePathIndex.keys())
+    const refreshStockCodes = new Set<string>()
+    let hasChanged = false
+
+    if (this.reviewIndexDirtyAll) {
+      for (const stockCode of knownStockCodes) {
+        refreshStockCodes.add(stockCode)
+      }
+    } else {
+      for (const stockCode of this.reviewIndexDirtyStocks) {
+        refreshStockCodes.add(stockCode)
+      }
+      for (const stockCode of knownStockCodes) {
+        if (!this.reviewIndexByStock.has(stockCode)) {
+          refreshStockCodes.add(stockCode)
+        }
+      }
+    }
+
+    for (const stockCode of this.reviewIndexByStock.keys()) {
+      if (!knownStockCodes.has(stockCode)) {
+        this.reviewIndexByStock.delete(stockCode)
+        hasChanged = true
+      }
+    }
+
+    for (const stockCode of refreshStockCodes) {
+      if (!knownStockCodes.has(stockCode)) {
+        if (this.reviewIndexByStock.delete(stockCode)) {
+          hasChanged = true
+        }
+        continue
+      }
+      const payload = await this.rebuildReviewIndexForStock(stockCode)
+      if (!payload) {
+        if (this.reviewIndexByStock.delete(stockCode)) {
+          hasChanged = true
+        }
+        continue
+      }
+      this.reviewIndexByStock.set(stockCode, payload)
+      hasChanged = true
+    }
+
+    this.reviewIndexDirtyAll = false
+    this.reviewIndexDirtyStocks.clear()
+
+    if (hasChanged) {
+      await this.writeReviewIndexToDisk()
+    }
+  }
+
+  private async rebuildReviewIndexForStock(stockCode: string): Promise<NotesReviewIndexStockPayload | null> {
+    const note = await this.getStockNote(stockCode)
+    if (!note) return null
+
+    const filePath = await this.resolveStockFilePath(stockCode)
+    let updatedAt = new Date().toISOString()
+    try {
+      const stat = await fs.stat(filePath)
+      updatedAt = new Date(stat.mtimeMs).toISOString()
+    } catch {
+      // keep fallback updatedAt
+    }
+
+    const entries = note.entries
+      .map((entry) => this.toReviewIndexedEntry(note, entry))
+      .sort((left, right) => new Date(right.eventTime).getTime() - new Date(left.eventTime).getTime())
+
+    return {
+      stockCode,
+      stockName: note.stockName || stockCode,
+      filePath,
+      updatedAt,
+      entries
+    }
+  }
+
+  private toReviewIndexedEntry(note: StockNote, entry: TimeEntry): ReviewIndexedEntry {
+    return {
+      entryId: entry.id,
+      stockCode: note.stockCode,
+      stockName: note.stockName || note.stockCode,
+      eventTime: this.getEntryEventTime(entry).toISOString(),
+      category: this.normalizeCategory(entry.category),
+      operationTag: this.normalizeOperationTag(entry.operationTag, entry.action),
+      trackingStatus: this.normalizeTrackingStatus(entry.trackingStatus),
+      viewpointDirection: this.normalizeViewpointDirection(entry.viewpoint?.direction)
+    }
+  }
+
+  private async writeReviewIndexToDisk(): Promise<void> {
+    const payload: NotesReviewIndexPayload = {
+      version: 1,
+      generatedAt: new Date().toISOString(),
+      stocks: {}
+    }
+    for (const [stockCode, stockPayload] of this.reviewIndexByStock.entries()) {
+      payload.stocks[stockCode] = stockPayload
+    }
+    await fs.mkdir(path.dirname(this.reviewIndexPath), { recursive: true })
+    await fs.writeFile(this.reviewIndexPath, JSON.stringify(payload, null, 2), 'utf-8')
   }
 
   private parseStockCodeFromFileName(fileName: string): string | null {

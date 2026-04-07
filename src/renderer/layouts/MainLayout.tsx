@@ -5,7 +5,7 @@ import Sidebar from '../components/Sidebar'
 import Header from '../components/Header'
 import StockNoteView from '../components/StockNoteView'
 import TimelineExplorerView from '../components/TimelineExplorerView'
-import ReviewAnalysisView from '../components/ReviewAnalysisView'
+import ViewpointTrackingView from '../components/ViewpointTrackingView'
 import DailyReviewView from '../components/DailyReviewView'
 import PreMarketReminderModal from '../components/daily-review/PreMarketReminderModal'
 import type {
@@ -232,7 +232,7 @@ const MainLayout: React.FC = () => {
             <Content className="min-w-0 overflow-hidden bg-white">
               {activeModule === 'notes' && <StockNoteView />}
               {activeModule === 'explorer' && <TimelineExplorerView />}
-              {activeModule === 'review' && <ReviewAnalysisView />}
+              {activeModule === 'viewpoint-tracking' && <ViewpointTrackingView />}
               {activeModule === 'daily-review' && <DailyReviewView />}
             </Content>
           </Layout>

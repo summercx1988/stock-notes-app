@@ -86,7 +86,7 @@ const Header: React.FC = () => {
           options={[
             { label: '盯盘笔记', value: 'notes' },
             { label: '事件日历', value: 'explorer' },
-            { label: '复盘分析', value: 'review' },
+            { label: '观点追踪', value: 'viewpoint-tracking' },
             { label: '每日复盘', value: 'daily-review' }
           ]}
         />

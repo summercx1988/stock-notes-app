@@ -3,6 +3,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import { appConfigService } from '../app-config'
 import { appLogger } from '../app-logger'
+import { DEFAULT_CLOUD_ASR_SETTINGS, DEFAULT_TEXT_ANALYSIS_SETTINGS } from '../../../shared/default-user-settings'
 
 export class CloudAIAdapter implements IAIService {
   readonly provider = 'openai'
@@ -13,9 +14,9 @@ export class CloudAIAdapter implements IAIService {
   private chatModel: string
 
   constructor() {
-    this.baseUrl = process.env.OPENAI_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1'
-    this.chatModel = process.env.MINIMAX_MODEL || 'MiniMax-M2.7-highspeed'
-    this.apiKey = process.env.MINIMAX_API_KEY || process.env.OPENAI_API_KEY || ''
+    this.baseUrl = DEFAULT_TEXT_ANALYSIS_SETTINGS.baseUrl
+    this.chatModel = DEFAULT_TEXT_ANALYSIS_SETTINGS.model
+    this.apiKey = DEFAULT_TEXT_ANALYSIS_SETTINGS.apiKey
   }
 
   async initialize(): Promise<void> {
@@ -225,8 +226,8 @@ ${text}
       this.chatModel = settings?.textAnalysis?.model || this.chatModel
       this.apiKey = settings?.textAnalysis?.apiKey || this.apiKey
     } catch (error) {
-      console.warn('[CloudAIAdapter] Failed to load runtime config, fallback to env:', error)
-      appLogger.warn('CloudAIAdapter', 'Failed to load runtime config, fallback to env', { error })
+      console.warn('[CloudAIAdapter] Failed to load runtime config, fallback to saved defaults:', error)
+      appLogger.warn('CloudAIAdapter', 'Failed to load runtime config, fallback to saved defaults', { error })
     }
   }
 
@@ -244,16 +245,16 @@ ${text}
       const settings = await appConfigService.getAll()
       return {
         baseUrl: this.normalizeBaseUrl(
-          settings?.cloudASR?.baseUrl || this.baseUrl
+          settings?.cloudASR?.baseUrl || DEFAULT_CLOUD_ASR_SETTINGS.baseUrl
         ),
-        model: settings?.cloudASR?.model || 'whisper-1',
-        apiKey: settings?.cloudASR?.apiKey || this.apiKey
+        model: settings?.cloudASR?.model || DEFAULT_CLOUD_ASR_SETTINGS.model,
+        apiKey: settings?.cloudASR?.apiKey || DEFAULT_CLOUD_ASR_SETTINGS.apiKey
       }
     } catch {
       return {
-        baseUrl: this.baseUrl,
-        model: 'whisper-1',
-        apiKey: this.apiKey
+        baseUrl: this.normalizeBaseUrl(DEFAULT_CLOUD_ASR_SETTINGS.baseUrl),
+        model: DEFAULT_CLOUD_ASR_SETTINGS.model,
+        apiKey: DEFAULT_CLOUD_ASR_SETTINGS.apiKey
       }
     }
   }

@@ -2,6 +2,7 @@ import { appConfigService } from './app-config'
 import { ParseOrchestrator } from './parse-orchestrator'
 import { FeishuFastParseOrchestrator } from './feishu-fast-parse-orchestrator'
 import type { OperationTag } from '../../shared/types'
+import { DEFAULT_TEXT_ANALYSIS_SETTINGS } from '../../shared/default-user-settings'
 
 export type CandidateSource = 'llm' | 'db' | 'watchlist' | 'rule'
 
@@ -63,9 +64,9 @@ export class AIProcessor {
   private readonly feishuFastOrchestrator: FeishuFastParseOrchestrator
 
   constructor() {
-    this.defaultApiKey = process.env.MINIMAX_API_KEY || process.env.OPENAI_API_KEY || ''
-    this.defaultBaseUrl = process.env.OPENAI_BASE_URL || 'https://api.minimaxi.com/v1'
-    this.defaultModel = process.env.MINIMAX_MODEL || 'MiniMax-M2.7-highspeed'
+    this.defaultApiKey = DEFAULT_TEXT_ANALYSIS_SETTINGS.apiKey
+    this.defaultBaseUrl = DEFAULT_TEXT_ANALYSIS_SETTINGS.baseUrl
+    this.defaultModel = DEFAULT_TEXT_ANALYSIS_SETTINGS.model
     this.orchestrator = new ParseOrchestrator({
       chat: (prompt: string) => this.chat(prompt)
     })

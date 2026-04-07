@@ -6,6 +6,7 @@ import { useAppStore } from '../stores/app'
 import type { NoteCategory, NoteCategoryConfig, OperationTag, UserSettings, Viewpoint, VoiceServiceStatus } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, getCategoryConfig, getEnabledOptions, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 import { cleanTranscriptText, normalizeNoteContent } from '../../shared/text-normalizer'
+import { createDefaultUserSettings } from '../../shared/default-user-settings'
 
 const { Step } = Steps
 const { TextArea } = Input
@@ -35,51 +36,7 @@ type TranscribeEngine = 'local' | 'cloud'
 type RecordingState = 'idle' | 'connecting' | 'recording' | 'stopping' | 'transcribing' | 'analyzing' | 'completed'
 type StockSelectOption = { label: string; value: string; name: string }
 
-const DEFAULT_SETTINGS: UserSettings = {
-  textAnalysis: {
-    baseUrl: 'https://api.minimaxi.com/v1',
-    model: 'MiniMax-M2.7-highspeed',
-    apiKey: ''
-  },
-  cloudASR: {
-    baseUrl: 'https://api.minimaxi.com/v1',
-    model: 'speech-01',
-    apiKey: '',
-    language: 'zh-CN'
-  },
-  notes: {
-    defaultCategory: '看盘预测',
-    defaultDirection: '未知',
-    defaultTimeHorizon: '短线',
-    style: '轻量',
-    categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
-  },
-  dailyReview: {
-    enabled: true,
-    analysisLookbackDays: 3,
-    analysisMaxItems: 120,
-    reminder: {
-      enabled: true,
-      time: '09:00',
-      weekdaysOnly: true,
-      autoGeneratePreMarket: true,
-      includeSections: {
-        yesterdaySummary: true,
-        pendingItems: true,
-        keyLevels: true,
-        watchlist: true,
-        riskReminders: true
-      }
-    }
-  },
-  feishu: {
-    enabled: false,
-    appId: '',
-    appSecret: '',
-    encryptKey: '',
-    verificationToken: ''
-  }
-}
+const DEFAULT_SETTINGS: UserSettings = createDefaultUserSettings()
 
 const isMissingHandlerError = (error: unknown) =>
   String((error as { message?: string })?.message || error).includes('No handler registered')

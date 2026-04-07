@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Checkbox, Divider, Form, Input, InputNumber, Modal, Select, Space, Tabs, Tag, Typography, message } from 'antd'
 import type { NoteCategoryConfig, UserSettings } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
+import { createDefaultUserSettings } from '../../shared/default-user-settings'
 
 interface SettingsModalProps {
   open: boolean
@@ -15,51 +16,7 @@ interface WatchlistStock {
   inDatabase: boolean
 }
 
-const DEFAULT_SETTINGS: UserSettings = {
-  textAnalysis: {
-    baseUrl: 'https://api.minimaxi.com/v1',
-    model: 'MiniMax-M2.7-highspeed',
-    apiKey: ''
-  },
-  cloudASR: {
-    baseUrl: 'https://api.minimaxi.com/v1',
-    model: 'speech-01',
-    apiKey: '',
-    language: 'zh-CN'
-  },
-  notes: {
-    defaultCategory: '看盘预测',
-    defaultDirection: '未知',
-    defaultTimeHorizon: '短线',
-    style: '轻量',
-    categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
-  },
-  dailyReview: {
-    enabled: true,
-    analysisLookbackDays: 3,
-    analysisMaxItems: 120,
-    reminder: {
-      enabled: true,
-      time: '09:00',
-      weekdaysOnly: true,
-      autoGeneratePreMarket: true,
-      includeSections: {
-        yesterdaySummary: true,
-        pendingItems: true,
-        keyLevels: true,
-        watchlist: true,
-        riskReminders: true
-      }
-    }
-  },
-  feishu: {
-    enabled: false,
-    appId: '',
-    appSecret: '',
-    encryptKey: '',
-    verificationToken: ''
-  }
-}
+const DEFAULT_SETTINGS: UserSettings = createDefaultUserSettings()
 
 type SettingsTab = 'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'
 
@@ -244,17 +201,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
           items={[
             {
               key: 'text-ai',
-              label: '文本分析 AI',
+              label: '笔记解析 AI',
               children: (
                 <>
+                  <Alert
+                    type="info"
+                    showIcon
+                    className="mb-3"
+                    message="GLM Coding Plan 配置：glm-5（高阶）、glm-4.7（日常推荐，省额度）。baseUrl 保持默认即可。"
+                  />
                   <Form.Item label="API Base URL" name={['textAnalysis', 'baseUrl']} rules={[{ required: true, message: '请输入文本分析 API 地址' }]}>
-                    <Input placeholder="https://api.minimaxi.com/v1" />
+                    <Input placeholder="https://open.bigmodel.cn/api/coding/paas/v4" />
                   </Form.Item>
                   <Form.Item label="模型" name={['textAnalysis', 'model']} rules={[{ required: true, message: '请输入模型名称' }]}>
-                    <Input placeholder="MiniMax-M2.7-highspeed" />
+                    <Input placeholder="glm-5 / glm-4.7" />
                   </Form.Item>
                   <Form.Item label="API Key" name={['textAnalysis', 'apiKey']}>
-                    <Input.Password placeholder="可留空使用环境变量" />
+                    <Input.Password placeholder="请输入智谱 API Key" />
                   </Form.Item>
                 </>
               )
@@ -364,7 +327,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
                     type="info"
                     showIcon
                     className="mb-3"
-                    message="用于控制每日复盘分析范围、次日提醒时间与提醒卡片展示内容。"
+                    message="用于控制每日观点追踪分析范围、次日提醒时间与提醒卡片展示内容。"
                   />
                   <Form.Item
                     label="启用每日复盘功能"

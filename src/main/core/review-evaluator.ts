@@ -37,11 +37,17 @@ export interface ReviewActionEvaluationResult {
   results: ReviewActionResult[]
 }
 
+interface PreparedCandleSeries {
+  candles: CandleInput[]
+  timestamps: number[]
+}
+
 export function evaluateReviewEvents(
   events: ReviewEventInput[],
   candlesByStock: Record<string, CandleInput[]>,
   rule: ReviewRuleConfig
 ): ReviewEvaluationResult {
+  const preparedByStock = prepareCandlesByStock(candlesByStock)
   const actionable = events.filter(
     (event): event is ReviewEventInput & { direction: '看多' | '看空' } =>
       event.direction === '看多' || event.direction === '看空'
@@ -50,33 +56,23 @@ export function evaluateReviewEvents(
   const results: ReviewEventResult[] = []
 
   for (const event of actionable) {
-    const stockCandles = [...(candlesByStock[event.stockCode] || [])]
-      .filter((candle) => Number.isFinite(candle.close))
-      .sort((left, right) => toMs(left.timestamp) - toMs(right.timestamp))
-    if (stockCandles.length === 0) continue
+    const series = preparedByStock[event.stockCode]
+    if (!series || series.candles.length === 0) continue
 
     const eventMs = toMs(event.eventTime)
     if (!Number.isFinite(eventMs)) continue
 
-    const entryIndex = stockCandles.findIndex((candle) => toMs(candle.timestamp) >= eventMs)
-    if (entryIndex < 0) continue
+    const entryIndex = lowerBound(series.timestamps, eventMs)
+    if (entryIndex >= series.candles.length) continue
 
-    const entryCandle = stockCandles[entryIndex]
+    const entryCandle = series.candles[entryIndex]
     if (entryCandle.close <= 0) continue
 
     const targetMs = eventMs + (rule.windowDays * 24 * 60 * 60 * 1000)
-    let targetIndex = -1
-    for (let i = entryIndex; i < stockCandles.length; i += 1) {
-      const candleMs = toMs(stockCandles[i].timestamp)
-      if (candleMs <= targetMs) {
-        targetIndex = i
-      } else {
-        break
-      }
-    }
+    const targetIndex = upperBound(series.timestamps, targetMs) - 1
     if (targetIndex <= entryIndex) continue
 
-    const targetCandle = stockCandles[targetIndex]
+    const targetCandle = series.candles[targetIndex]
     const change = (targetCandle.close - entryCandle.close) / entryCandle.close
     const hit = event.direction === '看多'
       ? change >= (rule.thresholdPct / 100)
@@ -124,36 +120,27 @@ export function evaluateActionEvents(
   candlesByStock: Record<string, CandleInput[]>,
   rule: ReviewRuleConfig
 ): ReviewActionEvaluationResult {
+  const preparedByStock = prepareCandlesByStock(candlesByStock)
   const results: ReviewActionResult[] = []
 
   for (const event of events) {
-    const stockCandles = [...(candlesByStock[event.stockCode] || [])]
-      .filter((candle) => Number.isFinite(candle.close))
-      .sort((left, right) => toMs(left.timestamp) - toMs(right.timestamp))
-    if (stockCandles.length === 0) continue
+    const series = preparedByStock[event.stockCode]
+    if (!series || series.candles.length === 0) continue
 
     const eventMs = toMs(event.eventTime)
     if (!Number.isFinite(eventMs)) continue
 
-    const entryIndex = stockCandles.findIndex((candle) => toMs(candle.timestamp) >= eventMs)
-    if (entryIndex < 0) continue
+    const entryIndex = lowerBound(series.timestamps, eventMs)
+    if (entryIndex >= series.candles.length) continue
 
-    const entryCandle = stockCandles[entryIndex]
+    const entryCandle = series.candles[entryIndex]
     if (entryCandle.close <= 0) continue
 
     const targetMs = eventMs + (rule.windowDays * 24 * 60 * 60 * 1000)
-    let targetIndex = -1
-    for (let i = entryIndex; i < stockCandles.length; i += 1) {
-      const candleMs = toMs(stockCandles[i].timestamp)
-      if (candleMs <= targetMs) {
-        targetIndex = i
-      } else {
-        break
-      }
-    }
+    const targetIndex = upperBound(series.timestamps, targetMs) - 1
     if (targetIndex <= entryIndex) continue
 
-    const targetCandle = stockCandles[targetIndex]
+    const targetCandle = series.candles[targetIndex]
     const change = (targetCandle.close - entryCandle.close) / entryCandle.close
     const hit = event.operationTag === '买入'
       ? change >= (rule.thresholdPct / 100)
@@ -223,6 +210,48 @@ function computeAccuracy(hits: number, samples: number): number {
 function round(value: number, digits: number): number {
   const factor = 10 ** digits
   return Math.round(value * factor) / factor
+}
+
+function prepareCandlesByStock(candlesByStock: Record<string, CandleInput[]>): Record<string, PreparedCandleSeries> {
+  const prepared: Record<string, PreparedCandleSeries> = {}
+  for (const [stockCode, sourceCandles] of Object.entries(candlesByStock)) {
+    const candles = [...sourceCandles]
+      .filter((candle) => Number.isFinite(candle.close))
+      .sort((left, right) => toMs(left.timestamp) - toMs(right.timestamp))
+    prepared[stockCode] = {
+      candles,
+      timestamps: candles.map((item) => toMs(item.timestamp))
+    }
+  }
+  return prepared
+}
+
+function lowerBound(values: number[], target: number): number {
+  let left = 0
+  let right = values.length
+  while (left < right) {
+    const mid = left + Math.floor((right - left) / 2)
+    if (values[mid] < target) {
+      left = mid + 1
+    } else {
+      right = mid
+    }
+  }
+  return left
+}
+
+function upperBound(values: number[], target: number): number {
+  let left = 0
+  let right = values.length
+  while (left < right) {
+    const mid = left + Math.floor((right - left) / 2)
+    if (values[mid] <= target) {
+      left = mid + 1
+    } else {
+      right = mid
+    }
+  }
+  return left
 }
 
 function toMs(value: string): number {

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { StockNote, TimeEntry, Stock, SearchResult } from '../../shared/types'
 
 export type RecordingStatus = 'idle' | 'requesting' | 'recording' | 'processing' | 'error'
-export type AppModule = 'notes' | 'explorer' | 'review' | 'daily-review'
+export type AppModule = 'notes' | 'explorer' | 'viewpoint-tracking' | 'daily-review'
 
 interface RecordingState {
   status: RecordingStatus

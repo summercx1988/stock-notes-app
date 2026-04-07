@@ -1,57 +1,14 @@
 import fs from 'fs/promises'
 import path from 'path'
 import type { UserSettings } from '../../shared/types'
-import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
+import { normalizeNoteCategoryConfigs } from '../../shared/note-categories'
+import { createDefaultUserSettings } from '../../shared/default-user-settings'
 import { getDataPath } from './data-paths'
 import { appLogger } from './app-logger'
 
 const getSettingsPath = (): string => getDataPath('config', 'settings.json')
 
-const DEFAULT_SETTINGS: UserSettings = {
-  textAnalysis: {
-    baseUrl: process.env.OPENAI_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1',
-    model: process.env.MINIMAX_MODEL || 'MiniMax-M2.7-highspeed',
-    apiKey: process.env.MINIMAX_API_KEY || process.env.OPENAI_API_KEY || ''
-  },
-  cloudASR: {
-    baseUrl: process.env.WHISPER_API_BASE_URL || process.env.OPENAI_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1',
-    model: process.env.WHISPER_MODEL || 'speech-01',
-    apiKey: process.env.WHISPER_API_KEY || process.env.MINIMAX_API_KEY || process.env.OPENAI_API_KEY || '',
-    language: 'zh-CN'
-  },
-  notes: {
-    defaultCategory: '看盘预测',
-    defaultDirection: '未知',
-    defaultTimeHorizon: '短线',
-    style: '轻量',
-    categoryConfigs: DEFAULT_NOTE_CATEGORY_CONFIGS
-  },
-  dailyReview: {
-    enabled: true,
-    analysisLookbackDays: 3,
-    analysisMaxItems: 120,
-    reminder: {
-      enabled: true,
-      time: '09:00',
-      weekdaysOnly: true,
-      autoGeneratePreMarket: true,
-      includeSections: {
-        yesterdaySummary: true,
-        pendingItems: true,
-        keyLevels: true,
-        watchlist: true,
-        riskReminders: true
-      }
-    }
-  },
-  feishu: {
-    enabled: false,
-    appId: '',
-    appSecret: '',
-    encryptKey: '',
-    verificationToken: ''
-  }
-}
+const DEFAULT_SETTINGS: UserSettings = createDefaultUserSettings()
 
 const normalizeDefaultDirection = (value?: string): string => {
   if (!value) return '未知'

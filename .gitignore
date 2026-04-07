@@ -66,3 +66,6 @@ voice-transcriber-service/voice-transcriber-service
 *.key
 secrets/
 credentials/
+
+# Standalone rush project (move it out if needed)
+glm-coding-rush-standalone/

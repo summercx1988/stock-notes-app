@@ -103,6 +103,159 @@ function parseModelJson(raw: string): Record<string, any> {
   throw lastError instanceof Error ? lastError : new Error('无法从响应中提取JSON对象')
 }
 
+type PreMarketMarkdownSections = {
+  yesterdaySummary: string
+  pendingItems: string[]
+  keyLevels: string[]
+  focusAreas: string[]
+  watchlist: string[]
+  riskReminders: string[]
+}
+
+const PREMARKET_SECTION_EMPTY: PreMarketMarkdownSections = {
+  yesterdaySummary: '',
+  pendingItems: [],
+  keyLevels: [],
+  focusAreas: [],
+  watchlist: [],
+  riskReminders: []
+}
+
+function normalizeHeading(line: string): string {
+  return line
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/^\*+|\*+$/g, '')
+    .replace(/^[\-\*\u2022]\s*/, '')
+    .replace(/[：:]\s*$/, '')
+    .trim()
+    .toLowerCase()
+}
+
+function detectPreMarketSection(line: string): keyof PreMarketMarkdownSections | null {
+  const normalized = normalizeHeading(line)
+  if (!normalized) return null
+  if (
+    normalized.includes('昨日概要') ||
+    normalized.includes('昨日总结') ||
+    normalized.includes('昨日回顾') ||
+    normalized.includes('quick review') ||
+    normalized.includes('yesterday summary')
+  ) {
+    return 'yesterdaySummary'
+  }
+  if (normalized.includes('待跟进') || normalized.includes('待办') || normalized.includes('pending')) {
+    return 'pendingItems'
+  }
+  if (
+    normalized.includes('关键位') ||
+    normalized.includes('支撑') ||
+    normalized.includes('压力') ||
+    normalized.includes('key level')
+  ) {
+    return 'keyLevels'
+  }
+  if (normalized.includes('关注方向') || normalized.includes('关注重点') || normalized.includes('focus area')) {
+    return 'focusAreas'
+  }
+  if (normalized.includes('观察列表') || normalized.includes('观察清单') || normalized.includes('watchlist')) {
+    return 'watchlist'
+  }
+  if (normalized.includes('风险提醒') || normalized.includes('风险提示') || normalized.includes('risk')) {
+    return 'riskReminders'
+  }
+  return null
+}
+
+function cleanMarkdownListLine(line: string): string {
+  return line
+    .replace(/^\s*[-*\u2022]\s+/, '')
+    .replace(/^\s*\d+[.)]\s+/, '')
+    .replace(/^\s*\[[ xX]\]\s*/, '')
+    .trim()
+}
+
+function parsePreMarketMarkdownFallback(raw: string): PreMarketMarkdownSections | null {
+  const text = stripModelWrappers(raw)
+  if (!text.trim()) return null
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  if (lines.length === 0) return null
+
+  const sections: PreMarketMarkdownSections = {
+    ...PREMARKET_SECTION_EMPTY,
+    pendingItems: [],
+    keyLevels: [],
+    focusAreas: [],
+    watchlist: [],
+    riskReminders: []
+  }
+
+  let currentSection: keyof PreMarketMarkdownSections | null = null
+  for (const line of lines) {
+    const detected = detectPreMarketSection(line)
+    if (detected) {
+      currentSection = detected
+      continue
+    }
+
+    if (!currentSection) continue
+    const content = cleanMarkdownListLine(line)
+    if (!content) continue
+
+    if (currentSection === 'yesterdaySummary') {
+      sections.yesterdaySummary = sections.yesterdaySummary
+        ? `${sections.yesterdaySummary} ${content}`
+        : content
+      continue
+    }
+
+    sections[currentSection].push(content)
+  }
+
+  const hasAnyContent = Boolean(
+    sections.yesterdaySummary ||
+    sections.pendingItems.length > 0 ||
+    sections.keyLevels.length > 0 ||
+    sections.focusAreas.length > 0 ||
+    sections.watchlist.length > 0 ||
+    sections.riskReminders.length > 0
+  )
+
+  return hasAnyContent ? sections : null
+}
+
+function inferPriorityFromText(text: string): 'high' | 'medium' | 'low' {
+  const source = text.toLowerCase()
+  if (source.includes('高') || source.includes('high') || source.includes('紧急')) return 'high'
+  if (source.includes('低') || source.includes('low')) return 'low'
+  return 'medium'
+}
+
+function inferLevelFromText(text: string): 'support' | 'resistance' {
+  const source = text.toLowerCase()
+  if (source.includes('压力') || source.includes('resistance')) return 'resistance'
+  return 'support'
+}
+
+function extractStockCode(text: string): string {
+  const matched = text.match(/\b\d{6}\b/)
+  return matched?.[0] || ''
+}
+
+function extractStockName(text: string, stockCode: string): string {
+  if (!text) return ''
+  if (!stockCode) return ''
+  const normalized = text
+    .replace(stockCode, '')
+    .replace(/[()（）]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return normalized.split(' ')[0] || ''
+}
+
 function pickDailySummaryPayload(parsed: Record<string, any>): Record<string, any> {
   if (parsed.overview || parsed.keyDecisions) return parsed
   if (parsed.content?.overview || parsed.content?.keyDecisions) {
@@ -234,6 +387,7 @@ ${focusItemsText || '无特别关注'}
 ${yesterdaySummary.content.marketSentiment}
 
 ## 输出要求
+请仅输出 JSON 对象，不要输出 Markdown 标题、解释文本或代码块。
 {
   "quickReview": {
     "yesterdaySummary": "昨日概要（100字以内）",
@@ -342,6 +496,7 @@ export function parseDailySummaryResponse(raw: string): DailySummaryData {
 }
 
 export function parsePreMarketResponse(raw: string): PreMarketData {
+  const nowIso = new Date().toISOString()
   try {
     const parsed = pickPreMarketPayload(parseModelJson(raw))
 
@@ -351,7 +506,7 @@ export function parsePreMarketResponse(raw: string): PreMarketData {
 
     return {
       version: '1.0',
-      generatedAt: new Date().toISOString(),
+      generatedAt: nowIso,
       sourceSummaryDate: '',
       quickReview: {
         yesterdaySummary: String(parsed.quickReview?.yesterdaySummary || ''),
@@ -365,7 +520,51 @@ export function parsePreMarketResponse(raw: string): PreMarketData {
       }
     }
   } catch (error) {
-    console.error('[DailyReview] Failed to parse premarket response:', error)
+    const markdownFallback = parsePreMarketMarkdownFallback(raw)
+    if (markdownFallback) {
+      return {
+        version: '1.0',
+        generatedAt: nowIso,
+        sourceSummaryDate: '',
+        quickReview: {
+          yesterdaySummary: markdownFallback.yesterdaySummary,
+          pendingItems: markdownFallback.pendingItems.map((item, index) => {
+            const stockCode = extractStockCode(item)
+            return {
+              stockCode,
+              stockName: extractStockName(item, stockCode),
+              description: item,
+              priority: inferPriorityFromText(item),
+              dueDate: '',
+              sourceEntryId: `markdown-${index}`
+            }
+          }),
+          keyLevels: markdownFallback.keyLevels.map((item) => {
+            const stockCode = extractStockCode(item)
+            return {
+              stockCode,
+              stockName: extractStockName(item, stockCode),
+              level: inferLevelFromText(item),
+              price: Number.NaN,
+              note: item
+            }
+          })
+        },
+        todayStrategy: {
+          focusAreas: markdownFallback.focusAreas,
+          watchlist: markdownFallback.watchlist.map((item) => {
+            const stockCode = extractStockCode(item)
+            return {
+              stockCode,
+              stockName: extractStockName(item, stockCode),
+              reason: item,
+              expectedAction: ''
+            }
+          }),
+          riskReminders: markdownFallback.riskReminders
+        }
+      }
+    }
     throw new Error(`解析盘前复习响应失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }

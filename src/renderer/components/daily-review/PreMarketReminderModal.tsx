@@ -156,7 +156,7 @@ const PreMarketReminderModal: React.FC<PreMarketReminderModalProps> = ({
                 {(data?.quickReview?.keyLevels || []).slice(0, 5).map((item, index) => (
                   <Text key={`${item.stockCode || 'unknown'}-${index}`}>
                     {item.stockName || item.stockCode || '未知标的'} · {item.level === 'support' ? '支撑位' : item.level === 'resistance' ? '压力位' : '关键位'}
-                    {typeof item.price === 'number' ? ` ${item.price}` : ''}
+                    {Number.isFinite(item.price) ? ` ${item.price}` : ''}
                     {item.note ? ` · ${item.note}` : ''}
                   </Text>
                 ))}

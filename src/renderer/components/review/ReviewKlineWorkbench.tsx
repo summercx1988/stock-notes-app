@@ -7,6 +7,7 @@ import type { KlineInterval, ReviewMarkerDirection, ReviewScope, ReviewVisualRes
 
 interface ReviewKlineWorkbenchProps {
   scope: ReviewScope
+  interval: KlineInterval
   stockCode?: string
   stockName?: string
   startDate?: string
@@ -33,13 +34,6 @@ interface MarkerLayout {
   x: number
   y: number
 }
-
-const INTERVAL_OPTIONS: Array<{ label: string; value: KlineInterval }> = [
-  { label: '5 分钟', value: '5m' },
-  { label: '15 分钟', value: '15m' },
-  { label: '30 分钟', value: '30m' },
-  { label: '日K', value: '1d' }
-]
 
 const DIRECTION_OPTIONS: Array<{ label: string; value: ReviewMarkerDirection }> = [
   { label: '看多', value: '看多' },
@@ -92,6 +86,7 @@ const extractEventTimestamp = (payload: any): number | null => {
 
 const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
   scope,
+  interval,
   stockCode,
   stockName,
   startDate,
@@ -109,7 +104,6 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
   const cacheRef = useRef(new Map<string, ReviewVisualResponse>())
   const clustersRef = useRef<ReviewVisualResponse['clusters']>([])
 
-  const [interval, setInterval] = useState<KlineInterval>('5m')
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [data, setData] = useState<ReviewVisualResponse | null>(null)
@@ -426,12 +420,7 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
       <div className="mb-3 flex items-center justify-between gap-3">
         <Space size={[8, 8]} wrap>
           <Tag color="blue">{resolvedStockLabel}</Tag>
-          <Select<KlineInterval>
-            value={interval}
-            onChange={(value) => setInterval(value)}
-            style={{ width: 120 }}
-            options={INTERVAL_OPTIONS}
-          />
+          <Tag>周期：{interval}</Tag>
           <Button icon={<ReloadOutlined />} onClick={() => { void loadVisualData(true) }} loading={loading}>
             刷新
           </Button>

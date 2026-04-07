@@ -531,6 +531,42 @@ export interface ReviewActionSummary {
   alignmentRate: number
 }
 
+export interface ReviewDailyQualityItem {
+  date: string
+  stocksCount: number
+  predictionSamples: number
+  predictionHits: number
+  predictionAccuracy: number
+  buySamples: number
+  buyHits: number
+  buyAccuracy: number
+  sellSamples: number
+  sellHits: number
+  sellAccuracy: number
+  actionSamples: number
+  actionHits: number
+  actionAccuracy: number
+  actionInsufficientData: number
+  viewpointLinkedActions: number
+  alignedActions: number
+  alignmentRate: number
+  buyActions: number
+  sellActions: number
+  actionDetails: ReviewDailyActionDetailItem[]
+}
+
+export interface ReviewDailyActionDetailItem {
+  entryId: string
+  stockCode: string
+  eventTime: string
+  operationTag: '买入' | '卖出'
+  viewpointDirection: '看多' | '看空' | '未知'
+  alignedWithViewpoint: boolean | null
+  hit: boolean
+  changePct: number
+  reason: string
+}
+
 export interface ReviewEvaluateRequest {
   scope: ReviewScope
   stockCode?: string
@@ -551,7 +587,19 @@ export interface ReviewEvaluateResponse {
   results: ReviewEventResult[]
   actionSummary: ReviewActionSummary
   actionResults: ReviewActionResult[]
+  dailyQuality?: ReviewDailyQualityItem[]
+  perfStats?: ReviewEvaluationPerfStats
   generatedAt: string
+}
+
+export interface ReviewEvaluationPerfStats {
+  totalMs: number
+  collectMs: number
+  marketDataMs: number
+  evaluateMs: number
+  indexedHitCount: number
+  indexedMatchedStocks: number
+  participatingStocks: number
 }
 
 export interface IAIService {

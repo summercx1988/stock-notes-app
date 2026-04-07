@@ -2,6 +2,140 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-04-06 (盘前复习解析稳健性优化：Markdown 响应兜底)
+
+### Changed
+- `parsePreMarketResponse` 增加 Markdown 兜底解析：
+  - 当 AI 未按约定返回 JSON，而是返回标题/列表样式文本时，自动抽取“昨日概要、待跟进、关键位、今日重点、观察列表、风险提醒”并结构化入库。
+  - 避免因 `Unexpected token '#'` 导致解析失败日志持续出现。
+- 盘前提示词强化为“仅输出 JSON 对象，不要 Markdown 标题/解释/代码块”，降低格式偏离概率。
+- 盘前提醒弹窗关键位价格展示增加 `Number.isFinite` 判定，防止异常值渲染为 `NaN`。
+
+### Verification
+- `npm run build` 通过（`tsc + vite build`）。
+
+## 2026-04-05 (命名统一：复盘分析重命名为观点追踪)
+
+### Changed
+- 顶部导航页签由 `复盘分析` 统一改为 `观点追踪`，模块路由 key 从 `review` 迁移为 `viewpoint-tracking`。
+- 视图组件重命名：
+  - `ReviewAnalysisView.tsx` -> `ViewpointTrackingView.tsx`
+  - `MainLayout` 挂载组件同步切换为 `ViewpointTrackingView`。
+- 观点追踪页面本地状态与动作函数命名语义化：
+  - `scope/evaluation/running` -> `trackingScope/trackingEvaluation/trackingRunning`
+  - `ruleWindowDays/ruleThresholdPct` -> `trackingWindowDays/trackingThresholdPct`
+  - `handleRunReview` -> `handleRunTracking`
+- 关联文案同步：
+  - 每日复盘页与设置页中“复盘分析”字样统一为“观点追踪分析”。
+  - 工程文档章节标题更新为“观点追踪模块”。
+
+### Verification
+- `npm run build` 通过（`tsc + vite build`）。
+
+## 2026-04-05 (文档更新：技术架构总览同步到最新实现)
+
+### Changed
+- 重写 `docs/ENGINEERING_GUIDE.md`，同步当前真实架构与迭代结果：
+  - 复盘双场景（个股择时 / 全股票综合）模块边界与数据流。
+  - Sidecar 索引架构（`data/runtime/notes-index.json`）与增量维护策略。
+  - 复盘性能优化链路（单次扫描、评估器二分、默认近两周）。
+  - 综合复盘性能观测面板（`perfStats`）与关键指标说明。
+
+## 2026-04-05 (复盘性能可视化：耗时与索引命中面板)
+
+### Added
+- 复盘评估响应新增 `perfStats` 字段：
+  - `totalMs`、`collectMs`、`marketDataMs`、`evaluateMs`
+  - `indexedHitCount`、`indexedMatchedStocks`、`participatingStocks`
+- 全股票综合复盘新增“本次计算性能”卡片，展示上述关键性能指标与数据源标识。
+
+### Changed
+- `NotesService.getReviewIndexedEntries()` 返回结果补充索引查询统计（命中条数、扫描股票数、命中股票数），用于复盘性能可观测性。
+
+### Verification
+- `npm run build` 通过（`tsc + vite build`）。
+
+## 2026-04-05 (复盘索引层落地：Markdown 主存储 + Sidecar 索引)
+
+### Added
+- 新增复盘侧轻量索引能力（`NotesService` 内建）：
+  - 运行时索引文件：`data/runtime/notes-index.json`。
+  - 以 `stockCode + entryId` 组织索引项，记录 `eventTime/category/operationTag/trackingStatus/viewpointDirection` 等查询字段。
+- 新增 `notes.getReviewIndexedEntries(...)` 查询接口，支持按 `stockCode / 时间区间 / 类别集合` 快速过滤复盘样本。
+
+### Changed
+- 复盘评估链路改为优先走索引查询（`NotesAppService.collectReviewEvaluationEvents`）：
+  - 避免每次复盘都全量解析 Markdown 正文。
+  - 与“单次扫描产出 events + actionEvents”策略叠加，进一步降低综合复盘延迟。
+- 索引维护策略：
+  - 在新增/编辑/删除/导入笔记后对对应股票索引标记脏并增量刷新。
+  - 启动时可读取持久化索引并按需补齐缺失股票索引项。
+
+### Verification
+- `npm run build` 通过（`tsc + vite build`）。
+
+## 2026-04-05 (综合复盘性能优化：单次扫描与评估器加速)
+
+### Changed
+- 复盘评估数据采集改为单次扫描：
+  - `NotesAppService.getReviewEvaluation()` 不再分别调用两次事件采集（预测/操作）。
+  - 新增统一采集方法，在同一轮读取中同时产出 `events` 与 `actionEvents`，减少重复遍历 `entries/timeline` 的开销。
+- 评估器性能优化：
+  - `review-evaluator` 将“按事件重复过滤+排序 K 线”改为“按股票预处理一次 K 线序列（排序+时间索引）”。
+  - 事件入场点与目标窗口点改为二分定位（`lowerBound/upperBound`），降低大样本场景计算复杂度。
+- 复盘页默认时间范围由近 30 天调整为近两周（默认 `T-13 ~ T`），减少全量扫描与首轮等待时间。
+
+### Verification
+- `npm run build` 通过（`tsc + vite build`）。
+
+## 2026-04-05 (复盘明细可读性增强：股票名称映射)
+
+### Changed
+- 复盘分析页面新增本地股票名称映射字典（`code -> name`），基于现有 `stock:getByCodes` 批量查询并缓存。
+- 事件判定明细、操作归因明细、每日质量展开明细的“股票”列统一展示为 `名称(代码)`，同时保留代码。
+- 增加代码标准化兜底（支持 `SH600519` / `600519` 归一映射），名称缺失时自动回退为纯代码显示。
+
+### Verification
+- `npm run build` 通过（`tsc + vite build`）。
+
+## 2026-04-05 (复盘分析补强：近两周执行明细与预测样本门禁)
+
+### Changed
+- 全股票综合复盘的“每日质量明细”仅展示近两周（以当前结果最新日期向前 14 天窗口）。
+- 日维统计加入“预测样本门禁”：仅保留存在预测样本（`predictionSamples > 0`）的日期，不再统计无预测笔记日期。
+- 每日质量明细表新增买卖维度指标：
+  - 买点胜率（买点命中/买点样本）
+  - 卖点胜率（卖点命中/卖点样本）
+  - 数据不足样本（当日操作事件中无法完成评估的数量）
+- 每日日志支持展开查看“买卖执行明细”：
+  - 时间、股票、买/卖类型、观点一致性、命中结果、涨跌幅、判定说明。
+
+### Added
+- `ReviewDailyQualityItem` 扩展买卖分项字段与 `actionDetails` 明细数组。
+- 新增 `ReviewDailyActionDetailItem` 类型，用于前后端统一传输当日执行记录。
+
+### Verification
+- `npm run build` 通过（`tsc + vite build`）。
+
+## 2026-04-05 (复盘分析双场景重构：个股择时与全市场综合分离)
+
+### Changed
+- 复盘分析页面移除标题中的 `Phase 3`，并将模式显式拆分为：
+  - `个股择时复盘`：保留 K 线联动、事件明细、操作归因明细与行级联动交互。
+  - `全股票综合复盘`：改为质量看板视图，聚焦全市场指标趋势与按日明细。
+- `ReviewKlineWorkbench` 改为由父级统一传入 `interval`，移除内部周期状态，避免父子双状态导致的图表/统计口径不一致。
+
+### Added
+- 新增主进程按日质量聚合核心：`src/main/core/review-daily-quality.ts`
+  - 基于已有评估结果输出 `dailyQuality`（每日预测样本、预测命中率、操作样本、操作胜率、知行一致率、买卖次数、涉及股票数）。
+- 复盘评估返回体新增 `dailyQuality` 字段并接入 IPC 链路，前端可直接渲染综合模式看板。
+- 新增综合模式趋势图组件：`src/renderer/components/review/OverallQualityTrendChart.tsx`
+  - 提供“每日预测样本数（柱）+ 预测命中率/操作胜率/知行一致率（线）”的可视化。
+- 综合模式新增“每日质量明细表”，支持按日查看关键决策质量指标。
+
+### Verification
+- `npm run build` 通过（`tsc + vite build`）。
+
 ## 2026-04-05 (文档治理：主文档整合与历史归档)
 
 ### Added

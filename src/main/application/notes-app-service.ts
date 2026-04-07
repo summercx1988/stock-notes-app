@@ -1,6 +1,7 @@
 import { NotesService } from '../services/notes'
 import { MarketDataService } from '../services/market-data'
 import { evaluateActionEvents, evaluateReviewEvents } from '../core/review-evaluator'
+import { buildReviewDailyQuality } from '../core/review-daily-quality'
 import { buildReviewSnapshot, filterByRange, normalizeDirection } from '../core/review-snapshot'
 import { alignReviewMarkers, type ReviewVisualEventInput } from '../core/review-alignment'
 import { createTraceId, logPipelineEvent } from '../services/pipeline-logger'
@@ -203,18 +204,14 @@ export class NotesAppService {
     const interval = this.normalizeInterval(request.interval)
     const rule = this.normalizeRule(request.rule)
     try {
-      const events = await this.collectReviewEvents({
+      const collectStartedAt = Date.now()
+      const { events, actionEvents, stats: collectStats } = await this.collectReviewEvaluationEvents({
         scope: request.scope,
         stockCode: request.stockCode,
         startDate,
         endDate
       })
-      const actionEvents = await this.collectActionEvents({
-        scope: request.scope,
-        stockCode: request.stockCode,
-        startDate,
-        endDate
-      })
+      const collectMs = Date.now() - collectStartedAt
 
       const actionableEvents = events.filter((event) => event.direction === '看多' || event.direction === '看空')
       const marketLinkedEvents = [
@@ -230,6 +227,7 @@ export class NotesAppService {
       const candlesByStock: Record<string, { timestamp: string; close: number }[]> = {}
       const eventsByStock = new Map<string, Array<{ stockCode: string; eventTime: string }>>()
 
+      const marketDataStartedAt = Date.now()
       for (const event of marketLinkedEvents) {
         const current = eventsByStock.get(event.stockCode) || []
         current.push(event)
@@ -248,19 +246,39 @@ export class NotesAppService {
           close: candle.close
         }))
       }
+      const marketDataMs = Date.now() - marketDataStartedAt
 
+      const evaluateStartedAt = Date.now()
       const evaluation = evaluateReviewEvents(events, candlesByStock, rule)
       const actionEvaluation = evaluateActionEvents(actionEvents, candlesByStock, rule)
+      const dailyQuality = buildReviewDailyQuality(
+        evaluation.results,
+        actionEvaluation.results,
+        actionEvents
+      )
+      const evaluateMs = Date.now() - evaluateStartedAt
+      const totalMs = Date.now() - startedAt
+      const perfStats: ReviewEvaluateResponse['perfStats'] = {
+        totalMs,
+        collectMs,
+        marketDataMs,
+        evaluateMs,
+        indexedHitCount: collectStats.indexedHitCount,
+        indexedMatchedStocks: collectStats.indexedMatchedStocks,
+        participatingStocks: eventsByStock.size
+      }
       logPipelineEvent({
         traceId,
         stage: 'review',
         status: 'success',
         stockCode: request.stockCode,
-        durationMs: Date.now() - startedAt,
+        durationMs: totalMs,
         extra: {
           total_notes: evaluation.summary.totalNotes,
           evaluated_samples: evaluation.summary.evaluatedSamples,
-          action_samples: actionEvaluation.summary.evaluatedSamples
+          action_samples: actionEvaluation.summary.evaluatedSamples,
+          indexed_hit_count: collectStats.indexedHitCount,
+          participating_stocks: eventsByStock.size
         }
       })
       return {
@@ -274,6 +292,8 @@ export class NotesAppService {
         results: evaluation.results,
         actionSummary: actionEvaluation.summary,
         actionResults: actionEvaluation.results,
+        dailyQuality,
+        perfStats,
         generatedAt: new Date().toISOString()
       }
     } catch (error: any) {
@@ -340,91 +360,65 @@ export class NotesAppService {
     }
   }
 
-  private async collectReviewEvents(params: {
+  private async collectReviewEvaluationEvents(params: {
     scope: 'single' | 'overall'
     stockCode?: string
     startDate?: Date
     endDate?: Date
-  }): Promise<Array<{
-    entryId: string
-    stockCode: string
-    eventTime: string
-    direction: '看多' | '看空' | '未知'
-  }>> {
-    const reviewCategories = await this.getReviewEligibleCategories()
-    if (params.scope === 'single') {
-      if (!params.stockCode) {
-        throw new Error('single scope requires stockCode')
-      }
-      const entries = await this.notesService.getEntries(params.stockCode)
-      const rangedEntries = filterByRange(entries, params.startDate, params.endDate)
-        .filter((entry) => reviewCategories.has(entry.category))
-      return rangedEntries.map((entry) => ({
-        entryId: entry.id,
-        stockCode: params.stockCode!,
-        eventTime: this.toIsoString(entry.eventTime || entry.timestamp),
-        direction: normalizeDirection(entry.viewpoint?.direction)
-      }))
+  }): Promise<{
+    events: Array<{
+      entryId: string
+      stockCode: string
+      eventTime: string
+      direction: '看多' | '看空' | '未知'
+    }>
+    actionEvents: Array<{
+      entryId: string
+      stockCode: string
+      eventTime: string
+      operationTag: '买入' | '卖出'
+      viewpointDirection: '看多' | '看空' | '未知'
+    }>
+    stats: {
+      indexedHitCount: number
+      indexedMatchedStocks: number
     }
-
-    const timelineItems = await this.notesService.getTimeline({
+  }> {
+    if (params.scope === 'single' && !params.stockCode) {
+      throw new Error('single scope requires stockCode')
+    }
+    const reviewCategories = await this.getReviewEligibleCategories()
+    const indexedResult = await this.notesService.getReviewIndexedEntries({
+      stockCode: params.scope === 'single' ? params.stockCode : undefined,
       startDate: params.startDate,
-      endDate: params.endDate
+      endDate: params.endDate,
+      categories: reviewCategories
     })
-    return timelineItems
-      .filter((item) => reviewCategories.has(item.category))
-      .map((item) => ({
-      entryId: item.id,
+    const indexedItems = indexedResult.items
+    const events = indexedItems.map((item) => ({
+      entryId: item.entryId,
       stockCode: item.stockCode,
-      eventTime: this.toIsoString(item.timestamp),
-      direction: normalizeDirection(item.viewpoint?.direction)
+      eventTime: this.toIsoString(item.eventTime),
+      direction: normalizeDirection(item.viewpointDirection)
     }))
-  }
-
-  private async collectActionEvents(params: {
-    scope: 'single' | 'overall'
-    stockCode?: string
-    startDate?: Date
-    endDate?: Date
-  }): Promise<Array<{
-    entryId: string
-    stockCode: string
-    eventTime: string
-    operationTag: '买入' | '卖出'
-    viewpointDirection: '看多' | '看空' | '未知'
-  }>> {
-    const reviewCategories = await this.getReviewEligibleCategories()
-    if (params.scope === 'single') {
-      if (!params.stockCode) {
-        throw new Error('single scope requires stockCode')
-      }
-      const entries = await this.notesService.getEntries(params.stockCode)
-      const rangedEntries = filterByRange(entries, params.startDate, params.endDate)
-        .filter((entry) => reviewCategories.has(entry.category))
-        .filter((entry) => entry.operationTag === '买入' || entry.operationTag === '卖出')
-      return rangedEntries.map((entry) => ({
-        entryId: entry.id,
-        stockCode: params.stockCode!,
-        eventTime: this.toIsoString(entry.eventTime || entry.timestamp),
-        operationTag: entry.operationTag as '买入' | '卖出',
-        viewpointDirection: normalizeDirection(entry.viewpoint?.direction)
-      }))
-    }
-
-    const timelineItems = await this.notesService.getTimeline({
-      startDate: params.startDate,
-      endDate: params.endDate
-    })
-    return timelineItems
-      .filter((item) => reviewCategories.has(item.category))
+    const actionEvents = indexedItems
       .filter((item) => item.operationTag === '买入' || item.operationTag === '卖出')
       .map((item) => ({
-        entryId: item.id,
+        entryId: item.entryId,
         stockCode: item.stockCode,
-        eventTime: this.toIsoString(item.timestamp),
+        eventTime: this.toIsoString(item.eventTime),
         operationTag: item.operationTag as '买入' | '卖出',
-        viewpointDirection: normalizeDirection(item.viewpoint?.direction)
+        viewpointDirection: normalizeDirection(item.viewpointDirection)
       }))
+
+    return {
+      events,
+      actionEvents,
+      stats: {
+        indexedHitCount: indexedResult.stats.indexedHitCount,
+        indexedMatchedStocks: indexedResult.stats.matchedStocks
+      }
+    }
   }
 
   private async collectReviewVisualEvents(params: {

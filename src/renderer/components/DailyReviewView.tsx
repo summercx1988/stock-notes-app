@@ -392,7 +392,7 @@ const DailyReviewView: React.FC = () => {
           <Space direction="vertical" size={2}>
             <Title level={4} className="m-0">📋 每日复盘</Title>
             <Text type="secondary">
-              复盘分析只看近 {analysisLookbackDays} 天（T-{analysisLookbackDays}），
+              观点追踪分析只看近 {analysisLookbackDays} 天（T-{analysisLookbackDays}），
               {includeArchived
                 ? `日志查看近 ${ARCHIVE_VIEW_LOOKBACK_DAYS} 天（含归档）`
                 : `日志默认展示近 ${HISTORY_LOOKBACK_DAYS} 天（未归档）`}
