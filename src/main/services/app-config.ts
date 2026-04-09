@@ -9,6 +9,13 @@ import { appLogger } from './app-logger'
 const getSettingsPath = (): string => getDataPath('config', 'settings.json')
 
 const DEFAULT_SETTINGS: UserSettings = createDefaultUserSettings()
+const LEGACY_CLOUD_ASR_KEY = 'cloudASR'
+
+const stripLegacyCloudASR = (settings: Record<string, unknown>): void => {
+  if (LEGACY_CLOUD_ASR_KEY in settings) {
+    delete settings[LEGACY_CLOUD_ASR_KEY]
+  }
+}
 
 const normalizeDefaultDirection = (value?: string): string => {
   if (!value) return '未知'
@@ -84,8 +91,12 @@ class AppConfigService {
     if (!key || !key.trim()) {
       throw new Error('config key is required')
     }
+    if (key === LEGACY_CLOUD_ASR_KEY || key.startsWith(`${LEGACY_CLOUD_ASR_KEY}.`)) {
+      throw new Error('云端 ASR 配置项已移除')
+    }
     const settings = await this.ensureLoaded()
     this.setByPath(settings as unknown as Record<string, unknown>, key, value)
+    stripLegacyCloudASR(settings as unknown as Record<string, unknown>)
     settings.notes.categoryConfigs = normalizeNoteCategoryConfigs(settings.notes.categoryConfigs)
     settings.notes.defaultDirection = normalizeDefaultDirection(settings.notes.defaultDirection)
     normalizeDailyReviewSettings(settings)
@@ -96,10 +107,13 @@ class AppConfigService {
 
   async update(partial: Partial<UserSettings>): Promise<UserSettings> {
     const settings = await this.ensureLoaded()
+    const sanitizedPatch = { ...(partial as Record<string, unknown>) }
+    stripLegacyCloudASR(sanitizedPatch)
     const merged = this.deepMerge(
       settings as unknown as Record<string, unknown>,
-      partial as unknown as Record<string, unknown>
+      sanitizedPatch
     ) as unknown as UserSettings
+    stripLegacyCloudASR(merged as unknown as Record<string, unknown>)
     merged.notes.categoryConfigs = normalizeNoteCategoryConfigs(merged.notes.categoryConfigs)
     merged.notes.defaultDirection = normalizeDefaultDirection(merged.notes.defaultDirection)
     normalizeDailyReviewSettings(merged)
@@ -127,11 +141,13 @@ class AppConfigService {
   private async loadFromFile(): Promise<UserSettings> {
     try {
       const content = await fs.readFile(getSettingsPath(), 'utf-8')
-      const parsed = JSON.parse(content) as Partial<UserSettings>
+      const parsed = JSON.parse(content) as Record<string, unknown>
+      stripLegacyCloudASR(parsed)
       const merged = this.deepMerge(
         DEFAULT_SETTINGS as unknown as Record<string, unknown>,
-        parsed as unknown as Record<string, unknown>
+        parsed
       ) as unknown as UserSettings
+      stripLegacyCloudASR(merged as unknown as Record<string, unknown>)
       merged.notes.categoryConfigs = normalizeNoteCategoryConfigs(merged.notes.categoryConfigs)
       merged.notes.defaultDirection = normalizeDefaultDirection(merged.notes.defaultDirection)
       normalizeDailyReviewSettings(merged)
@@ -153,6 +169,7 @@ class AppConfigService {
 
   private async persist(settings: UserSettings): Promise<void> {
     const settingsPath = getSettingsPath()
+    stripLegacyCloudASR(settings as unknown as Record<string, unknown>)
     await fs.mkdir(path.dirname(settingsPath), { recursive: true })
     await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
     this.cache = settings

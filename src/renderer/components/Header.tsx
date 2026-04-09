@@ -12,7 +12,7 @@ import type { FeishuStatus } from '../../shared/types'
 const Header: React.FC = () => {
   const { activeModule, setActiveModule } = useAppStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsTab, setSettingsTab] = useState<'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'>('text-ai')
+  const [settingsTab, setSettingsTab] = useState<'text-ai' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'>('text-ai')
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferMode, setTransferMode] = useState<TransferMode>('export-all')
   const [feishuStatus, setFeishuStatus] = useState<FeishuStatus>({ enabled: false, connected: false })

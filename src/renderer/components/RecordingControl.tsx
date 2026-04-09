@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, DatePicker, Select, Input, AutoComplete } from 'antd'
-import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, CloudOutlined, LaptopOutlined } from '@ant-design/icons'
+import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, EditOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
 import type { NoteCategory, NoteCategoryConfig, OperationTag, UserSettings, Viewpoint, VoiceServiceStatus } from '../../shared/types'
@@ -32,7 +32,7 @@ interface AIExtractResult {
   originalText: string
 }
 
-type TranscribeEngine = 'local' | 'cloud'
+type EntryMode = 'voice' | 'text'
 type RecordingState = 'idle' | 'connecting' | 'recording' | 'stopping' | 'transcribing' | 'analyzing' | 'completed'
 type StockSelectOption = { label: string; value: string; name: string }
 
@@ -46,10 +46,11 @@ const RecordingControl: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
-  const [transcribeEngine, setTranscribeEngine] = useState<TranscribeEngine>('local')
+  const [entryMode, setEntryMode] = useState<EntryMode>('voice')
   const [recordingState, setRecordingState] = useState<RecordingState>('idle')
   const [recordingDuration, setRecordingDuration] = useState(0)
   const [audioPath, setAudioPath] = useState<string>('')
+  const [manualInputText, setManualInputText] = useState<string>('')
   const [transcribedText, setTranscribedText] = useState<string>('')
   const [extractResult, setExtractResult] = useState<AIExtractResult | null>(null)
   const [editableNoteContent, setEditableNoteContent] = useState<string>('')
@@ -77,12 +78,12 @@ const RecordingControl: React.FC = () => {
     .map((item) => ({ label: item.label, value: item.code }))
   const noteOperationOptions = getEnabledOptions(activeCategoryConfig?.fields.operationTag.options || [])
     .map((item) => ({ label: item.label, value: item.code }))
+  const isVoiceFlowActive = ['connecting', 'recording', 'stopping', 'transcribing'].includes(recordingState)
 
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
   const stockSearchTimerRef = useRef<NodeJS.Timeout | null>(null)
   const audioSavedTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const disconnectHandledRef = useRef(false)
-  const cloudASRReady = Boolean(settings?.cloudASR?.apiKey && settings?.cloudASR?.baseUrl)
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -170,6 +171,7 @@ const RecordingControl: React.FC = () => {
     setRecordingState('idle')
     setRecordingDuration(0)
     setAudioPath('')
+    setManualInputText('')
     setTranscribedText('')
     setExtractResult(null)
     setEditableNoteContent('')
@@ -205,13 +207,7 @@ const RecordingControl: React.FC = () => {
   }, [loadUserPreferences])
 
   useEffect(() => {
-    if (!cloudASRReady && transcribeEngine === 'cloud') {
-      setTranscribeEngine('local')
-    }
-  }, [cloudASRReady, transcribeEngine])
-
-  useEffect(() => {
-    if (!isModalOpen || transcribeEngine !== 'local') return
+    if (!isModalOpen || entryMode !== 'voice') return
 
     const unsubscribeStatus = window.api.voice.onStatus((status) => {
       setVoiceStatus(status)
@@ -242,10 +238,10 @@ const RecordingControl: React.FC = () => {
     return () => {
       unsubscribeStatus()
     }
-  }, [clearAudioSavedTimeout, clearRecordingTimer, isModalOpen, recordingState, transcribeEngine])
+  }, [clearAudioSavedTimeout, clearRecordingTimer, entryMode, isModalOpen, recordingState])
 
   useEffect(() => {
-    if (!isModalOpen || transcribeEngine !== 'local') return
+    if (!isModalOpen || entryMode !== 'voice') return
     if (!['connecting', 'recording', 'stopping', 'transcribing'].includes(recordingState)) return
 
     const timer = setInterval(() => {
@@ -270,7 +266,7 @@ const RecordingControl: React.FC = () => {
     }, 1500)
 
     return () => clearInterval(timer)
-  }, [isModalOpen, recordingState, transcribeEngine])
+  }, [entryMode, isModalOpen, recordingState])
 
   useEffect(() => {
     const directionCodes = noteDirectionOptions.map((item) => item.value)
@@ -377,7 +373,7 @@ const RecordingControl: React.FC = () => {
   const handleAnalyze = useCallback(async (textToAnalyze: string) => {
     const normalizedInput = cleanTranscriptText(textToAnalyze)
     if (!normalizedInput.trim()) {
-      message.warning('没有转写内容可供处理')
+      message.warning('没有可解析的文本内容')
       return
     }
 
@@ -434,12 +430,19 @@ const RecordingControl: React.FC = () => {
     }
   }, [])
 
-  const transcribeAudio = useCallback(async (path: string) => {
-    if (transcribeEngine === 'cloud') {
-      return window.api.voice.transcribeWithCloud(path)
+  const handleAnalyzeManualInput = useCallback(async () => {
+    const normalizedInput = cleanTranscriptText(manualInputText)
+    if (!normalizedInput.trim()) {
+      message.warning('请先输入要解析的文本')
+      return
     }
+    setTranscribedText(normalizedInput)
+    await handleAnalyze(normalizedInput)
+  }, [handleAnalyze, manualInputText])
+
+  const transcribeAudio = useCallback(async (path: string) => {
     return window.api.voice.transcribeFile(path)
-  }, [transcribeEngine])
+  }, [])
 
   useEffect(() => {
     if (!isModalOpen) return
@@ -532,6 +535,9 @@ const RecordingControl: React.FC = () => {
     await loadUserPreferences()
     resetState()
     setIsModalOpen(true)
+    if (entryMode !== 'voice') {
+      return
+    }
 
     try {
       const status = await checkVoiceServiceStatus()
@@ -564,7 +570,7 @@ const RecordingControl: React.FC = () => {
   }
 
   const handleCloseModal = () => {
-    if (recordingState === 'recording') {
+    if (entryMode === 'voice' && recordingState === 'recording') {
       void stopRecording()
     }
     setIsModalOpen(false)
@@ -651,6 +657,7 @@ const RecordingControl: React.FC = () => {
         const sourceText = [
           stockSearchKeyword,
           selectedStockName,
+          manualInputText,
           editableNoteContent,
           extractResult.optimizedText,
           extractResult.originalText,
@@ -702,16 +709,30 @@ const RecordingControl: React.FC = () => {
       const stockInfo = await window.api.stock.getByCode(stockCode)
       const resolvedStockName = selectedStockName || extractResult.stock?.name || stockInfo?.name || stockCode
 
-      await window.api.notes.addEntry(stockCode, {
+      const isVoiceEntry = entryMode === 'voice' && Boolean(audioPath)
+      const payload: {
+        content: string
+        eventTime: string
+        category: NoteCategory
+        operationTag: OperationTag
+        viewpoint: Viewpoint
+        inputType: 'voice' | 'manual'
+        audioFile?: string
+        audioDuration?: number
+      } = {
         content: finalContent,
         eventTime: (noteEventTime || dayjs()).toISOString(),
         category: noteCategory,
         operationTag: noteOperationTag,
         viewpoint,
-        inputType: 'voice',
-        audioFile: audioPath,
-        audioDuration: recordingDuration
-      })
+        inputType: isVoiceEntry ? 'voice' : 'manual'
+      }
+      if (isVoiceEntry) {
+        payload.audioFile = audioPath
+        payload.audioDuration = recordingDuration
+      }
+
+      await window.api.notes.addEntry(stockCode, payload)
 
       const updatedNote = await window.api.notes.getStockNote(stockCode)
       if (updatedNote) {
@@ -793,11 +814,11 @@ const RecordingControl: React.FC = () => {
         icon={<AudioOutlined />}
         onClick={handleOpenModal}
       >
-        录音
+        录入
       </Button>
 
       <Modal
-        title="📝 语音录入"
+        title="📝 快速录入"
         open={isModalOpen}
         onCancel={handleCloseModal}
         footer={null}
@@ -816,35 +837,36 @@ const RecordingControl: React.FC = () => {
 
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-gray-600">转写引擎:</span>
+              <span className="text-gray-600">录入方式:</span>
               <div className="flex gap-2">
                 <Button
-                  type={transcribeEngine === 'local' ? 'primary' : 'default'}
-                  icon={<LaptopOutlined />}
-                  onClick={() => setTranscribeEngine('local')}
+                  type={entryMode === 'voice' ? 'primary' : 'default'}
+                  icon={<AudioOutlined />}
+                  onClick={() => {
+                    setEntryMode('voice')
+                    resetState()
+                  }}
+                  disabled={isVoiceFlowActive}
                 >
-                  本地 Whisper
+                  本地录音
                 </Button>
                 <Button
-                  type={transcribeEngine === 'cloud' ? 'primary' : 'default'}
-                  icon={<CloudOutlined />}
+                  type={entryMode === 'text' ? 'primary' : 'default'}
+                  icon={<EditOutlined />}
                   onClick={() => {
-                    if (!cloudASRReady) {
-                      message.warning('请先在设置中配置云端 ASR 的 API 地址和 Key')
-                      return
-                    }
-                    setTranscribeEngine('cloud')
+                    setEntryMode('text')
+                    resetState()
                   }}
-                  disabled={!cloudASRReady}
+                  disabled={isVoiceFlowActive}
                 >
-                  云端 ASR
+                  直接文本
                 </Button>
               </div>
             </div>
             {getRecordingStateTag()}
           </div>
 
-          {currentStep === 0 && (
+          {currentStep === 0 && entryMode === 'voice' && (
             <div className="space-y-6">
               <div className="flex justify-center gap-4">
                 <Card className="w-80 text-center">
@@ -881,6 +903,27 @@ const RecordingControl: React.FC = () => {
             </div>
           )}
 
+          {currentStep === 0 && entryMode === 'text' && (
+            <div className="space-y-4">
+              <Card className="border border-blue-100 bg-blue-50/40">
+                <div className="space-y-3">
+                  <h4 className="font-medium m-0">输入待解析文本</h4>
+                  <TextArea
+                    value={manualInputText}
+                    onChange={(event) => setManualInputText(event.target.value)}
+                    autoSize={{ minRows: 8, maxRows: 16 }}
+                    placeholder="粘贴你的盘中观点、语音转写结果或临时笔记，然后点击“开始解析”。"
+                  />
+                  <div className="flex justify-end">
+                    <Button type="primary" icon={<EditOutlined />} onClick={() => { void handleAnalyzeManualInput() }}>
+                      开始解析
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+
           {currentStep === 1 && recordingState === 'recording' && (
             <div className="text-center py-8">
               <div className="mb-6">
@@ -901,7 +944,7 @@ const RecordingControl: React.FC = () => {
             </div>
           )}
 
-          {currentStep === 2 && recordingState === 'transcribing' && (
+          {entryMode === 'voice' && currentStep === 2 && recordingState === 'transcribing' && (
             <div className="text-center py-8">
               <LoadingOutlined className="text-5xl text-purple-500 mb-4" />
               <div className="text-lg mb-4">正在转写音频...</div>
@@ -909,7 +952,7 @@ const RecordingControl: React.FC = () => {
             </div>
           )}
 
-          {currentStep === 2 && recordingState === 'stopping' && (
+          {entryMode === 'voice' && currentStep === 2 && recordingState === 'stopping' && (
             <div className="text-center py-8">
               <LoadingOutlined className="text-5xl text-orange-500 mb-4" />
               <div className="text-lg mb-4">正在结束录音并保存音频...</div>
@@ -929,7 +972,7 @@ const RecordingControl: React.FC = () => {
           {currentStep === 4 && extractResult && (
             <div className="space-y-4">
               <div className="p-4 bg-gray-50 rounded-lg">
-                <h4 className="font-medium mb-2">ASR 原文</h4>
+                <h4 className="font-medium mb-2">{entryMode === 'voice' ? '转写原文' : '输入原文'}</h4>
                 <div className="text-gray-700">{transcribedText}</div>
                 {!!extractResult.note?.sentiment && (
                   <div className="mt-2">
@@ -1076,7 +1119,7 @@ const RecordingControl: React.FC = () => {
 
               <div className="flex justify-end gap-2">
                 <Button onClick={() => { setCurrentStep(0); resetState(); }}>
-                  重新录音
+                  {entryMode === 'voice' ? '重新录音' : '重新输入'}
                 </Button>
                 <Button type="primary" icon={<SaveOutlined />} onClick={handleSaveNote}>
                   保存笔记

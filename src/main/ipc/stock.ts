@@ -1,12 +1,8 @@
 import { ipcMain } from 'electron'
 import { stockDatabase, type StockInfo, type SearchResult } from '../services/stock-db'
-import { AIProcessor, type AIExtractResult } from '../services/ai-processor'
 import { voiceTranscriberClient } from '../services/VoiceTranscriberClient'
-import { openAIWhisperService } from '../services/OpenAIWhisper'
 import { cleanTranscriptText } from '../../shared/text-normalizer'
 import { watchlistService } from '../services/watchlist'
-
-const aiProcessor = new AIProcessor()
 
 ipcMain.handle('stock:search', async (_, query: string, limit?: number): Promise<SearchResult[]> => {
   await stockDatabase.ensureLoaded()
@@ -52,20 +48,6 @@ ipcMain.handle('stock:match', async (_, text: string): Promise<SearchResult | nu
     }
   }
   return stockDatabase.matchStock(cleaned)
-})
-
-ipcMain.handle('ai:extract', async (_, text: string): Promise<AIExtractResult> => {
-  console.log('[IPC] ai:extract called with:', text.substring(0, 100))
-  const result = await aiProcessor.extract(text)
-  console.log('[IPC] ai:extract result:', result.stock?.code, result.stock?.name)
-  return result
-})
-
-ipcMain.handle('ai:extractFast', async (_, text: string): Promise<AIExtractResult> => {
-  console.log('[IPC] ai:extractFast called with:', text.substring(0, 100))
-  const result = await aiProcessor.extractForFeishu(text)
-  console.log('[IPC] ai:extractFast result:', result.stock?.code, result.stock?.name)
-  return result
 })
 
 ipcMain.handle('voice:start', async () => {
@@ -148,19 +130,6 @@ ipcMain.handle('voice:transcribeFile', async (_, audioPath: string) => {
     return { success: true, text: cleanTranscriptText(text) }
   } catch (error: any) {
     console.error('[IPC] voice:transcribeFile error:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('voice:transcribeWithCloud', async (_, audioPath: string) => {
-  console.log('[IPC] voice:transcribeWithCloud:', audioPath)
-  try {
-    const result = await openAIWhisperService.transcribe(audioPath)
-    const cleaned = cleanTranscriptText(result || '')
-    console.log('[IPC] voice:transcribeWithCloud result:', cleaned?.substring(0, 100))
-    return { success: true, text: cleaned }
-  } catch (error: any) {
-    console.error('[IPC] voice:transcribeWithCloud error:', error)
     return { success: false, error: error.message }
   }
 })

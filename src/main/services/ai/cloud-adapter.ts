@@ -1,9 +1,7 @@
 import type { IAIService, TranscribeResult, OptimizeResult, ViewpointResult, HealthStatus } from '../../../shared/types'
-import fs from 'fs/promises'
-import path from 'path'
 import { appConfigService } from '../app-config'
 import { appLogger } from '../app-logger'
-import { DEFAULT_CLOUD_ASR_SETTINGS, DEFAULT_TEXT_ANALYSIS_SETTINGS } from '../../../shared/default-user-settings'
+import { DEFAULT_TEXT_ANALYSIS_SETTINGS } from '../../../shared/default-user-settings'
 
 export class CloudAIAdapter implements IAIService {
   readonly provider = 'openai'
@@ -31,69 +29,8 @@ export class CloudAIAdapter implements IAIService {
     })
   }
 
-  async transcribe(audioPath: string): Promise<TranscribeResult> {
-    const startTime = Date.now()
-    let runtimeBaseUrl = this.baseUrl
-    
-    try {
-      const runtime = await this.getASRRuntimeConfig()
-      runtimeBaseUrl = runtime.baseUrl
-      if (!runtime.apiKey) {
-        throw new Error('云端语音识别 API Key 未配置，请在设置中填写')
-      }
-
-      appLogger.info('CloudAIAdapter', 'ASR request started', {
-        baseUrl: runtime.baseUrl,
-        model: runtime.model,
-        audioFile: path.basename(audioPath)
-      })
-
-      const audioBuffer = await fs.readFile(audioPath)
-      const formData = new FormData()
-      
-      const audioBlob = new Blob([audioBuffer], { type: 'audio/webm' })
-      formData.append('file', audioBlob, path.basename(audioPath))
-      formData.append('model', runtime.model || 'whisper-1')
-      formData.append('language', 'zh')
-
-      const response = await fetch(`${runtime.baseUrl}/audio/transcriptions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${runtime.apiKey}`
-        },
-        body: formData
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        appLogger.warn('CloudAIAdapter', 'ASR request failed with non-2xx response', {
-          baseUrl: runtime.baseUrl,
-          status: response.status,
-          responseBodyPreview: errorText.slice(0, 300)
-        })
-        throw new Error(`Whisper API error: ${response.status} - ${errorText}`)
-      }
-
-      const data = await response.json()
-      appLogger.info('CloudAIAdapter', 'ASR request completed', {
-        baseUrl: runtime.baseUrl,
-        processingTimeMs: Date.now() - startTime,
-        textChars: String(data?.text || '').length
-      })
-      
-      return {
-        text: data.text || '',
-        confidence: 0.9,
-        processingTime: Date.now() - startTime
-      }
-    } catch (error: any) {
-      console.error('[CloudAIAdapter] Transcribe failed:', error)
-      appLogger.error('CloudAIAdapter', 'ASR request threw exception', {
-        baseUrl: runtimeBaseUrl,
-        error
-      })
-      throw this.normalizeError(error, runtimeBaseUrl, '语音识别')
-    }
+  async transcribe(_audioPath: string): Promise<TranscribeResult> {
+    throw new Error('云端 ASR 已移除，请使用本地录音转写或直接文本录入')
   }
 
   async optimizeText(text: string): Promise<OptimizeResult> {
@@ -237,25 +174,6 @@ ${text}
       baseUrl: this.baseUrl,
       model: this.chatModel,
       apiKey: this.apiKey
-    }
-  }
-
-  private async getASRRuntimeConfig(): Promise<{ baseUrl: string; model: string; apiKey: string }> {
-    try {
-      const settings = await appConfigService.getAll()
-      return {
-        baseUrl: this.normalizeBaseUrl(
-          settings?.cloudASR?.baseUrl || DEFAULT_CLOUD_ASR_SETTINGS.baseUrl
-        ),
-        model: settings?.cloudASR?.model || DEFAULT_CLOUD_ASR_SETTINGS.model,
-        apiKey: settings?.cloudASR?.apiKey || DEFAULT_CLOUD_ASR_SETTINGS.apiKey
-      }
-    } catch {
-      return {
-        baseUrl: this.normalizeBaseUrl(DEFAULT_CLOUD_ASR_SETTINGS.baseUrl),
-        model: DEFAULT_CLOUD_ASR_SETTINGS.model,
-        apiKey: DEFAULT_CLOUD_ASR_SETTINGS.apiKey
-      }
     }
   }
 

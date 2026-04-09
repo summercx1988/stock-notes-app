@@ -261,12 +261,6 @@ export interface UserSettings {
     model: string
     apiKey: string
   }
-  cloudASR: {
-    baseUrl: string
-    model: string
-    apiKey: string
-    language: 'zh-CN' | 'zh'
-  }
   notes: {
     defaultCategory: NoteCategory
     defaultDirection: ViewpointDirection

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Checkbox, Divider, Form, Input, InputNumber, Modal, Select, Space, Tabs, Tag, Typography, message } from 'antd'
+import { Alert, Button, Checkbox, Divider, Form, Input, InputNumber, Modal, Space, Tabs, Tag, Typography, message } from 'antd'
 import type { NoteCategoryConfig, UserSettings } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 import { createDefaultUserSettings } from '../../shared/default-user-settings'
@@ -7,7 +7,7 @@ import { createDefaultUserSettings } from '../../shared/default-user-settings'
 interface SettingsModalProps {
   open: boolean
   onClose: () => void
-  initialTab?: 'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'
+  initialTab?: 'text-ai' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'
 }
 
 interface WatchlistStock {
@@ -18,7 +18,7 @@ interface WatchlistStock {
 
 const DEFAULT_SETTINGS: UserSettings = createDefaultUserSettings()
 
-type SettingsTab = 'text-ai' | 'asr' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'
+type SettingsTab = 'text-ai' | 'category-schema' | 'watchlist' | 'daily-review' | 'feishu'
 
 const isMissingHandlerError = (error: unknown) =>
   String((error as { message?: string })?.message || error).includes('No handler registered')
@@ -32,12 +32,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
   const [categoryConfigs, setCategoryConfigs] = useState<NoteCategoryConfig[]>(DEFAULT_NOTE_CATEGORY_CONFIGS)
 
   const watchlistHint = useMemo(() => {
-    if (watchlist.length === 0) return '当前没有自选股，ASR 将按全库匹配。'
+    if (watchlist.length === 0) return '当前没有自选股，解析时将按全库匹配。'
     const unknownCount = watchlist.filter((item) => !item.inDatabase).length
     if (unknownCount > 0) {
       return `已导入 ${watchlist.length} 个代码，其中 ${unknownCount} 个不在本地股票库。`
     }
-    return `已导入 ${watchlist.length} 个代码，ASR 会优先匹配这些股票。`
+    return `已导入 ${watchlist.length} 个代码，解析会优先匹配这些股票。`
   }, [watchlist])
 
   const mergeSettingsWithDefaults = (raw: UserSettings): UserSettings => {
@@ -208,41 +208,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, initialTab
                     type="info"
                     showIcon
                     className="mb-3"
-                    message="GLM Coding Plan 配置：glm-5（高阶）、glm-4.7（日常推荐，省额度）。baseUrl 保持默认即可。"
+                    message="GLM Coding Plan 配置：glm5.0（高阶）、glm-4.7（日常推荐，省额度）。baseUrl 保持默认即可。"
                   />
                   <Form.Item label="API Base URL" name={['textAnalysis', 'baseUrl']} rules={[{ required: true, message: '请输入文本分析 API 地址' }]}>
                     <Input placeholder="https://open.bigmodel.cn/api/coding/paas/v4" />
                   </Form.Item>
                   <Form.Item label="模型" name={['textAnalysis', 'model']} rules={[{ required: true, message: '请输入模型名称' }]}>
-                    <Input placeholder="glm-5 / glm-4.7" />
+                    <Input placeholder="glm5.0 / glm-4.7" />
                   </Form.Item>
                   <Form.Item label="API Key" name={['textAnalysis', 'apiKey']}>
                     <Input.Password placeholder="请输入智谱 API Key" />
-                  </Form.Item>
-                </>
-              )
-            },
-            {
-              key: 'asr',
-              label: '云端 ASR',
-              children: (
-                <>
-                  <Form.Item label="ASR API Base URL" name={['cloudASR', 'baseUrl']} rules={[{ required: true, message: '请输入云端 ASR 地址' }]}>
-                    <Input placeholder="https://api.minimaxi.com/v1" />
-                  </Form.Item>
-                  <Form.Item label="ASR 模型" name={['cloudASR', 'model']} rules={[{ required: true, message: '请输入云端 ASR 模型' }]}>
-                    <Input placeholder="speech-01" />
-                  </Form.Item>
-                  <Form.Item label="ASR API Key" name={['cloudASR', 'apiKey']}>
-                    <Input.Password placeholder="可留空使用环境变量" />
-                  </Form.Item>
-                  <Form.Item label="语言" name={['cloudASR', 'language']}>
-                    <Select
-                      options={[
-                        { label: '简体中文优先 (zh-CN)', value: 'zh-CN' },
-                        { label: '中文 (zh)', value: 'zh' }
-                      ]}
-                    />
                   </Form.Item>
                 </>
               )

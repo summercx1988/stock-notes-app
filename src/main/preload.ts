@@ -63,7 +63,6 @@ const api = {
   ai: {
     extract: (text: string) => ipcRenderer.invoke('ai:extract', text),
     extractFast: (text: string) => ipcRenderer.invoke('ai:extractFast', text),
-    optimizeText: (text: string) => ipcRenderer.invoke('ai:optimize', text),
   },
 
   voice: {
@@ -74,8 +73,6 @@ const api = {
     stopRecording: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:stopRecording'),
     transcribeFile: (audioPath: string) =>
       ipcRenderer.invoke('voice:transcribeFile', audioPath) as Promise<VoiceTranscribeResult>,
-    transcribeWithCloud: (audioPath: string) =>
-      ipcRenderer.invoke('voice:transcribeWithCloud', audioPath) as Promise<VoiceTranscribeResult>,
     onTranscript: (callback: (text: string, isFinal: boolean) => void) => {
       const handler = (_: unknown, text: string, isFinal: boolean) => callback(text, isFinal)
       ipcRenderer.on('voice:transcript', handler)
@@ -102,11 +99,6 @@ const api = {
       ipcRenderer.removeAllListeners('voice:error')
       ipcRenderer.removeAllListeners('voice:status')
     }
-  },
-
-  audio: {
-    saveRecording: (buffer: ArrayBuffer, filename: string) =>
-      ipcRenderer.invoke('audio:saveRecording', buffer, filename),
   },
 
   config: {

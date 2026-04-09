@@ -50,6 +50,8 @@ temp/
 
 # Test
 coverage/
+__pycache__/
+*.pyc
 
 # Electron
 *.dmg

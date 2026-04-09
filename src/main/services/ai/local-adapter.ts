@@ -10,7 +10,7 @@ export class LocalAIAdapter implements IAIService {
   
   async transcribe(_audioPath: string): Promise<TranscribeResult> {
     return {
-      text: '本地语音识别暂未实现，请使用云端模式',
+      text: '本地语音识别暂未实现，请使用录音面板或直接文本录入',
       confidence: 0,
       processingTime: 0
     }

@@ -7,12 +7,14 @@ export interface DailyReviewGenerationState {
   notesLastUpdatedAt: string | null
   dailySummaryLastGeneratedAt: string | null
   dailySummaryLastGeneratedFromUpdatedAt: string | null
+  preMarketReminderLastTriggeredDate: string | null
 }
 
 const DEFAULT_STATE: DailyReviewGenerationState = {
   notesLastUpdatedAt: null,
   dailySummaryLastGeneratedAt: null,
-  dailySummaryLastGeneratedFromUpdatedAt: null
+  dailySummaryLastGeneratedFromUpdatedAt: null,
+  preMarketReminderLastTriggeredDate: null
 }
 
 class ReviewGenerationStateService {
@@ -38,6 +40,13 @@ class ReviewGenerationStateService {
     const state = await this.ensureLoaded()
     state.dailySummaryLastGeneratedAt = generatedAt.toISOString()
     state.dailySummaryLastGeneratedFromUpdatedAt = sourceUpdatedAt || null
+    await this.persistQueued(state)
+    return this.clone(state)
+  }
+
+  async markPreMarketReminderTriggered(dateText: string): Promise<DailyReviewGenerationState> {
+    const state = await this.ensureLoaded()
+    state.preMarketReminderLastTriggeredDate = String(dateText || '').trim() || null
     await this.persistQueued(state)
     return this.clone(state)
   }
@@ -69,7 +78,8 @@ class ReviewGenerationStateService {
       return {
         notesLastUpdatedAt: parsed.notesLastUpdatedAt || null,
         dailySummaryLastGeneratedAt: parsed.dailySummaryLastGeneratedAt || null,
-        dailySummaryLastGeneratedFromUpdatedAt: parsed.dailySummaryLastGeneratedFromUpdatedAt || null
+        dailySummaryLastGeneratedFromUpdatedAt: parsed.dailySummaryLastGeneratedFromUpdatedAt || null,
+        preMarketReminderLastTriggeredDate: parsed.preMarketReminderLastTriggeredDate || null
       }
     } catch (error: any) {
       if (error?.code !== 'ENOENT') {

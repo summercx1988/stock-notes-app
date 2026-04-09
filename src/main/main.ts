@@ -225,7 +225,6 @@ app.on('before-quit', async (event) => {
 
 import './ipc/notes'
 import './ipc/ai'
-import './ipc/audio'
 import './ipc/stock'
 import './ipc/review'
 import './ipc/timeline'

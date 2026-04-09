@@ -27,13 +27,6 @@ const DEFAULT_REMINDER_SECTIONS: DailyReviewReminderIncludeSections = {
   riskReminders: true
 }
 
-const DEFAULT_REMINDER_CONFIG = {
-  enabled: true,
-  time: '09:00',
-  weekdaysOnly: true,
-  autoGeneratePreMarket: true
-}
-
 const normalizeReminderSections = (
   value?: Partial<DailyReviewReminderIncludeSections> | null
 ): DailyReviewReminderIncludeSections => ({
@@ -42,23 +35,6 @@ const normalizeReminderSections = (
   keyLevels: Boolean(value?.keyLevels ?? DEFAULT_REMINDER_SECTIONS.keyLevels),
   watchlist: Boolean(value?.watchlist ?? DEFAULT_REMINDER_SECTIONS.watchlist),
   riskReminders: Boolean(value?.riskReminders ?? DEFAULT_REMINDER_SECTIONS.riskReminders)
-})
-
-const normalizeReminderConfig = (
-  value?: UserSettings['dailyReview'] | null
-): {
-  config: typeof DEFAULT_REMINDER_CONFIG
-  sections: DailyReviewReminderIncludeSections
-} => ({
-  config: {
-    enabled: Boolean(value?.reminder?.enabled ?? DEFAULT_REMINDER_CONFIG.enabled),
-    time: String(value?.reminder?.time || DEFAULT_REMINDER_CONFIG.time),
-    weekdaysOnly: Boolean(value?.reminder?.weekdaysOnly ?? DEFAULT_REMINDER_CONFIG.weekdaysOnly),
-    autoGeneratePreMarket: Boolean(
-      value?.reminder?.autoGeneratePreMarket ?? DEFAULT_REMINDER_CONFIG.autoGeneratePreMarket
-    )
-  },
-  sections: normalizeReminderSections(value?.reminder?.includeSections || null)
 })
 
 const MainLayout: React.FC = () => {
@@ -78,25 +54,8 @@ const MainLayout: React.FC = () => {
   const [reminderOpen, setReminderOpen] = useState(false)
   const [reminderEntry, setReminderEntry] = useState<TimeEntry | null>(null)
   const [reminderSections, setReminderSections] = useState<DailyReviewReminderIncludeSections>(DEFAULT_REMINDER_SECTIONS)
-  const [reminderConfig, setReminderConfig] = useState(DEFAULT_REMINDER_CONFIG)
   const [markingReminderRead, setMarkingReminderRead] = useState(false)
   const layoutRef = useRef<HTMLDivElement | null>(null)
-
-  const shouldShowReminderNow = (timeText: string, weekdaysOnly: boolean) => {
-    const now = new Date()
-    if (weekdaysOnly) {
-      const day = now.getDay()
-      if (day === 0 || day === 6) return false
-    }
-
-    const [hourText, minuteText] = String(timeText || '09:00').split(':')
-    const hour = Number(hourText)
-    const minute = Number(minuteText)
-    const normalizedHour = Number.isFinite(hour) ? Math.max(0, Math.min(23, Math.floor(hour))) : 9
-    const normalizedMinute = Number.isFinite(minute) ? Math.max(0, Math.min(59, Math.floor(minute))) : 0
-    const minutes = now.getHours() * 60 + now.getMinutes()
-    return minutes >= normalizedHour * 60 + normalizedMinute
-  }
 
   useEffect(() => {
     try {
@@ -138,13 +97,10 @@ const MainLayout: React.FC = () => {
       try {
         const dailyReview = await window.api.config.get('dailyReview') as UserSettings['dailyReview'] | undefined
         if (cancelled) return
-        const normalized = normalizeReminderConfig(dailyReview)
-        setReminderConfig(normalized.config)
-        setReminderSections(normalized.sections)
+        setReminderSections(normalizeReminderSections(dailyReview?.reminder?.includeSections || null))
       } catch (error) {
         console.error('[MainLayout] Failed to load reminder settings:', error)
         if (cancelled) return
-        setReminderConfig(DEFAULT_REMINDER_CONFIG)
         setReminderSections(DEFAULT_REMINDER_SECTIONS)
       }
     }
@@ -165,34 +121,6 @@ const MainLayout: React.FC = () => {
     })
     return () => { unsubscribe() }
   }, [])
-
-  useEffect(() => {
-    if (!reminderConfig.enabled) return
-    if (!shouldShowReminderNow(reminderConfig.time, reminderConfig.weekdaysOnly)) return
-
-    let cancelled = false
-    const checkReminder = async () => {
-      try {
-        let pending = await window.api.dailyReview.getPending()
-        if ((!pending?.success || !pending.data) && reminderConfig.autoGeneratePreMarket) {
-          await window.api.dailyReview.generatePreMarket()
-          pending = await window.api.dailyReview.getPending()
-        }
-        if (cancelled) return
-        if (pending?.success && pending.data) {
-          setReminderEntry(pending.data as TimeEntry)
-          setReminderOpen(true)
-        }
-      } catch (error) {
-        console.error('[MainLayout] Failed to check daily review reminder:', error)
-      }
-    }
-
-    void checkReminder()
-    return () => {
-      cancelled = true
-    }
-  }, [reminderConfig.autoGeneratePreMarket, reminderConfig.enabled, reminderConfig.time, reminderConfig.weekdaysOnly])
 
   const handleMarkReminderRead = async (entryId: string) => {
     setMarkingReminderRead(true)
