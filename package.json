@@ -1,7 +1,7 @@
 {
   "name": "stock-notes-app",
   "version": "3.6.0",
-  "description": "股票投资语音笔记系统 - 基于AI的智能投资笔记管理工具",
+  "description": "股票投资笔记系统 - 基于AI的智能投资笔记管理工具",
   "main": "dist/main/main/main.js",
   "scripts": {
     "dev": "vite",
@@ -20,7 +20,6 @@
   "keywords": [
     "stock",
     "notes",
-    "voice",
     "ai",
     "investment"
   ],
@@ -28,7 +27,6 @@
   "license": "MIT",
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.59.0",
-    "@types/ws": "^8.18.1",
     "@uiw/react-md-editor": "^4.0.4",
     "antd": "^5.21.0",
     "chokidar": "^3.6.0",
@@ -40,10 +38,7 @@
     "openai": "^4.67.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "sherpa-onnx": "^1.12.31",
     "uuid": "^10.0.0",
-    "whisper-node": "^1.1.1",
-    "ws": "^8.19.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
@@ -76,13 +71,6 @@
     "files": [
       "dist/**/*",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "voice-transcriber-service/voice-transcriber-service",
-        "to": "voice-transcriber-service",
-        "filter": ["**/*"]
-      }
     ],
     "mac": {
       "category": "public.app-category.finance",

@@ -14,20 +14,10 @@ import type {
   UserSettings,
   FeishuStatus,
   NotesChangedEvent,
-  VoiceServiceStatus,
   DailyReviewGenerationProgress,
   DailyReviewGenerationStatus,
   DailyReviewReminderPayload
 } from '../shared/types'
-
-interface VoiceCommandResult {
-  success: boolean
-  error?: string
-}
-
-interface VoiceTranscribeResult extends VoiceCommandResult {
-  text?: string | null
-}
 
 const api = {
   notes: {
@@ -63,42 +53,6 @@ const api = {
   ai: {
     extract: (text: string) => ipcRenderer.invoke('ai:extract', text),
     extractFast: (text: string) => ipcRenderer.invoke('ai:extractFast', text),
-  },
-
-  voice: {
-    start: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:start'),
-    stop: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:stop'),
-    status: (): Promise<VoiceServiceStatus> => ipcRenderer.invoke('voice:status'),
-    startRecording: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:startRecording'),
-    stopRecording: (): Promise<VoiceCommandResult> => ipcRenderer.invoke('voice:stopRecording'),
-    transcribeFile: (audioPath: string) =>
-      ipcRenderer.invoke('voice:transcribeFile', audioPath) as Promise<VoiceTranscribeResult>,
-    onTranscript: (callback: (text: string, isFinal: boolean) => void) => {
-      const handler = (_: unknown, text: string, isFinal: boolean) => callback(text, isFinal)
-      ipcRenderer.on('voice:transcript', handler)
-      return () => ipcRenderer.removeListener('voice:transcript', handler)
-    },
-    onAudioSaved: (callback: (path: string) => void) => {
-      const handler = (_: unknown, path: string) => callback(path)
-      ipcRenderer.on('voice:audio_saved', handler)
-      return () => ipcRenderer.removeListener('voice:audio_saved', handler)
-    },
-    onError: (callback: (error: string) => void) => {
-      const handler = (_: unknown, error: string) => callback(error)
-      ipcRenderer.on('voice:error', handler)
-      return () => ipcRenderer.removeListener('voice:error', handler)
-    },
-    onStatus: (callback: (status: VoiceServiceStatus) => void) => {
-      const handler = (_: unknown, status: VoiceServiceStatus) => callback(status)
-      ipcRenderer.on('voice:status', handler)
-      return () => ipcRenderer.removeListener('voice:status', handler)
-    },
-    removeListeners: () => {
-      ipcRenderer.removeAllListeners('voice:transcript')
-      ipcRenderer.removeAllListeners('voice:audio_saved')
-      ipcRenderer.removeAllListeners('voice:error')
-      ipcRenderer.removeAllListeners('voice:status')
-    }
   },
 
   config: {

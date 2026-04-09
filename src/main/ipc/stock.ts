@@ -1,6 +1,5 @@
 import { ipcMain } from 'electron'
 import { stockDatabase, type StockInfo, type SearchResult } from '../services/stock-db'
-import { voiceTranscriberClient } from '../services/VoiceTranscriberClient'
 import { cleanTranscriptText } from '../../shared/text-normalizer'
 import { watchlistService } from '../services/watchlist'
 
@@ -48,88 +47,4 @@ ipcMain.handle('stock:match', async (_, text: string): Promise<SearchResult | nu
     }
   }
   return stockDatabase.matchStock(cleaned)
-})
-
-ipcMain.handle('voice:start', async () => {
-  console.log('[IPC] voice:start')
-  
-  try {
-    const status = voiceTranscriberClient.getStatus()
-    console.log('[IPC] Current status:', status)
-    
-    if (!status.isRunning || !status.isConnected) {
-      console.log('[IPC] Starting or reconnecting voice service...')
-      await voiceTranscriberClient.start()
-      console.log('[IPC] Voice service started, status:', voiceTranscriberClient.getStatus())
-    }
-
-    return { success: true }
-  } catch (error: any) {
-    console.error('[IPC] voice:start error:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('voice:stop', async () => {
-  console.log('[IPC] voice:stop')
-
-  try {
-    await voiceTranscriberClient.stop()
-    return { success: true }
-  } catch (error: any) {
-    console.error('[IPC] voice:stop error:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('voice:startRecording', async () => {
-  console.log('[IPC] voice:startRecording')
-
-  try {
-    const status = voiceTranscriberClient.getStatus()
-    if (!status.isRunning || !status.isConnected) {
-      await voiceTranscriberClient.start()
-    }
-
-    await voiceTranscriberClient.startRecording()
-    return { success: true }
-  } catch (error: any) {
-    console.error('[IPC] voice:startRecording error:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('voice:stopRecording', async () => {
-  console.log('[IPC] voice:stopRecording')
-
-  try {
-    await voiceTranscriberClient.stopRecording()
-    return { success: true }
-  } catch (error: any) {
-    console.error('[IPC] voice:stopRecording error:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('voice:status', async () => {
-  const status = voiceTranscriberClient.getStatus()
-  console.log('[IPC] voice:status:', status)
-  return status
-})
-
-ipcMain.handle('voice:transcribeFile', async (_, audioPath: string) => {
-  console.log('[IPC] voice:transcribeFile:', audioPath)
-
-  try {
-    const status = voiceTranscriberClient.getStatus()
-    if (!status.isRunning || !status.isConnected) {
-      await voiceTranscriberClient.start()
-    }
-
-    const text = await voiceTranscriberClient.transcribeFile(audioPath)
-    return { success: true, text: cleanTranscriptText(text) }
-  } catch (error: any) {
-    console.error('[IPC] voice:transcribeFile error:', error)
-    return { success: false, error: error.message }
-  }
 })

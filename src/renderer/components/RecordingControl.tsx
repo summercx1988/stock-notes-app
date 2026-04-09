@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Button, message, Modal, Steps, Divider, Upload, Card, Tag, Progress, DatePicker, Select, Input, AutoComplete } from 'antd'
-import { AudioOutlined, SaveOutlined, UploadOutlined, LoadingOutlined, CheckCircleOutlined, EditOutlined } from '@ant-design/icons'
+import { Button, message, Modal, Steps, Divider, Card, Tag, DatePicker, Select, Input, AutoComplete } from 'antd'
+import { SaveOutlined, LoadingOutlined, CheckCircleOutlined, EditOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useAppStore } from '../stores/app'
-import type { NoteCategory, NoteCategoryConfig, OperationTag, UserSettings, Viewpoint, VoiceServiceStatus } from '../../shared/types'
+import type { NoteCategory, NoteCategoryConfig, OperationTag, UserSettings, Viewpoint } from '../../shared/types'
 import { DEFAULT_NOTE_CATEGORY_CONFIGS, getCategoryConfig, getEnabledOptions, normalizeNoteCategoryConfigs } from '../../shared/note-categories'
 import { cleanTranscriptText, normalizeNoteContent } from '../../shared/text-normalizer'
 import { createDefaultUserSettings } from '../../shared/default-user-settings'
@@ -32,8 +32,7 @@ interface AIExtractResult {
   originalText: string
 }
 
-type EntryMode = 'voice' | 'text'
-type RecordingState = 'idle' | 'connecting' | 'recording' | 'stopping' | 'transcribing' | 'analyzing' | 'completed'
+type ProcessingState = 'idle' | 'analyzing' | 'completed'
 type StockSelectOption = { label: string; value: string; name: string }
 
 const DEFAULT_SETTINGS: UserSettings = createDefaultUserSettings()
@@ -46,12 +45,8 @@ const RecordingControl: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
-  const [entryMode, setEntryMode] = useState<EntryMode>('voice')
-  const [recordingState, setRecordingState] = useState<RecordingState>('idle')
-  const [recordingDuration, setRecordingDuration] = useState(0)
-  const [audioPath, setAudioPath] = useState<string>('')
+  const [processingState, setProcessingState] = useState<ProcessingState>('idle')
   const [manualInputText, setManualInputText] = useState<string>('')
-  const [transcribedText, setTranscribedText] = useState<string>('')
   const [extractResult, setExtractResult] = useState<AIExtractResult | null>(null)
   const [editableNoteContent, setEditableNoteContent] = useState<string>('')
   const [selectedStockCode, setSelectedStockCode] = useState<string>('')
@@ -59,13 +54,11 @@ const RecordingControl: React.FC = () => {
   const [stockSearchKeyword, setStockSearchKeyword] = useState<string>('')
   const [stockSearchOptions, setStockSearchOptions] = useState<StockSelectOption[]>([])
   const [stockSearching, setStockSearching] = useState(false)
-  const [transcribeProgress, setTranscribeProgress] = useState(0)
   const [noteEventTime, setNoteEventTime] = useState<Dayjs | null>(dayjs())
   const [noteCategory, setNoteCategory] = useState<NoteCategory>('看盘预测')
   const [noteDirection, setNoteDirection] = useState<Viewpoint['direction']>('未知')
   const [noteOperationTag, setNoteOperationTag] = useState<OperationTag>('无')
   const [settings, setSettings] = useState<UserSettings | null>(null)
-  const [voiceStatus, setVoiceStatus] = useState<VoiceServiceStatus | null>(null)
 
   const categoryConfigs: NoteCategoryConfig[] = normalizeNoteCategoryConfigs(
     settings?.notes?.categoryConfigs || DEFAULT_NOTE_CATEGORY_CONFIGS
@@ -78,18 +71,8 @@ const RecordingControl: React.FC = () => {
     .map((item) => ({ label: item.label, value: item.code }))
   const noteOperationOptions = getEnabledOptions(activeCategoryConfig?.fields.operationTag.options || [])
     .map((item) => ({ label: item.label, value: item.code }))
-  const isVoiceFlowActive = ['connecting', 'recording', 'stopping', 'transcribing'].includes(recordingState)
 
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
   const stockSearchTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const audioSavedTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const disconnectHandledRef = useRef(false)
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
 
   const mapAISentimentToDirection = (sentiment?: string): Viewpoint['direction'] => {
     if (!sentiment) return '未知'
@@ -152,27 +135,10 @@ const RecordingControl: React.FC = () => {
     }
   }, [])
 
-  const clearRecordingTimer = useCallback(() => {
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current)
-      recordingTimerRef.current = null
-    }
-  }, [])
-
-  const clearAudioSavedTimeout = useCallback(() => {
-    if (audioSavedTimeoutRef.current) {
-      clearTimeout(audioSavedTimeoutRef.current)
-      audioSavedTimeoutRef.current = null
-    }
-  }, [])
-
   const resetState = useCallback(() => {
     setCurrentStep(0)
-    setRecordingState('idle')
-    setRecordingDuration(0)
-    setAudioPath('')
+    setProcessingState('idle')
     setManualInputText('')
-    setTranscribedText('')
     setExtractResult(null)
     setEditableNoteContent('')
     setSelectedStockCode('')
@@ -180,7 +146,6 @@ const RecordingControl: React.FC = () => {
     setStockSearchKeyword('')
     setStockSearchOptions([])
     setStockSearching(false)
-    setTranscribeProgress(0)
     setNoteEventTime(dayjs())
     const normalizedCategories = normalizeNoteCategoryConfigs(settings?.notes?.categoryConfigs || DEFAULT_NOTE_CATEGORY_CONFIGS)
     const enabledCodes = normalizedCategories.filter((item) => item.enabled !== false).map((item) => item.code)
@@ -190,83 +155,16 @@ const RecordingControl: React.FC = () => {
     setNoteCategory(preferredCategory)
     setNoteDirection(normalizeDirectionAlias(settings?.notes.defaultDirection))
     setNoteOperationTag('无')
-    setVoiceStatus(null)
-    disconnectHandledRef.current = false
-
-    clearRecordingTimer()
-    clearAudioSavedTimeout()
 
     if (stockSearchTimerRef.current) {
       clearTimeout(stockSearchTimerRef.current)
       stockSearchTimerRef.current = null
     }
-  }, [clearAudioSavedTimeout, clearRecordingTimer, settings])
+  }, [settings])
 
   useEffect(() => {
     void loadUserPreferences()
   }, [loadUserPreferences])
-
-  useEffect(() => {
-    if (!isModalOpen || entryMode !== 'voice') return
-
-    const unsubscribeStatus = window.api.voice.onStatus((status) => {
-      setVoiceStatus(status)
-
-      const isActivePhase = ['connecting', 'recording', 'stopping', 'transcribing'].includes(recordingState)
-      if (!isActivePhase) {
-        if (status.isConnected) {
-          disconnectHandledRef.current = false
-        }
-        return
-      }
-
-      if (!status.isConnected && !disconnectHandledRef.current) {
-        disconnectHandledRef.current = true
-        clearRecordingTimer()
-        clearAudioSavedTimeout()
-        setRecordingState('idle')
-        setCurrentStep(0)
-        message.error(status.lastError || '录音连接已中断，请重新录音')
-        return
-      }
-
-      if (status.isConnected) {
-        disconnectHandledRef.current = false
-      }
-    })
-
-    return () => {
-      unsubscribeStatus()
-    }
-  }, [clearAudioSavedTimeout, clearRecordingTimer, entryMode, isModalOpen, recordingState])
-
-  useEffect(() => {
-    if (!isModalOpen || entryMode !== 'voice') return
-    if (!['connecting', 'recording', 'stopping', 'transcribing'].includes(recordingState)) return
-
-    const timer = setInterval(() => {
-      void window.api.voice.status()
-        .then((status) => {
-          setVoiceStatus(status)
-          if (!status.isConnected && !disconnectHandledRef.current) {
-            disconnectHandledRef.current = true
-            clearRecordingTimer()
-            clearAudioSavedTimeout()
-            setRecordingState('idle')
-            setCurrentStep(0)
-            message.error(status.lastError || '录音连接已中断，请重新录音')
-          }
-          if (status.isConnected) {
-            disconnectHandledRef.current = false
-          }
-        })
-        .catch((error) => {
-          console.warn('[RecordingControl] voice.status polling failed:', error)
-        })
-    }, 1500)
-
-    return () => clearInterval(timer)
-  }, [entryMode, isModalOpen, recordingState])
 
   useEffect(() => {
     const directionCodes = noteDirectionOptions.map((item) => item.value)
@@ -377,8 +275,8 @@ const RecordingControl: React.FC = () => {
       return
     }
 
-    setRecordingState('analyzing')
-    setCurrentStep(3)
+    setProcessingState('analyzing')
+    setCurrentStep(1)
     message.info('正在快速匹配股票与标签...')
 
     try {
@@ -402,8 +300,8 @@ const RecordingControl: React.FC = () => {
         ...result,
         stock: resolvedStock
       })
-      setRecordingState('completed')
-      setCurrentStep(4)
+      setProcessingState('completed')
+      setCurrentStep(2)
       setNoteDirection(mapAISentimentToDirection(result.note?.sentiment))
       const resolvedOperationTag = mapAIActionToOperationTag(result.note?.operationTag)
       setNoteOperationTag(resolvedOperationTag)
@@ -425,8 +323,8 @@ const RecordingControl: React.FC = () => {
     } catch (error: any) {
       console.error('[RecordingControl] Analysis failed:', error)
       message.error('处理失败: ' + error.message)
-      setRecordingState('transcribing')
-      setCurrentStep(2)
+      setProcessingState('idle')
+      setCurrentStep(0)
     }
   }, [])
 
@@ -436,215 +334,18 @@ const RecordingControl: React.FC = () => {
       message.warning('请先输入要解析的文本')
       return
     }
-    setTranscribedText(normalizedInput)
     await handleAnalyze(normalizedInput)
   }, [handleAnalyze, manualInputText])
-
-  const transcribeAudio = useCallback(async (path: string) => {
-    return window.api.voice.transcribeFile(path)
-  }, [])
-
-  useEffect(() => {
-    if (!isModalOpen) return
-
-    const unsubscribeTranscript = window.api.voice.onTranscript((text, isFinal) => {
-      const cleaned = cleanTranscriptText(text)
-      console.log('[RecordingControl] Transcript received:', cleaned, 'isFinal:', isFinal)
-      setTranscribedText(cleaned)
-      setTranscribeProgress(100)
-    })
-
-    const unsubscribeAudioSaved = window.api.voice.onAudioSaved(async (path) => {
-      console.log('[RecordingControl] Audio saved:', path)
-      clearAudioSavedTimeout()
-      setAudioPath(path)
-
-      message.success({
-        content: (
-          <div>
-            <div style={{ fontWeight: 'bold' }}>✅ 音频已保存</div>
-            <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-              时长: {formatDuration(recordingDuration)}
-            </div>
-          </div>
-        ),
-        duration: 3
-      })
-
-      setRecordingState('transcribing')
-      setCurrentStep(2)
-      setTranscribeProgress(0)
-
-      const progressInterval = setInterval(() => {
-        setTranscribeProgress(prev => Math.min(prev + 10, 90))
-      }, 500)
-
-      try {
-        const result = await transcribeAudio(path)
-
-        clearInterval(progressInterval)
-        setTranscribeProgress(100)
-
-        const finalText = result?.success ? cleanTranscriptText(result.text?.trim() ?? '') : ''
-
-        if (finalText) {
-          setTranscribedText(finalText)
-          handleAnalyze(finalText)
-        } else {
-          message.warning(result?.error || '转写结果为空，请重新录音')
-          setRecordingState('idle')
-          setCurrentStep(1)
-        }
-      } catch (error: any) {
-        clearInterval(progressInterval)
-        console.error('[RecordingControl] Transcribe failed:', error)
-        message.error('转写失败: ' + error.message)
-        setRecordingState('idle')
-        setCurrentStep(1)
-      }
-    })
-
-    const unsubscribeError = window.api.voice.onError((error) => {
-      console.error('[RecordingControl] Error:', error)
-      clearRecordingTimer()
-      clearAudioSavedTimeout()
-      message.error('语音服务错误: ' + error)
-      setRecordingState('idle')
-      setCurrentStep(0)
-    })
-
-    return () => {
-      unsubscribeTranscript()
-      unsubscribeAudioSaved()
-      unsubscribeError()
-    }
-  }, [clearAudioSavedTimeout, clearRecordingTimer, handleAnalyze, isModalOpen, recordingDuration, transcribeAudio])
-
-  const checkVoiceServiceStatus = async () => {
-    try {
-      const status = await window.api.voice.status()
-      setVoiceStatus(status)
-      return status
-    } catch (error) {
-      console.error('[RecordingControl] Status check failed:', error)
-      return null
-    }
-  }
 
   const handleOpenModal = async () => {
     await loadUserPreferences()
     resetState()
     setIsModalOpen(true)
-    if (entryMode !== 'voice') {
-      return
-    }
-
-    try {
-      const status = await checkVoiceServiceStatus()
-      if (!status?.isRunning || !status?.isConnected) {
-        message.info('正在启动语音服务...')
-        const result = await window.api.voice.start()
-        if (!result?.success) {
-          throw new Error(result?.error || '语音服务启动失败')
-        }
-        const latestStatus = await checkVoiceServiceStatus()
-        setVoiceStatus(latestStatus)
-        message.success('语音服务已启动')
-      }
-
-      const effectiveStatus = await checkVoiceServiceStatus()
-      if (effectiveStatus?.isRecording) {
-        setRecordingState('recording')
-        setCurrentStep(1)
-        setRecordingDuration(Math.max(0, Math.floor(effectiveStatus.duration || 0)))
-        clearRecordingTimer()
-        recordingTimerRef.current = setInterval(() => {
-          setRecordingDuration(prev => prev + 1)
-        }, 1000)
-        message.info('检测到已有录音会话，已恢复录音状态')
-      }
-    } catch (error: any) {
-      console.error('[RecordingControl] Failed to start voice service:', error)
-      message.error('启动语音服务失败: ' + error.message)
-    }
   }
 
   const handleCloseModal = () => {
-    if (entryMode === 'voice' && recordingState === 'recording') {
-      void stopRecording()
-    }
     setIsModalOpen(false)
     resetState()
-  }
-
-  const startRecording = async () => {
-    if (recordingState === 'connecting' || recordingState === 'recording' || recordingState === 'stopping') {
-      return
-    }
-
-    try {
-      clearAudioSavedTimeout()
-      disconnectHandledRef.current = false
-      setRecordingState('connecting')
-
-      const latestStatus = await checkVoiceServiceStatus()
-      if (latestStatus?.isRecording) {
-        setRecordingState('recording')
-        setCurrentStep(1)
-        setRecordingDuration(Math.max(0, Math.floor(latestStatus.duration || 0)))
-        clearRecordingTimer()
-        recordingTimerRef.current = setInterval(() => {
-          setRecordingDuration(prev => prev + 1)
-        }, 1000)
-        message.info('当前已有录音进行中')
-        return
-      }
-
-      const result = await window.api.voice.startRecording()
-      if (!result?.success) {
-        throw new Error(result?.error || '启动录音失败')
-      }
-
-      setRecordingState('recording')
-      setCurrentStep(1)
-
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1)
-      }, 1000)
-
-      message.success('开始录音')
-    } catch (error: any) {
-      console.error('[RecordingControl] Start recording failed:', error)
-      message.error('启动录音失败: ' + error.message)
-      setRecordingState('idle')
-    }
-  }
-
-  const stopRecording = async () => {
-    try {
-      clearRecordingTimer()
-      clearAudioSavedTimeout()
-      setRecordingState('stopping')
-      setCurrentStep(2)
-
-      const result = await window.api.voice.stopRecording()
-      if (!result?.success) {
-        throw new Error(result?.error || '停止录音失败')
-      }
-
-      audioSavedTimeoutRef.current = setTimeout(() => {
-        setRecordingState('idle')
-        setCurrentStep(0)
-        message.error('停止录音后未收到音频保存结果，可能是录音连接中断，请重新录音')
-      }, 8000)
-
-      message.info('录音已停止，正在保存音频...')
-    } catch (error: any) {
-      console.error('[RecordingControl] Stop recording failed:', error)
-      message.error('停止录音失败: ' + error.message)
-      setRecordingState('idle')
-      setCurrentStep(0)
-    }
   }
 
   const handleSaveNote = async () => {
@@ -660,8 +361,7 @@ const RecordingControl: React.FC = () => {
           manualInputText,
           editableNoteContent,
           extractResult.optimizedText,
-          extractResult.originalText,
-          transcribedText
+          extractResult.originalText
         ]
           .filter(Boolean)
           .join('\n')
@@ -709,30 +409,14 @@ const RecordingControl: React.FC = () => {
       const stockInfo = await window.api.stock.getByCode(stockCode)
       const resolvedStockName = selectedStockName || extractResult.stock?.name || stockInfo?.name || stockCode
 
-      const isVoiceEntry = entryMode === 'voice' && Boolean(audioPath)
-      const payload: {
-        content: string
-        eventTime: string
-        category: NoteCategory
-        operationTag: OperationTag
-        viewpoint: Viewpoint
-        inputType: 'voice' | 'manual'
-        audioFile?: string
-        audioDuration?: number
-      } = {
+      await window.api.notes.addEntry(stockCode, {
         content: finalContent,
         eventTime: (noteEventTime || dayjs()).toISOString(),
         category: noteCategory,
         operationTag: noteOperationTag,
         viewpoint,
-        inputType: isVoiceEntry ? 'voice' : 'manual'
-      }
-      if (isVoiceEntry) {
-        payload.audioFile = audioPath
-        payload.audioDuration = recordingDuration
-      }
-
-      await window.api.notes.addEntry(stockCode, payload)
+        inputType: 'manual'
+      })
 
       const updatedNote = await window.api.notes.getStockNote(stockCode)
       if (updatedNote) {
@@ -759,45 +443,8 @@ const RecordingControl: React.FC = () => {
     }
   }
 
-  const handleUploadAudio = async (file: File) => {
-    const validTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/m4a', 'audio/aac']
-    if (!validTypes.includes(file.type) && !file.name.match(/\.(wav|mp3|m4a|aac)$/i)) {
-      message.error('请上传 WAV/MP3/M4A/AAC 格式的音频文件')
-      return false
-    }
-
-    setRecordingState('transcribing')
-    setCurrentStep(2)
-    setTranscribeProgress(0)
-
-    try {
-      const result = await transcribeAudio(file.path)
-      if (result.success && result.text) {
-        const cleaned = cleanTranscriptText(result.text)
-        setTranscribedText(cleaned)
-        handleAnalyze(cleaned)
-      } else {
-        throw new Error(result.error || '转写结果为空')
-      }
-    } catch (error: any) {
-      message.error('转写失败: ' + error.message)
-      setRecordingState('idle')
-      setCurrentStep(0)
-    }
-
-    return false
-  }
-
-  const getRecordingStateTag = () => {
-    switch (recordingState) {
-      case 'connecting':
-        return <Tag color="blue" icon={<LoadingOutlined />}>连接中</Tag>
-      case 'recording':
-        return <Tag color="red" icon={<AudioOutlined />}>录音中</Tag>
-      case 'stopping':
-        return <Tag color="orange" icon={<LoadingOutlined />}>保存音频中</Tag>
-      case 'transcribing':
-        return <Tag color="purple" icon={<LoadingOutlined />}>转写中</Tag>
+  const getProcessingStateTag = () => {
+    switch (processingState) {
       case 'analyzing':
         return <Tag color="cyan" icon={<LoadingOutlined />}>处理中</Tag>
       case 'completed':
@@ -811,7 +458,7 @@ const RecordingControl: React.FC = () => {
     <>
       <Button
         type="primary"
-        icon={<AudioOutlined />}
+        icon={<EditOutlined />}
         onClick={handleOpenModal}
       >
         录入
@@ -827,83 +474,18 @@ const RecordingControl: React.FC = () => {
       >
         <div className="py-4">
           <Steps current={currentStep} size="small" className="mb-6">
-            <Step title="录音" description="录制音频" />
-            <Step title="转写" description="Whisper" />
+            <Step title="输入" description="文本内容" />
             <Step title="处理" description="纠错和匹配" />
             <Step title="保存" description="笔记" />
           </Steps>
 
           <Divider />
 
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-gray-600">录入方式:</span>
-              <div className="flex gap-2">
-                <Button
-                  type={entryMode === 'voice' ? 'primary' : 'default'}
-                  icon={<AudioOutlined />}
-                  onClick={() => {
-                    setEntryMode('voice')
-                    resetState()
-                  }}
-                  disabled={isVoiceFlowActive}
-                >
-                  本地录音
-                </Button>
-                <Button
-                  type={entryMode === 'text' ? 'primary' : 'default'}
-                  icon={<EditOutlined />}
-                  onClick={() => {
-                    setEntryMode('text')
-                    resetState()
-                  }}
-                  disabled={isVoiceFlowActive}
-                >
-                  直接文本
-                </Button>
-              </div>
-            </div>
-            {getRecordingStateTag()}
+          <div className="mb-4 flex items-center justify-end">
+            {getProcessingStateTag()}
           </div>
 
-          {currentStep === 0 && entryMode === 'voice' && (
-            <div className="space-y-6">
-              <div className="flex justify-center gap-4">
-                <Card className="w-80 text-center">
-                  <div className="py-8">
-                    <AudioOutlined className="text-5xl text-blue-500 mb-4" />
-                    <h4 className="font-bold text-lg mb-2">开始录音</h4>
-                    <p className="text-gray-500 text-sm mb-4">点击下方按钮开始录制</p>
-                    <Button
-                      type="primary"
-                      size="large"
-                      icon={<AudioOutlined />}
-                      onClick={startRecording}
-                      disabled={recordingState === 'connecting' || recordingState === 'recording' || recordingState === 'stopping'}
-                    >
-                      开始录音
-                    </Button>
-                  </div>
-                </Card>
-              </div>
-
-              <Divider plain>或者</Divider>
-
-              <div className="flex justify-center">
-                <Upload
-                  accept=".wav,.mp3,.m4a,.aac"
-                  beforeUpload={handleUploadAudio}
-                  showUploadList={false}
-                >
-                  <Button icon={<UploadOutlined />} size="large">
-                    上传音频文件
-                  </Button>
-                </Upload>
-              </div>
-            </div>
-          )}
-
-          {currentStep === 0 && entryMode === 'text' && (
+          {currentStep === 0 && (
             <div className="space-y-4">
               <Card className="border border-blue-100 bg-blue-50/40">
                 <div className="space-y-3">
@@ -912,7 +494,7 @@ const RecordingControl: React.FC = () => {
                     value={manualInputText}
                     onChange={(event) => setManualInputText(event.target.value)}
                     autoSize={{ minRows: 8, maxRows: 16 }}
-                    placeholder="粘贴你的盘中观点、语音转写结果或临时笔记，然后点击“开始解析”。"
+                    placeholder='粘贴你的盘中观点、语音转写结果或临时笔记，然后点击"开始解析"。'
                   />
                   <div className="flex justify-end">
                     <Button type="primary" icon={<EditOutlined />} onClick={() => { void handleAnalyzeManualInput() }}>
@@ -924,56 +506,18 @@ const RecordingControl: React.FC = () => {
             </div>
           )}
 
-          {currentStep === 1 && recordingState === 'recording' && (
-            <div className="text-center py-8">
-              <div className="mb-6">
-                <div className="text-6xl font-mono text-blue-500 mb-2">
-                  {formatDuration(recordingDuration)}
-                </div>
-                <div className="text-gray-500">录音中...</div>
-              </div>
-
-              <Button
-                type="primary"
-                danger
-                size="large"
-                onClick={stopRecording}
-              >
-                停止录音
-              </Button>
-            </div>
-          )}
-
-          {entryMode === 'voice' && currentStep === 2 && recordingState === 'transcribing' && (
-            <div className="text-center py-8">
-              <LoadingOutlined className="text-5xl text-purple-500 mb-4" />
-              <div className="text-lg mb-4">正在转写音频...</div>
-              <Progress percent={transcribeProgress} status="active" style={{ maxWidth: 300, margin: '0 auto' }} />
-            </div>
-          )}
-
-          {entryMode === 'voice' && currentStep === 2 && recordingState === 'stopping' && (
-            <div className="text-center py-8">
-              <LoadingOutlined className="text-5xl text-orange-500 mb-4" />
-              <div className="text-lg mb-4">正在结束录音并保存音频...</div>
-              <div className="text-gray-500 text-sm">
-                {voiceStatus?.isConnected === false ? '检测到录音连接异常，正在等待结果...' : '请稍候，随后会自动进入转写'}
-              </div>
-            </div>
-          )}
-
-          {currentStep === 3 && recordingState === 'analyzing' && (
+          {currentStep === 1 && processingState === 'analyzing' && (
             <div className="text-center py-8">
               <LoadingOutlined className="text-5xl text-cyan-500 mb-4" />
               <div className="text-lg">正在快速匹配股票与标签...</div>
             </div>
           )}
 
-          {currentStep === 4 && extractResult && (
+          {currentStep === 2 && extractResult && (
             <div className="space-y-4">
               <div className="p-4 bg-gray-50 rounded-lg">
-                <h4 className="font-medium mb-2">{entryMode === 'voice' ? '转写原文' : '输入原文'}</h4>
-                <div className="text-gray-700">{transcribedText}</div>
+                <h4 className="font-medium mb-2">输入原文</h4>
+                <div className="text-gray-700">{manualInputText}</div>
                 {!!extractResult.note?.sentiment && (
                   <div className="mt-2">
                     <Tag color="purple">AI观点: {extractResult.note.sentiment}</Tag>
@@ -1119,7 +663,7 @@ const RecordingControl: React.FC = () => {
 
               <div className="flex justify-end gap-2">
                 <Button onClick={() => { setCurrentStep(0); resetState(); }}>
-                  {entryMode === 'voice' ? '重新录音' : '重新输入'}
+                  重新输入
                 </Button>
                 <Button type="primary" icon={<SaveOutlined />} onClick={handleSaveNote}>
                   保存笔记

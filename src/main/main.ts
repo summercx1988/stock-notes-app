@@ -1,6 +1,5 @@
 import { app, BrowserWindow, Menu } from 'electron'
 import path from 'path'
-import { voiceTranscriberClient } from './services/VoiceTranscriberClient'
 import { feishuBotService } from './services/feishu-bot'
 import { appConfigService } from './services/app-config'
 import { sharedNotesService } from './application/container'
@@ -44,8 +43,6 @@ function createWindow() {
   })
   console.log('[Main] Window created, setting up handlers...')
 
-  voiceTranscriberClient.setMainWindow(mainWindow)
-
   const isDev = process.env.NODE_ENV === 'development'
   console.log('[Main] Environment:', isDev ? 'development' : 'production')
   
@@ -86,7 +83,6 @@ function createWindow() {
           accelerator: 'CmdOrCtrl+Q',
           click: async () => {
             console.log('[Main] User requested quit via menu')
-            await voiceTranscriberClient.stop()
             await feishuBotService.stop()
             app.quit()
           }
@@ -210,10 +206,7 @@ app.on('before-quit', async (event) => {
   console.log('[Main] Cleaning up before quit...')
   
   try {
-    await Promise.all([
-      voiceTranscriberClient.stop(),
-      feishuBotService.stop()
-    ])
+    await feishuBotService.stop()
     dailyReviewReminderScheduler?.stop()
     console.log('[Main] All services stopped')
   } catch (error) {

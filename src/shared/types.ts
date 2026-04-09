@@ -205,15 +205,6 @@ export interface FeishuStatus {
   error?: string
 }
 
-export interface VoiceServiceStatus {
-  isConnected: boolean
-  isRunning: boolean
-  isRecording: boolean
-  duration: number
-  memoryUsage: number
-  lastError?: string
-}
-
 export interface DailyReviewReminderIncludeSections {
   yesterdaySummary: boolean
   pendingItems: boolean
