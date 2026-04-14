@@ -1387,6 +1387,25 @@ export class NotesService {
           refreshStockCodes.add(stockCode)
         }
       }
+
+      // App 重启后 dirty 标记会丢失。这里基于文件路径/mtime 自动侦测索引是否过期，
+      // 避免图表数据与明细（索引）不一致。
+      for (const stockCode of knownStockCodes) {
+        if (refreshStockCodes.has(stockCode)) continue
+        const currentFilePath = this.filePathIndex.get(stockCode)
+        const indexedPayload = this.reviewIndexByStock.get(stockCode)
+        if (!currentFilePath || !indexedPayload) continue
+
+        const indexedFilePath = path.resolve(String(indexedPayload.filePath || ''))
+        if (!indexedFilePath || indexedFilePath !== path.resolve(currentFilePath)) {
+          refreshStockCodes.add(stockCode)
+          continue
+        }
+
+        if (await this.isReviewIndexStaleByFileMtime(currentFilePath, indexedPayload.updatedAt)) {
+          refreshStockCodes.add(stockCode)
+        }
+      }
     }
 
     for (const stockCode of this.reviewIndexByStock.keys()) {
@@ -1419,6 +1438,19 @@ export class NotesService {
 
     if (hasChanged) {
       await this.writeReviewIndexToDisk()
+    }
+  }
+
+  private async isReviewIndexStaleByFileMtime(filePath: string, indexedUpdatedAt: string): Promise<boolean> {
+    const indexedMs = Date.parse(String(indexedUpdatedAt || ''))
+    if (!Number.isFinite(indexedMs)) return true
+
+    try {
+      const stat = await fs.stat(filePath)
+      // 给文件系统时间精度预留 1ms 缓冲，避免边界误判。
+      return stat.mtimeMs > indexedMs + 1
+    } catch {
+      return true
     }
   }
 
