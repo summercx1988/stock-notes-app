@@ -343,8 +343,8 @@ export class NotesAppService {
 
     const fetchStart = new Date(Math.min(requestedStart, minEventMs) - (24 * 60 * 60 * 1000))
     const fetchEnd = new Date(Math.max(requestedEnd, maxEventMs) + (24 * 60 * 60 * 1000))
-    const candles = await this.marketDataService.getCandles(visualStockCode, interval, fetchStart, fetchEnd)
-    const aligned = alignReviewMarkers(candles, events)
+    const marketData = await this.marketDataService.getCandlesWithStatus(visualStockCode, interval, fetchStart, fetchEnd)
+    const aligned = alignReviewMarkers(marketData.candles, events)
 
     return {
       scope,
@@ -352,10 +352,11 @@ export class NotesAppService {
       startDate: request.startDate || new Date(requestedStart).toISOString(),
       endDate: request.endDate || new Date(requestedEnd).toISOString(),
       interval,
-      candles,
+      candles: marketData.candles,
       markers: aligned.markers,
       clusters: aligned.clusters,
       stats: aligned.stats,
+      marketDataStatus: marketData.status,
       generatedAt: new Date().toISOString()
     }
   }

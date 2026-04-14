@@ -372,6 +372,16 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
     return data.clusters.find((item) => item.candleTime === activeClusterTime) || null
   }, [activeClusterTime, data])
 
+  const marketDataWarning = useMemo(() => {
+    if (!data?.marketDataStatus.stale) return null
+    const cacheUpdatedAt = data.marketDataStatus.cacheUpdatedAt
+      ? dayjs(data.marketDataStatus.cacheUpdatedAt).format('YYYY-MM-DD HH:mm:ss')
+      : null
+    const baseMessage = data.marketDataStatus.message || '行情刷新失败，当前展示的是本地缓存数据。'
+    if (!cacheUpdatedAt) return baseMessage
+    return `${baseMessage} 缓存更新时间：${cacheUpdatedAt}`
+  }, [data?.marketDataStatus])
+
   const openAddNote = () => {
     if (!canAddNote) return
     const seed = anchorTimestamp || hoverInfo?.timestamp || Date.now()
@@ -451,6 +461,10 @@ const ReviewKlineWorkbench: React.FC<ReviewKlineWorkbenchProps> = ({
 
       {errorMessage ? (
         <Alert className="mb-3" type="error" showIcon message={`K线数据加载失败: ${errorMessage}`} />
+      ) : null}
+
+      {!errorMessage && marketDataWarning ? (
+        <Alert className="mb-3" type="warning" showIcon message={marketDataWarning} />
       ) : null}
 
       <div ref={wrapperRef} className="relative rounded-lg border border-slate-200 bg-white" style={{ height: CHART_HEIGHT }}>

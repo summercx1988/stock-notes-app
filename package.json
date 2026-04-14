@@ -1,6 +1,6 @@
 {
   "name": "stock-notes-app",
-  "version": "3.6.0",
+  "version": "3.6.1",
   "description": "股票投资语音笔记系统 - 基于AI的智能投资笔记管理工具",
   "main": "dist/main/main/main.js",
   "scripts": {

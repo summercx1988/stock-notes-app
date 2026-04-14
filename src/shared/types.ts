@@ -438,6 +438,14 @@ export interface ReviewVisualStats {
   outOfRangeMarkers: number
 }
 
+export interface ReviewMarketDataStatus {
+  source: 'live' | 'cache'
+  stale: boolean
+  message?: string
+  cacheUpdatedAt?: string | null
+  lastError?: string
+}
+
 export interface ReviewVisualResponse {
   scope: ReviewScope
   stockCode: string
@@ -448,6 +456,7 @@ export interface ReviewVisualResponse {
   markers: ReviewMarker[]
   clusters: ReviewMarkerCluster[]
   stats: ReviewVisualStats
+  marketDataStatus: ReviewMarketDataStatus
   generatedAt: string
 }
 
